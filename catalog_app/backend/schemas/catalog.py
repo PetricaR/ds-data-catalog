@@ -66,6 +66,13 @@ class DatasetResponse(DatasetBase):
     model_config = {"from_attributes": True}
 
 
+# ── Example Query ─────────────────────────────────────────────────────────────
+
+class ExampleQuery(BaseModel):
+    title: str
+    sql: str
+
+
 # ── Table ─────────────────────────────────────────────────────────────────────
 
 class TableBase(BaseModel):
@@ -128,13 +135,6 @@ class SearchResponse(BaseModel):
     query: str
     total: int
     results: list[SearchResult]
-
-
-# ── Example Query ─────────────────────────────────────────────────────────────
-
-class ExampleQuery(BaseModel):
-    title: str
-    sql: str
 
 
 # ── Column update ─────────────────────────────────────────────────────────────
