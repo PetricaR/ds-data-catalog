@@ -16,6 +16,7 @@ def search(
     q: str = Query(..., min_length=1, description="Search query"),
     entity_type: Optional[str] = Query(default=None, description="'dataset' or 'table'"),
     project_id: Optional[str] = None,
+    dataset_id: Optional[str] = None,
     sensitivity_label: Optional[str] = None,
     tags: Optional[list[str]] = Query(default=None),
     skip: int = 0,
@@ -27,7 +28,8 @@ def search(
     ts_query = func.plainto_tsquery("english", q)
 
     # ── Search datasets ───────────────────────────────────────────────────────
-    if entity_type in (None, "dataset"):
+    # Skip dataset results when scoped to a specific dataset
+    if entity_type in (None, "dataset") and not dataset_id:
         dq = db.query(Dataset).filter(
             Dataset.is_active == True,
             Dataset.search_vector.op("@@")(ts_query),
@@ -57,13 +59,15 @@ def search(
             )
 
     # ── Search tables ─────────────────────────────────────────────────────────
-    if entity_type in (None, "table"):
+    if entity_type in (None, "table") or dataset_id:
         tq = db.query(Table, Dataset).join(Dataset, Table.dataset_id == Dataset.id).filter(
             Table.is_active == True,
             Table.search_vector.op("@@")(ts_query),
         )
         if project_id:
             tq = tq.filter(Dataset.project_id == project_id)
+        if dataset_id:
+            tq = tq.filter(Dataset.dataset_id == dataset_id)
         if sensitivity_label:
             tq = tq.filter(Table.sensitivity_label == sensitivity_label)
         if tags:

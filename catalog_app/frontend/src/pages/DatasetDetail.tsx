@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
@@ -11,6 +12,8 @@ import Chip from '@mui/material/Chip'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Tooltip from '@mui/material/Tooltip'
+import InputAdornment from '@mui/material/InputAdornment'
+import TextField from '@mui/material/TextField'
 import TableChartIcon from '@mui/icons-material/TableChart'
 import EditNoteIcon from '@mui/icons-material/EditNote'
 import PlaceIcon from '@mui/icons-material/Place'
@@ -18,6 +21,7 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
 import PersonIcon from '@mui/icons-material/Person'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import UpdateIcon from '@mui/icons-material/Update'
+import SearchIcon from '@mui/icons-material/Search'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import { datasetsApi } from '../api/datasets'
@@ -26,6 +30,7 @@ import type { SensitivityLabel } from '../api/types'
 export default function DatasetDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchQuery, setSearchQuery] = useState('')
   const { data: dataset, isLoading: dsLoading } = useQuery({
     queryKey: ['dataset', id],
     queryFn: () => datasetsApi.get(id!),
@@ -121,10 +126,31 @@ export default function DatasetDetail() {
         </Box>
       </Box>
 
-      {/* Tables */}
-      <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-        Tables ({tables?.length ?? 0})
-      </Typography>
+      {/* Tables header */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+        <Typography variant="h6" fontWeight={600}>
+          Tables ({tables?.length ?? 0})
+        </Typography>
+        <TextField
+          size="small"
+          placeholder={`Search in ${dataset.dataset_id}…`}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && searchQuery.trim()) {
+              navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}&dataset_id=${encodeURIComponent(dataset.dataset_id)}`)
+            }
+          }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ fontSize: 18, color: 'text.disabled' }} />
+              </InputAdornment>
+            ),
+          }}
+          sx={{ minWidth: 240, '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: '0.85rem' } }}
+        />
+      </Box>
 
       {tablesLoading ? (
         [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={80} sx={{ mb: 1 }} />)
@@ -166,14 +192,14 @@ export default function DatasetDetail() {
                   </Box>
                 </Box>
                 <SensitivityChip label={t.sensitivity_label as SensitivityLabel} />
-                <Tooltip title={t.description ? 'Update documentation' : 'Add documentation'}>
+                <Tooltip title={t.description ? 'View & edit table' : 'Open table to add docs'}>
                   <Button
                     size="small"
                     variant={t.description ? 'text' : 'outlined'}
                     startIcon={<EditNoteIcon sx={{ fontSize: '14px !important' }} />}
                     onClick={(e) => {
                       e.stopPropagation()
-                      navigate(`/register/table?datasetId=${id}&tableId=${t.id}`)
+                      navigate(`/datasets/${id}/tables/${t.id}`)
                     }}
                     sx={{ fontSize: '0.7rem', py: 0.3, minWidth: 0, flexShrink: 0, color: t.description ? 'text.secondary' : 'primary.main' }}
                   >
@@ -184,7 +210,7 @@ export default function DatasetDetail() {
 
               {/* Row 2: description */}
               <Typography variant="body2" color="text.secondary" sx={{ ml: 3.5, mb: 1 }} noWrap>
-                {t.description || <em style={{ color: '#aaa' }}>No description — click Document to add</em>}
+                {t.description || <em style={{ color: '#aaa' }}>No description — open table to add</em>}
               </Typography>
 
               {/* Row 3: stats chips + owner + updated */}

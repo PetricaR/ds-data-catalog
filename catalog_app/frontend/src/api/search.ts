@@ -6,6 +6,7 @@ export const searchApi = {
     q: string
     entity_type?: 'dataset' | 'table'
     project_id?: string
+    dataset_id?: string
     sensitivity_label?: string
     tags?: string[]
     skip?: number

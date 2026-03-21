@@ -12,7 +12,6 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Alert from '@mui/material/Alert'
 import StorageIcon from '@mui/icons-material/Storage'
 import TableChartIcon from '@mui/icons-material/TableChart'
-import SearchBar from '../components/SearchBar'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import { searchApi } from '../api/search'
@@ -23,10 +22,11 @@ export default function SearchResults() {
   const navigate = useNavigate()
   const q = params.get('q') ?? ''
   const entityType = (params.get('type') as 'dataset' | 'table' | null) ?? undefined
+  const datasetId = params.get('dataset_id') ?? undefined
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['search', q, entityType],
-    queryFn: () => searchApi.search({ q, entity_type: entityType }),
+    queryKey: ['search', q, entityType, datasetId],
+    queryFn: () => searchApi.search({ q, entity_type: entityType, dataset_id: datasetId }),
     enabled: !!q,
   })
 
@@ -47,15 +47,23 @@ export default function SearchResults() {
 
   return (
     <Box>
-      <Box sx={{ mb: 3, maxWidth: 640 }}>
-        <SearchBar defaultValue={q} size="small" />
-      </Box>
-
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
         {!isLoading && data && (
           <Typography variant="body2" color="text.secondary">
             {data.total} result{data.total !== 1 ? 's' : ''} for <strong>"{q}"</strong>
           </Typography>
+        )}
+        {datasetId && (
+          <Chip
+            label={`Scoped to dataset: ${datasetId}`}
+            size="small"
+            onDelete={() => {
+              const next = new URLSearchParams(params)
+              next.delete('dataset_id')
+              setParams(next)
+            }}
+            sx={{ bgcolor: '#e8f0fe', color: '#1a73e8', fontWeight: 500 }}
+          />
         )}
         <ToggleButtonGroup value={entityType ?? ''} exclusive onChange={setType} size="small">
           <ToggleButton value="">All</ToggleButton>
@@ -129,15 +137,7 @@ export default function SearchResults() {
         <Box sx={{ textAlign: 'center', py: 6 }}>
           <Typography variant="h6" color="text.secondary" gutterBottom>No results found</Typography>
           <Typography variant="body2" color="text.secondary">
-            Try different keywords or{' '}
-            <Typography
-              component="span"
-              variant="body2"
-              sx={{ color: '#1a73e8', cursor: 'pointer' }}
-              onClick={() => navigate('/register/dataset')}
-            >
-              register a new dataset
-            </Typography>
+            Try different keywords or broaden your search.
           </Typography>
         </Box>
       )}

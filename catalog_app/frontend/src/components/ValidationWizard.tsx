@@ -73,6 +73,12 @@ export default function ValidationWizard({ open, onClose, table, onValidate, isV
 
   const handleClose = () => {
     setActiveStep(0)
+    onClose()
+  }
+
+  const handleValidate = () => {
+    onValidate(validatedBy || 'anonymous', [...selectedColumns])
+    setActiveStep(0)
     setSelectedColumns(new Set())
     setValidatedBy('')
     onClose()
@@ -283,7 +289,7 @@ export default function ValidationWizard({ open, onClose, table, onValidate, isV
             variant="contained"
             color="success"
             startIcon={isValidating ? <CircularProgress size={16} color="inherit" /> : <VerifiedIcon />}
-            onClick={() => { onValidate(validatedBy || 'anonymous', [...selectedColumns]); handleClose() }}
+            onClick={handleValidate}
             disabled={isValidating}
             sx={{ textTransform: 'none', fontWeight: 600 }}
           >

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Collapse from '@mui/material/Collapse'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
@@ -147,10 +147,21 @@ export default function Browse() {
     },
   })
 
-  const { data: datasets, isLoading } = useQuery({
+  const PAGE_SIZE = 50
+  const {
+    data: datasetsPages,
+    isLoading,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['datasets'],
-    queryFn: () => datasetsApi.list({ limit: 200 }),
+    queryFn: ({ pageParam = 0 }) => datasetsApi.list({ skip: pageParam as number, limit: PAGE_SIZE }),
+    getNextPageParam: (lastPage, pages) =>
+      lastPage.length === PAGE_SIZE ? pages.length * PAGE_SIZE : undefined,
+    initialPageParam: 0,
   })
+  const datasets = datasetsPages?.pages.flat()
 
   const { data: stats } = useQuery({
     queryKey: ['stats'],
@@ -475,6 +486,19 @@ export default function Browse() {
 
       {!isLoading && Object.keys(grouped).length === 0 && (
         <Alert severity="info">No datasets found. Run a BigQuery sync to discover your data.</Alert>
+      )}
+
+      {hasNextPage && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+          <Button
+            variant="outlined"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            startIcon={isFetchingNextPage ? <CircularProgress size={14} /> : undefined}
+          >
+            {isFetchingNextPage ? 'Loading…' : 'Load more datasets'}
+          </Button>
+        </Box>
       )}
 
       {/* Sync result dialog */}
