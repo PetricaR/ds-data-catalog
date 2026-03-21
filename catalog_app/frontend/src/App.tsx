@@ -1,0 +1,26 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import Layout from './components/Layout'
+import Home from './pages/Home'
+import Browse from './pages/Browse'
+import SearchResults from './pages/SearchResults'
+import DatasetDetail from './pages/DatasetDetail'
+import TableDetail from './pages/TableDetail'
+import RegisterDataset from './pages/RegisterDataset'
+import RegisterTable from './pages/RegisterTable'
+
+export default function App() {
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/browse" element={<Browse />} />
+        <Route path="/search" element={<SearchResults />} />
+        <Route path="/datasets/:id" element={<DatasetDetail />} />
+        <Route path="/datasets/:datasetId/tables/:tableId" element={<TableDetail />} />
+        <Route path="/register/dataset" element={<RegisterDataset />} />
+        <Route path="/register/table" element={<RegisterTable />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Layout>
+  )
+}

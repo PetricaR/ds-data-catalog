@@ -43,3 +43,5 @@ aiohttp>=3.9.0
 
 # Database
 psycopg2-binary>=2.9.9  # PostgreSQL adapter for Python
+sqlalchemy>=2.0.0       # ORM
+alembic>=1.13.0         # DB migrations
