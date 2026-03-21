@@ -27,11 +27,14 @@ def list_datasets(
     sensitivity_label: Optional[str] = None,
     tags: Optional[list[str]] = Query(default=None),
     owner: Optional[str] = None,
+    validated: Optional[bool] = None,
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
 ):
     q = db.query(Dataset).filter(Dataset.is_active == True)
+    if validated is not None:
+        q = q.filter(Dataset.is_validated == validated)
     if project_id:
         q = q.filter(Dataset.project_id == project_id)
     if sensitivity_label:
@@ -79,6 +82,20 @@ def update_dataset(dataset_id: UUID, payload: DatasetUpdate, db: Session = Depen
         raise HTTPException(status_code=404, detail="Dataset not found")
     for field, value in payload.model_dump(exclude_none=True).items():
         setattr(ds, field, value)
+    db.commit()
+    db.refresh(ds)
+    return _dataset_response(ds, db)
+
+
+@router.patch("/{dataset_id}/validate", response_model=DatasetResponse)
+def validate_dataset(dataset_id: UUID, validated_by: str = "anonymous", db: Session = Depends(get_db)):
+    from datetime import datetime, timezone
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.is_active == True).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    ds.is_validated = not ds.is_validated
+    ds.validated_by = validated_by if ds.is_validated else None
+    ds.validated_at = datetime.now(timezone.utc) if ds.is_validated else None
     db.commit()
     db.refresh(ds)
     return _dataset_response(ds, db)

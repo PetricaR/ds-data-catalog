@@ -21,6 +21,20 @@ def init_db():
 
     Base.metadata.create_all(bind=engine)
 
+    # Idempotent migrations for new columns added after initial schema creation
+    with engine.connect() as conn:
+        for ddl in [
+            "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS is_validated BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS validated_by VARCHAR(255)",
+            "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS validated_at TIMESTAMPTZ",
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS is_validated BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS validated_by VARCHAR(255)",
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS validated_at TIMESTAMPTZ",
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS example_queries JSONB NOT NULL DEFAULT '[]'",
+        ]:
+            conn.execute(text(ddl))
+        conn.commit()
+
     # PostgreSQL triggers to keep search_vector columns up to date
     with engine.connect() as conn:
         conn.execute(text("""

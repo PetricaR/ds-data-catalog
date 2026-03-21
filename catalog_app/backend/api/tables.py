@@ -4,9 +4,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..database import get_db
 from ..models.catalog import Dataset, Table, TableColumn
-from ..schemas.catalog import TableCreate, TableResponse, TableUpdate
+from ..schemas.catalog import ColumnUpdate, ExampleQuery, TableCreate, TableResponse, TableUpdate
+from ..services.bq_preview import preview_table
 
 router = APIRouter(prefix="/tables", tags=["tables"])
 
@@ -89,6 +91,63 @@ def update_table(table_id: UUID, payload: TableUpdate, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Table not found")
     for field, value in payload.model_dump(exclude_none=True).items():
         setattr(t, field, value)
+    db.commit()
+    db.refresh(t)
+    return _table_response(t, db)
+
+
+@router.patch("/{table_id}/validate", response_model=TableResponse)
+def validate_table(table_id: UUID, validated_by: str = "anonymous", db: Session = Depends(get_db)):
+    from datetime import datetime, timezone
+    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    t.is_validated = not t.is_validated
+    t.validated_by = validated_by if t.is_validated else None
+    t.validated_at = datetime.now(timezone.utc) if t.is_validated else None
+    db.commit()
+    db.refresh(t)
+    return _table_response(t, db)
+
+
+@router.patch("/{table_id}/columns", response_model=TableResponse)
+def update_columns(table_id: UUID, payload: list[ColumnUpdate], db: Session = Depends(get_db)):
+    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    col_map = {c.id: c for c in t.columns}
+    for upd in payload:
+        col = col_map.get(upd.id)
+        if not col:
+            continue
+        if upd.description is not None:
+            col.description = upd.description
+        if upd.is_primary_key is not None:
+            col.is_primary_key = upd.is_primary_key
+    db.commit()
+    db.refresh(t)
+    return _table_response(t, db)
+
+
+@router.get("/{table_id}/preview")
+def get_table_preview(table_id: UUID, db: Session = Depends(get_db)):
+    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    try:
+        data = preview_table(ds.project_id, ds.dataset_id, t.table_id, settings.bq_secret_name)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"BigQuery preview failed: {exc}")
+    return data
+
+
+@router.patch("/{table_id}/queries", response_model=TableResponse)
+def update_queries(table_id: UUID, payload: list[ExampleQuery], db: Session = Depends(get_db)):
+    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    t.example_queries = [q.model_dump() for q in payload]
     db.commit()
     db.refresh(t)
     return _table_response(t, db)

@@ -1,5 +1,5 @@
 import client from './client'
-import type { Table, TableCreate, TableUpdate } from './types'
+import type { ExampleQuery, Table, TableCreate, TablePreview, TableUpdate } from './types'
 
 export const tablesApi = {
   list: (params?: {
@@ -18,6 +18,18 @@ export const tablesApi = {
 
   update: (id: string, data: TableUpdate) =>
     client.put<Table>(`/tables/${id}`, data).then((r) => r.data),
+
+  validate: (id: string, validatedBy?: string) =>
+    client.patch<Table>(`/tables/${id}/validate`, null, { params: { validated_by: validatedBy } }).then((r) => r.data),
+
+  patchColumns: (tableId: string, cols: { id: string; description?: string; is_primary_key?: boolean }[]) =>
+    client.patch<Table>(`/tables/${tableId}/columns`, cols).then((r) => r.data),
+
+  preview: (id: string) =>
+    client.get<TablePreview>(`/tables/${id}/preview`).then((r) => r.data),
+
+  patchQueries: (id: string, queries: ExampleQuery[]) =>
+    client.patch<Table>(`/tables/${id}/queries`, queries).then((r) => r.data),
 
   remove: (id: string) => client.delete(`/tables/${id}`),
 }

@@ -16,23 +16,61 @@ import Divider from '@mui/material/Divider'
 import Button from '@mui/material/Button'
 import HomeIcon from '@mui/icons-material/Home'
 import StorageIcon from '@mui/icons-material/Storage'
-import SearchIcon from '@mui/icons-material/Search'
-import AddIcon from '@mui/icons-material/Add'
 import MenuIcon from '@mui/icons-material/Menu'
 import TableChartIcon from '@mui/icons-material/TableChart'
+import VerifiedIcon from '@mui/icons-material/Verified'
+
 import SearchBar from './SearchBar'
 
-const DRAWER_WIDTH = 220
+const DRAWER_WIDTH = 200
 
-const navItems = [
-  { label: 'Home', path: '/', icon: <HomeIcon /> },
-  { label: 'Browse', path: '/browse', icon: <StorageIcon /> },
+const SECTIONS = [
+  {
+    items: [
+      { label: 'Home',         path: '/',        icon: <HomeIcon />    },
+      { label: 'Browse',       path: '/browse',  icon: <StorageIcon /> },
+      { label: 'Trusted Data', path: '/trusted', icon: <VerifiedIcon /> },
+    ],
+  },
 ]
 
-const addItems = [
-  { label: 'Register Dataset', path: '/register/dataset', icon: <StorageIcon /> },
-  { label: 'Register Table', path: '/register/table', icon: <TableChartIcon /> },
-]
+function NavItem({
+  label, path, icon, active, onClick,
+}: {
+  label: string; path: string; icon: ReactNode; active: boolean; onClick: () => void
+}) {
+  return (
+    <ListItem disablePadding sx={{ mb: 0.5 }}>
+      <ListItemButton
+        component={Link}
+        to={path}
+        selected={active}
+        onClick={onClick}
+        sx={{
+          mx: 1.5,
+          px: 1.5,
+          py: 0.9,
+          borderRadius: 3,
+          transition: 'background 0.15s',
+          '&.Mui-selected': {
+            bgcolor: '#e8f0fe',
+            '& .MuiListItemIcon-root': { color: '#1a73e8' },
+            '& .MuiListItemText-primary': { color: '#1a73e8', fontWeight: 600 },
+          },
+          '&:hover:not(.Mui-selected)': { bgcolor: '#f1f3f4' },
+        }}
+      >
+        <ListItemIcon sx={{ minWidth: 36, color: active ? '#1a73e8' : 'text.secondary' }}>
+          {icon}
+        </ListItemIcon>
+        <ListItemText
+          primary={label}
+          primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: active ? 600 : 400 }}
+        />
+      </ListItemButton>
+    </ListItem>
+  )
+}
 
 export default function Layout({ children }: { children: ReactNode }) {
   const location = useLocation()
@@ -40,60 +78,52 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const isHome = location.pathname === '/'
 
+  const isActive = (path: string) =>
+    path === '/' ? location.pathname === '/' : location.pathname.startsWith(path)
+
   const drawer = (
-    <Box sx={{ pt: 1 }}>
-      <List dense>
-        {navItems.map((item) => (
-          <ListItem key={item.path} disablePadding>
-            <ListItemButton
-              component={Link}
-              to={item.path}
-              selected={location.pathname === item.path}
-              onClick={() => setDrawerOpen(false)}
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', pt: 1.5, pb: 2 }}>
+      {SECTIONS.map((section, si) => (
+        <Box key={si}>
+          {section.heading && (
+            <Typography
+              variant="caption"
               sx={{
-                mx: 1,
-                borderRadius: 2,
-                '&.Mui-selected': {
-                  backgroundColor: '#e8f0fe',
-                  color: '#1a73e8',
-                  '& .MuiListItemIcon-root': { color: '#1a73e8' },
-                },
+                display: 'block',
+                px: 3,
+                pt: 1.5,
+                pb: 0.5,
+                color: 'text.disabled',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                fontSize: '0.68rem',
               }}
             >
-              <ListItemIcon sx={{ minWidth: 36 }}>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
-      <Divider sx={{ my: 1, mx: 2 }} />
-      <Typography variant="caption" sx={{ px: 3, color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-        Register
+              {section.heading}
+            </Typography>
+          )}
+          <List dense disablePadding>
+            {section.items.map((item) => (
+              <NavItem
+                key={item.path}
+                {...item}
+                active={isActive(item.path)}
+                onClick={() => setDrawerOpen(false)}
+              />
+            ))}
+          </List>
+          {si < SECTIONS.length - 1 && <Divider sx={{ mx: 2, my: 1.5 }} />}
+        </Box>
+      ))}
+
+      {/* Spacer pushes version to bottom */}
+      <Box sx={{ flex: 1 }} />
+
+      <Divider sx={{ mx: 2, mb: 1.5 }} />
+      <Typography variant="caption" sx={{ px: 3, color: 'text.disabled' }}>
+        DS Data Catalog v1.0
       </Typography>
-      <List dense>
-        {addItems.map((item) => (
-          <ListItem key={item.path} disablePadding>
-            <ListItemButton
-              component={Link}
-              to={item.path}
-              selected={location.pathname === item.path}
-              onClick={() => setDrawerOpen(false)}
-              sx={{
-                mx: 1,
-                borderRadius: 2,
-                '&.Mui-selected': {
-                  backgroundColor: '#e8f0fe',
-                  color: '#1a73e8',
-                  '& .MuiListItemIcon-root': { color: '#1a73e8' },
-                },
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 36 }}>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
     </Box>
   )
 
@@ -110,19 +140,17 @@ export default function Layout({ children }: { children: ReactNode }) {
             <MenuIcon />
           </IconButton>
 
-          {/* Logo */}
           <Box
             component={Link}
             to="/"
             sx={{ display: 'flex', alignItems: 'center', gap: 1, textDecoration: 'none', mr: 2, flexShrink: 0 }}
           >
-            <StorageIcon sx={{ color: '#1a73e8', fontSize: 28 }} />
+            <StorageIcon sx={{ color: '#1a73e8', fontSize: 26 }} />
             <Typography variant="h6" sx={{ color: 'text.primary', fontWeight: 700, display: { xs: 'none', sm: 'block' } }}>
               DS Catalog
             </Typography>
           </Box>
 
-          {/* Search bar in header (hidden on home) */}
           {!isHome && (
             <Box sx={{ flex: 1, maxWidth: 560 }}>
               <SearchBar size="small" />
@@ -131,17 +159,6 @@ export default function Layout({ children }: { children: ReactNode }) {
 
           <Box sx={{ flex: 1 }} />
 
-          <Tooltip title="Register Dataset">
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<AddIcon />}
-              onClick={() => navigate('/register/dataset')}
-              sx={{ display: { xs: 'none', md: 'flex' } }}
-            >
-              Register
-            </Button>
-          </Tooltip>
         </Toolbar>
       </AppBar>
 
@@ -152,7 +169,14 @@ export default function Layout({ children }: { children: ReactNode }) {
           width: DRAWER_WIDTH,
           flexShrink: 0,
           display: { xs: 'none', sm: 'block' },
-          '& .MuiDrawer-paper': { width: DRAWER_WIDTH, boxSizing: 'border-box', top: 64 },
+          '& .MuiDrawer-paper': {
+            width: DRAWER_WIDTH,
+            boxSizing: 'border-box',
+            top: 64,
+            height: 'calc(100% - 64px)',
+            borderRight: '1px solid',
+            borderColor: 'divider',
+          },
         }}
       >
         {drawer}
@@ -178,11 +202,10 @@ export default function Layout({ children }: { children: ReactNode }) {
         sx={{
           flexGrow: 1,
           pt: '64px',
-          pl: { sm: `${DRAWER_WIDTH}px` },
           minHeight: '100vh',
         }}
       >
-        <Box sx={{ p: { xs: 2, sm: 3 } }}>{children}</Box>
+        <Box sx={{ pt: { xs: 1.5, sm: 2 }, pb: { xs: 1.5, sm: 2 }, pl: { xs: 1.5, sm: 2 }, pr: { xs: 1.5, sm: 2 } }}>{children}</Box>
       </Box>
     </Box>
   )

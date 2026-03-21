@@ -56,6 +56,9 @@ class DatasetUpdate(BaseModel):
 class DatasetResponse(DatasetBase):
     id: UUID
     is_active: bool
+    is_validated: bool = False
+    validated_by: Optional[str] = None
+    validated_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     table_count: int = 0
@@ -85,6 +88,7 @@ class TableUpdate(BaseModel):
     owner: Optional[str] = None
     tags: Optional[list[str]] = None
     sensitivity_label: Optional[str] = None
+    example_queries: Optional[list[ExampleQuery]] = None
 
 
 class TableResponse(TableBase):
@@ -92,6 +96,10 @@ class TableResponse(TableBase):
     row_count: Optional[int] = None
     size_bytes: Optional[int] = None
     is_active: bool
+    is_validated: bool = False
+    validated_by: Optional[str] = None
+    validated_at: Optional[datetime] = None
+    example_queries: list[ExampleQuery] = []
     created_at: datetime
     updated_at: datetime
     columns: list[ColumnResponse] = []
@@ -120,6 +128,21 @@ class SearchResponse(BaseModel):
     query: str
     total: int
     results: list[SearchResult]
+
+
+# ── Example Query ─────────────────────────────────────────────────────────────
+
+class ExampleQuery(BaseModel):
+    title: str
+    sql: str
+
+
+# ── Column update ─────────────────────────────────────────────────────────────
+
+class ColumnUpdate(BaseModel):
+    id: UUID
+    description: Optional[str] = None
+    is_primary_key: Optional[bool] = None
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────

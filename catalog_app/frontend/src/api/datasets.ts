@@ -7,6 +7,7 @@ export const datasetsApi = {
     sensitivity_label?: string
     tags?: string[]
     owner?: string
+    validated?: boolean
     skip?: number
     limit?: number
   }) => client.get<Dataset[]>('/datasets', { params }).then((r) => r.data),
@@ -18,6 +19,9 @@ export const datasetsApi = {
 
   update: (id: string, data: DatasetUpdate) =>
     client.put<Dataset>(`/datasets/${id}`, data).then((r) => r.data),
+
+  validate: (id: string) =>
+    client.patch<Dataset>(`/datasets/${id}/validate`).then((r) => r.data),
 
   remove: (id: string) => client.delete(`/datasets/${id}`),
 

@@ -13,7 +13,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -39,6 +39,9 @@ class Dataset(Base):
     bq_created_at = Column(DateTime(timezone=True))
     bq_last_modified = Column(DateTime(timezone=True))
     is_active = Column(Boolean, default=True)
+    is_validated = Column(Boolean, default=False, nullable=False, server_default="false")
+    validated_by = Column(String(255))
+    validated_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     search_vector = Column(TSVECTOR)
@@ -67,6 +70,10 @@ class Table(Base):
     bq_created_at = Column(DateTime(timezone=True))
     bq_last_modified = Column(DateTime(timezone=True))
     is_active = Column(Boolean, default=True)
+    is_validated = Column(Boolean, default=False, nullable=False, server_default="false")
+    validated_by = Column(String(255))
+    validated_at = Column(DateTime(timezone=True))
+    example_queries = Column(JSONB, default=list, server_default="[]")
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     search_vector = Column(TSVECTOR)

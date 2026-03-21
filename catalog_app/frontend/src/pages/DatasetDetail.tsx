@@ -12,8 +12,9 @@ import Divider from '@mui/material/Divider'
 import Chip from '@mui/material/Chip'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
+import Tooltip from '@mui/material/Tooltip'
 import TableChartIcon from '@mui/icons-material/TableChart'
-import AddIcon from '@mui/icons-material/Add'
+import EditNoteIcon from '@mui/icons-material/EditNote'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import { datasetsApi } from '../api/datasets'
@@ -32,7 +33,6 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
 export default function DatasetDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-
   const { data: dataset, isLoading: dsLoading } = useQuery({
     queryKey: ['dataset', id],
     queryFn: () => datasetsApi.get(id!),
@@ -119,19 +119,9 @@ export default function DatasetDetail() {
 
         {/* Right — tables */}
         <Grid item xs={12} md={8}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-            <Typography variant="h6" fontWeight={600}>
-              Tables ({tables?.length ?? 0})
-            </Typography>
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<AddIcon />}
-              onClick={() => navigate(`/register/table?datasetId=${id}`)}
-            >
-              Register Table
-            </Button>
-          </Box>
+          <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+            Tables ({tables?.length ?? 0})
+          </Typography>
 
           {tablesLoading ? (
             [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={80} sx={{ mb: 1 }} />)
@@ -141,7 +131,7 @@ export default function DatasetDetail() {
             tables?.map((t) => (
               <Card
                 key={t.id}
-                sx={{ mb: 1.5, cursor: 'pointer' }}
+                sx={{ mb: 1.5, cursor: 'pointer', '&:hover': { boxShadow: 2 } }}
                 onClick={() => navigate(`/datasets/${id}/tables/${t.id}`)}
               >
                 <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
@@ -152,9 +142,23 @@ export default function DatasetDetail() {
                     </Typography>
                     <Box sx={{ flex: 1 }} />
                     <SensitivityChip label={t.sensitivity_label as SensitivityLabel} />
+                    <Tooltip title={t.description ? 'Update documentation' : 'Add documentation'}>
+                      <Button
+                        size="small"
+                        variant={t.description ? 'text' : 'outlined'}
+                        startIcon={<EditNoteIcon sx={{ fontSize: '14px !important' }} />}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigate(`/register/table?datasetId=${id}&tableId=${t.id}`)
+                        }}
+                        sx={{ fontSize: '0.7rem', py: 0.3, minWidth: 0, color: t.description ? 'text.secondary' : 'primary.main' }}
+                      >
+                        {t.description ? 'Edit docs' : 'Document'}
+                      </Button>
+                    </Tooltip>
                   </Box>
                   <Typography variant="body2" color="text.secondary" sx={{ ml: 3.5 }} noWrap>
-                    {t.description || 'No description'}
+                    {t.description || <em>No description — click Document to add</em>}
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1, mt: 1, ml: 3.5, alignItems: 'center' }}>
                     {t.columns.length > 0 && (

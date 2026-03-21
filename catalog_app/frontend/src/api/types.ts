@@ -14,6 +14,9 @@ export interface Dataset {
   bq_created_at: string | null
   bq_last_modified: string | null
   is_active: boolean
+  is_validated: boolean
+  validated_by: string | null
+  validated_at: string | null
   created_at: string
   updated_at: string
   table_count: number
@@ -50,6 +53,16 @@ export interface Column {
   position: number
 }
 
+export interface ExampleQuery {
+  title: string
+  sql: string
+}
+
+export interface TablePreview {
+  columns: string[]
+  rows: Record<string, string | null>[]
+}
+
 export interface Table {
   id: string
   dataset_id: string
@@ -62,6 +75,10 @@ export interface Table {
   row_count: number | null
   size_bytes: number | null
   is_active: boolean
+  is_validated: boolean
+  validated_by: string | null
+  validated_at: string | null
+  example_queries: ExampleQuery[]
   created_at: string
   updated_at: string
   columns: Column[]

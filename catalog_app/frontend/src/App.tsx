@@ -7,6 +7,7 @@ import DatasetDetail from './pages/DatasetDetail'
 import TableDetail from './pages/TableDetail'
 import RegisterDataset from './pages/RegisterDataset'
 import RegisterTable from './pages/RegisterTable'
+import TrustedData from './pages/TrustedData'
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/datasets/:datasetId/tables/:tableId" element={<TableDetail />} />
         <Route path="/register/dataset" element={<RegisterDataset />} />
         <Route path="/register/table" element={<RegisterTable />} />
+        <Route path="/trusted" element={<TrustedData />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
