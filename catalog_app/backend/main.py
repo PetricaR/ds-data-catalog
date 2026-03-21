@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import datasets, search, stats, tables, tags
+from .api import bq, datasets, search, stats, tables, tags
 from .config import settings
 from .database import init_db
 
@@ -35,6 +35,7 @@ app.include_router(tables.router, prefix=API_PREFIX)
 app.include_router(search.router, prefix=API_PREFIX)
 app.include_router(tags.router, prefix=API_PREFIX)
 app.include_router(stats.router, prefix=API_PREFIX)
+app.include_router(bq.router, prefix=API_PREFIX)
 
 
 @app.get("/health")

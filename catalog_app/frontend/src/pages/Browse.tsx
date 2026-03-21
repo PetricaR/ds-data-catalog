@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
@@ -8,6 +8,16 @@ import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Skeleton from '@mui/material/Skeleton'
 import Chip from '@mui/material/Chip'
+import Button from '@mui/material/Button'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import Alert from '@mui/material/Alert'
+import CircularProgress from '@mui/material/CircularProgress'
+import SyncIcon from '@mui/icons-material/Sync'
+import { bqApi } from '../api/bq'
+import type { SyncResponse } from '../api/bq'
 import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
 import InputAdornment from '@mui/material/InputAdornment'
@@ -26,6 +36,24 @@ export default function Browse() {
   const navigate = useNavigate()
   const [sensitivity, setSensitivity] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [syncDialog, setSyncDialog] = useState(false)
+  const [syncResult, setSyncResult] = useState<SyncResponse | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const qc = useQueryClient()
+
+  const syncMutation = useMutation({
+    mutationFn: () => bqApi.sync(),
+    onSuccess: (data) => {
+      setSyncResult(data)
+      setSyncDialog(true)
+      qc.invalidateQueries({ queryKey: ['datasets'] })
+      qc.invalidateQueries({ queryKey: ['stats'] })
+    },
+    onError: (err: any) => {
+      setSyncError(err.response?.data?.detail ?? 'Sync failed.')
+      setSyncDialog(true)
+    },
+  })
 
   const { data: datasets, isLoading } = useQuery({
     queryKey: ['datasets', { sensitivity, tag: tagFilter }],
@@ -41,9 +69,18 @@ export default function Browse() {
 
   return (
     <Box>
-      <Typography variant="h5" fontWeight={700} gutterBottom>
-        Browse Catalog
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+        <Typography variant="h5" fontWeight={700}>Browse Catalog</Typography>
+        <Button
+          variant="outlined"
+          startIcon={syncMutation.isPending ? <CircularProgress size={16} /> : <SyncIcon />}
+          onClick={() => syncMutation.mutate()}
+          disabled={syncMutation.isPending}
+          size="small"
+        >
+          {syncMutation.isPending ? 'Syncing from BigQuery…' : 'Sync from BigQuery'}
+        </Button>
+      </Box>
 
       {/* Filters */}
       <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -151,6 +188,47 @@ export default function Browse() {
               </Grid>
             ))}
       </Grid>
+
+      {/* Sync result dialog */}
+      <Dialog open={syncDialog} onClose={() => { setSyncDialog(false); setSyncResult(null); setSyncError(null) }} maxWidth="sm" fullWidth>
+        <DialogTitle>{syncError ? 'Sync Failed' : 'BigQuery Sync Complete'}</DialogTitle>
+        <DialogContent>
+          {syncError ? (
+            <Alert severity="error">{syncError}</Alert>
+          ) : syncResult ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <Alert severity="success">
+                Successfully synced from <strong>{syncResult.project_id}</strong>
+              </Alert>
+              {[
+                { label: 'Datasets added', value: syncResult.result.datasets_added },
+                { label: 'Datasets updated', value: syncResult.result.datasets_updated },
+                { label: 'Tables added', value: syncResult.result.tables_added },
+                { label: 'Tables updated', value: syncResult.result.tables_updated },
+                { label: 'Columns synced', value: syncResult.result.columns_synced },
+              ].map(({ label, value }) => (
+                <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', px: 1 }}>
+                  <Typography variant="body2" color="text.secondary">{label}</Typography>
+                  <Typography variant="body2" fontWeight={600}>{value}</Typography>
+                </Box>
+              ))}
+              {syncResult.result.errors.length > 0 && (
+                <Alert severity="warning" sx={{ mt: 1 }}>
+                  {syncResult.result.errors.length} warning(s):
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+                    {syncResult.result.errors.slice(0, 5).map((e, i) => (
+                      <li key={i}><Typography variant="caption">{e}</Typography></li>
+                    ))}
+                  </ul>
+                </Alert>
+              )}
+            </Box>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setSyncDialog(false); setSyncResult(null); setSyncError(null) }}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }
