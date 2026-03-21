@@ -168,6 +168,25 @@ class QualityCheckResult(BaseModel):
     checked_at: str
 
 
+# ── Schema Changes ────────────────────────────────────────────────────────────
+
+class SchemaChangeResponse(BaseModel):
+    id: UUID
+    table_id: UUID
+    change_type: str
+    column_name: str
+    detected_at: datetime
+    is_acknowledged: bool
+    # Denormalised from joined table + dataset
+    table_table_id: str
+    table_display_name: Optional[str]
+    dataset_uuid: UUID
+    dataset_id_str: str
+    project_id: str
+
+    model_config = {"from_attributes": True}
+
+
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 class CatalogStats(BaseModel):

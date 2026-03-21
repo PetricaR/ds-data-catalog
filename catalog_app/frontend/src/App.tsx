@@ -1,6 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
-import Home from './pages/Home'
 import Browse from './pages/Browse'
 import SearchResults from './pages/SearchResults'
 import DatasetDetail from './pages/DatasetDetail'
@@ -13,7 +12,7 @@ export default function App() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<Navigate to="/browse" replace />} />
         <Route path="/browse" element={<Browse />} />
         <Route path="/search" element={<SearchResults />} />
         <Route path="/datasets/:id" element={<DatasetDetail />} />
@@ -21,7 +20,7 @@ export default function App() {
         <Route path="/register/dataset" element={<RegisterDataset />} />
         <Route path="/register/table" element={<RegisterTable />} />
         <Route path="/trusted" element={<TrustedData />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/browse" replace />} />
       </Routes>
     </Layout>
   )

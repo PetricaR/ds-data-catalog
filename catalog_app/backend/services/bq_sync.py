@@ -14,7 +14,7 @@ from google.cloud import bigquery, secretmanager
 from google.oauth2 import service_account
 from sqlalchemy.orm import Session
 
-from ..models.catalog import Dataset, Table, TableColumn
+from ..models.catalog import Dataset, SchemaChange, Table, TableColumn
 
 logger = logging.getLogger(__name__)
 
@@ -219,17 +219,42 @@ def sync_project(
 
             # ── Columns ───────────────────────────────────────────────────────
             if bq_tbl.schema:
-                # Replace columns wholesale on every sync
+                # Snapshot existing columns before replacing (preserve user data)
+                existing_cols = {
+                    c.name: c
+                    for c in db.query(TableColumn).filter(TableColumn.table_id == db_tbl.id).all()
+                }
+                existing_names = set(existing_cols.keys())
+                new_names = {field.name for field in bq_tbl.schema}
+
+                # Detect and record schema changes
+                for col_name in sorted(new_names - existing_names):
+                    db.add(SchemaChange(
+                        table_id=db_tbl.id,
+                        change_type="column_added",
+                        column_name=col_name,
+                    ))
+                    logger.info("Schema change — column added: %s.%s.%s", ds_id, tbl_id, col_name)
+                for col_name in sorted(existing_names - new_names):
+                    db.add(SchemaChange(
+                        table_id=db_tbl.id,
+                        change_type="column_removed",
+                        column_name=col_name,
+                    ))
+                    logger.info("Schema change — column removed: %s.%s.%s", ds_id, tbl_id, col_name)
+
+                # Replace columns, preserving user-edited descriptions and pk flags
                 db.query(TableColumn).filter(TableColumn.table_id == db_tbl.id).delete()
                 for pos, field in enumerate(bq_tbl.schema):
+                    old = existing_cols.get(field.name)
                     db.add(
                         TableColumn(
                             table_id=db_tbl.id,
                             name=field.name,
                             data_type=field.field_type,
-                            description=field.description,
+                            description=old.description if (old and old.description) else field.description,
                             is_nullable=(field.mode != "REQUIRED"),
-                            is_primary_key=False,
+                            is_primary_key=old.is_primary_key if old else False,
                             position=pos,
                         )
                     )

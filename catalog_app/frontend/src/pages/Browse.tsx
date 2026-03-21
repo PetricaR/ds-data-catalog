@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Collapse from '@mui/material/Collapse'
+import Grid from '@mui/material/Grid'
+import Card from '@mui/material/Card'
+import CardContent from '@mui/material/CardContent'
 import List from '@mui/material/List'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
@@ -29,13 +32,20 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import CloudIcon from '@mui/icons-material/Cloud'
 import StorageIcon from '@mui/icons-material/Storage'
 import TableChartIcon from '@mui/icons-material/TableChart'
+import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import VerifiedIcon from '@mui/icons-material/Verified'
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline'
+import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline'
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
+import DoneAllIcon from '@mui/icons-material/DoneAll'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import { datasetsApi } from '../api/datasets'
 import { tablesApi } from '../api/tables'
 import { bqApi } from '../api/bq'
+import { schemaChangesApi } from '../api/schemaChanges'
+import { searchApi } from '../api/search'
 import type { SyncResponse } from '../api/bq'
 import type { Dataset, SensitivityLabel } from '../api/types'
 
@@ -141,6 +151,27 @@ export default function Browse() {
     queryFn: () => datasetsApi.list({ limit: 200 }),
   })
 
+  const { data: stats } = useQuery({
+    queryKey: ['stats'],
+    queryFn: searchApi.stats,
+  })
+
+  const { data: schemaChanges = [] } = useQuery({
+    queryKey: ['schema-changes'],
+    queryFn: () => schemaChangesApi.list({ acknowledged: false }),
+    refetchInterval: 60_000,
+  })
+
+  const ackMutation = useMutation({
+    mutationFn: (id: string) => schemaChangesApi.acknowledge(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['schema-changes'] }),
+  })
+
+  const ackAllMutation = useMutation({
+    mutationFn: () => schemaChangesApi.acknowledgeAll(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['schema-changes'] }),
+  })
+
   const grouped = (datasets ?? []).reduce<Record<string, Dataset[]>>((acc, ds) => {
     if (!acc[ds.project_id]) acc[ds.project_id] = []
     acc[ds.project_id].push(ds)
@@ -149,14 +180,74 @@ export default function Browse() {
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
-        <Box>
-          <Typography variant="h5" fontWeight={700}>Browse Catalog</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Explore datasets and tables organized by GCP project
-          </Typography>
+      {/* Schema change alerts */}
+      <Collapse in={schemaChanges.length > 0}>
+        <Box sx={{ mb: 3, border: '1px solid #f9a825', borderRadius: 2, overflow: 'hidden' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2.5, py: 1.25, bgcolor: '#fffde7', borderBottom: '1px solid #f9a825' }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ flex: 1, color: '#e65100' }}>
+              Schema Changes Detected
+              <Chip label={schemaChanges.length} size="small" sx={{ ml: 1, height: 18, fontSize: '0.65rem', bgcolor: '#e65100', color: 'white' }} />
+            </Typography>
+            <Typography variant="caption" color="text.secondary">Detected on last sync</Typography>
+            <Button
+              size="small"
+              startIcon={<DoneAllIcon sx={{ fontSize: '14px !important' }} />}
+              onClick={() => ackAllMutation.mutate()}
+              disabled={ackAllMutation.isPending}
+              sx={{ fontSize: '0.72rem', textTransform: 'none', color: '#e65100' }}
+            >
+              Acknowledge all
+            </Button>
+          </Box>
+          {schemaChanges.slice(0, 8).map((c) => (
+            <Box
+              key={c.id}
+              sx={{
+                display: 'flex', alignItems: 'center', gap: 2, px: 2.5, py: 0.9,
+                borderBottom: '1px solid', borderColor: 'divider',
+                '&:last-child': { borderBottom: 'none' },
+                '&:hover': { bgcolor: '#fafafa' },
+              }}
+            >
+              {c.change_type === 'column_added'
+                ? <AddCircleOutlineIcon sx={{ fontSize: 15, color: '#2e7d32', flexShrink: 0 }} />
+                : <RemoveCircleOutlineIcon sx={{ fontSize: 15, color: '#c62828', flexShrink: 0 }} />}
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography
+                    variant="body2" fontWeight={500}
+                    sx={{ fontFamily: 'monospace', cursor: 'pointer', '&:hover': { color: '#1a73e8' } }}
+                    onClick={() => navigate(`/datasets/${c.dataset_uuid}/tables/${c.table_id}`)}
+                  >
+                    {c.project_id}.{c.dataset_id_str}.{c.table_table_id}
+                  </Typography>
+                  <Chip
+                    label={c.change_type === 'column_added' ? 'added' : 'removed'}
+                    size="small"
+                    sx={{ height: 16, fontSize: '0.6rem', bgcolor: c.change_type === 'column_added' ? '#e8f5e9' : '#ffebee', color: c.change_type === 'column_added' ? '#2e7d32' : '#c62828' }}
+                  />
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                  Column <strong style={{ fontFamily: 'monospace' }}>{c.column_name}</strong>
+                  {' · '}{new Date(c.detected_at).toLocaleString()}
+                </Typography>
+              </Box>
+              <IconButton size="small" onClick={() => ackMutation.mutate(c.id)} disabled={ackMutation.isPending} sx={{ color: 'text.disabled', '&:hover': { color: 'success.main' } }}>
+                <CheckCircleOutlineIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Box>
+          ))}
+          {schemaChanges.length > 8 && (
+            <Box sx={{ px: 2.5, py: 0.75, bgcolor: '#fffde7' }}>
+              <Typography variant="caption" color="text.secondary">+ {schemaChanges.length - 8} more</Typography>
+            </Box>
+          )}
         </Box>
+      </Collapse>
+
+      {/* Header row */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Typography variant="h6" fontWeight={700}>Browse Catalog</Typography>
         <Button
           variant="contained"
           startIcon={syncMutation.isPending ? <CircularProgress size={15} color="inherit" /> : <SyncIcon />}
@@ -167,6 +258,30 @@ export default function Browse() {
           {syncMutation.isPending ? 'Syncing…' : 'Sync from BigQuery'}
         </Button>
       </Box>
+
+      {/* Stats */}
+      {stats && (
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {[
+            { icon: <StorageIcon />, value: stats.total_datasets, label: 'Datasets', color: '#1a73e8' },
+            { icon: <TableChartIcon />, value: stats.total_tables, label: 'Tables', color: '#137333' },
+            { icon: <ViewColumnIcon />, value: stats.total_columns, label: 'Columns', color: '#e37400' },
+            { icon: <VerifiedIcon />, value: `${stats.documentation_coverage}%`, label: 'Documented', color: '#9334e6' },
+          ].map(({ icon, value, label, color }) => (
+            <Grid item xs={6} sm={3} key={label}>
+              <Card sx={{ height: '100%' }}>
+                <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                  <Box sx={{ p: 1, borderRadius: 2, backgroundColor: `${color}18`, color }}>{icon}</Box>
+                  <Box>
+                    <Typography variant="h5" fontWeight={700} sx={{ lineHeight: 1.2 }}>{value}</Typography>
+                    <Typography variant="caption" color="text.secondary">{label}</Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )}
 
       {/* Loading skeletons */}
       {isLoading && (

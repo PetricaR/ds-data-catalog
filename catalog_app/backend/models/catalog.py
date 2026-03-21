@@ -106,3 +106,16 @@ class TableColumn(Base):
     position = Column(Integer, default=0)
 
     table = relationship("Table", back_populates="columns")
+
+
+class SchemaChange(Base):
+    __tablename__ = "schema_changes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    table_id = Column(UUID(as_uuid=True), ForeignKey("tables.id"), nullable=False, index=True)
+    change_type = Column(String(50), nullable=False)  # "column_added" | "column_removed"
+    column_name = Column(String(255), nullable=False)
+    detected_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    is_acknowledged = Column(Boolean, default=False, nullable=False)
+
+    table = relationship("Table")

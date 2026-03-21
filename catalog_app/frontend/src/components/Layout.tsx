@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { useLocation, Link } from 'react-router-dom'
 import AppBar from '@mui/material/AppBar'
 import Box from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
@@ -14,7 +14,6 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
 import Button from '@mui/material/Button'
-import HomeIcon from '@mui/icons-material/Home'
 import StorageIcon from '@mui/icons-material/Storage'
 import MenuIcon from '@mui/icons-material/Menu'
 import TableChartIcon from '@mui/icons-material/TableChart'
@@ -27,7 +26,6 @@ const DRAWER_WIDTH = 200
 const SECTIONS = [
   {
     items: [
-      { label: 'Home',         path: '/',        icon: <HomeIcon />    },
       { label: 'Browse',       path: '/browse',  icon: <StorageIcon /> },
       { label: 'Trusted Data', path: '/trusted', icon: <VerifiedIcon /> },
     ],
@@ -74,12 +72,9 @@ function NavItem({
 
 export default function Layout({ children }: { children: ReactNode }) {
   const location = useLocation()
-  const navigate = useNavigate()
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const isHome = location.pathname === '/'
 
-  const isActive = (path: string) =>
-    path === '/' ? location.pathname === '/' : location.pathname.startsWith(path)
+  const isActive = (path: string) => location.pathname.startsWith(path)
 
   const drawer = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', pt: 1.5, pb: 2 }}>
@@ -142,7 +137,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
           <Box
             component={Link}
-            to="/"
+            to="/browse"
             sx={{ display: 'flex', alignItems: 'center', gap: 1, textDecoration: 'none', mr: 2, flexShrink: 0 }}
           >
             <StorageIcon sx={{ color: '#1a73e8', fontSize: 26 }} />
@@ -151,11 +146,9 @@ export default function Layout({ children }: { children: ReactNode }) {
             </Typography>
           </Box>
 
-          {!isHome && (
-            <Box sx={{ flex: 1, maxWidth: 560 }}>
-              <SearchBar size="small" />
-            </Box>
-          )}
+          <Box sx={{ flex: 1, maxWidth: 560 }}>
+            <SearchBar size="small" />
+          </Box>
 
           <Box sx={{ flex: 1 }} />
 

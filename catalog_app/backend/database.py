@@ -32,6 +32,16 @@ def init_db():
             "ALTER TABLE tables ADD COLUMN IF NOT EXISTS validated_at TIMESTAMPTZ",
             "ALTER TABLE tables ADD COLUMN IF NOT EXISTS example_queries JSONB NOT NULL DEFAULT '[]'",
             "ALTER TABLE tables ADD COLUMN IF NOT EXISTS validated_columns JSONB NOT NULL DEFAULT '[]'",
+            """CREATE TABLE IF NOT EXISTS schema_changes (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                table_id UUID NOT NULL REFERENCES tables(id),
+                change_type VARCHAR(50) NOT NULL,
+                column_name VARCHAR(255) NOT NULL,
+                detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                is_acknowledged BOOLEAN NOT NULL DEFAULT FALSE
+            )""",
+            "CREATE INDEX IF NOT EXISTS ix_schema_changes_table_id ON schema_changes(table_id)",
+            "CREATE INDEX IF NOT EXISTS ix_schema_changes_acknowledged ON schema_changes(is_acknowledged)",
         ]:
             conn.execute(text(ddl))
         conn.commit()

@@ -38,11 +38,15 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import CheckIcon from '@mui/icons-material/Check'
 import EditNoteIcon from '@mui/icons-material/EditNote'
 import SaveIcon from '@mui/icons-material/Save'
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline'
+import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline'
+import DoneAllIcon from '@mui/icons-material/DoneAll'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import ValidationWizard from '../components/ValidationWizard'
 import { tablesApi } from '../api/tables'
 import { datasetsApi } from '../api/datasets'
+import { schemaChangesApi } from '../api/schemaChanges'
 import type { ExampleQuery, SensitivityLabel } from '../api/types'
 
 function bytes(n: number) {
@@ -66,6 +70,8 @@ export default function TableDetail() {
   const [expandedQueries, setExpandedQueries] = useState<Set<number>>(new Set())
 
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const [editingColId, setEditingColId] = useState<string | null>(null)
+  const [colDescDraft, setColDescDraft] = useState('')
 
   const toggleExpand = (i: number) =>
     setExpandedQueries((prev) => {
@@ -79,6 +85,48 @@ export default function TableDetail() {
     setCopiedIndex(i)
     setTimeout(() => setCopiedIndex(null), 2000)
   }
+
+  const { data: tableChanges = [] } = useQuery({
+    queryKey: ['schema-changes', tableId],
+    queryFn: () => schemaChangesApi.list({ acknowledged: false, table_id: tableId }),
+    enabled: !!tableId,
+  })
+
+  const ackChangeMutation = useMutation({
+    mutationFn: (id: string) => schemaChangesApi.acknowledge(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schema-changes', tableId] })
+      qc.invalidateQueries({ queryKey: ['schema-changes'] })
+    },
+  })
+
+  const ackAllChangesMutation = useMutation({
+    mutationFn: () => schemaChangesApi.acknowledgeAll(tableId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schema-changes', tableId] })
+      qc.invalidateQueries({ queryKey: ['schema-changes'] })
+    },
+  })
+
+  const patchColMutation = useMutation({
+    mutationFn: (vars: { id: string; description: string }) =>
+      tablesApi.patchColumns(tableId!, [{ id: vars.id, description: vars.description }]),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
+  })
+
+  const startColEdit = (id: string, current: string | null) => {
+    setEditingColId(id)
+    setColDescDraft(current ?? '')
+  }
+
+  const commitColEdit = () => {
+    if (editingColId) {
+      patchColMutation.mutate({ id: editingColId, description: colDescDraft })
+    }
+    setEditingColId(null)
+  }
+
+  const cancelColEdit = () => setEditingColId(null)
 
   const validateMutation = useMutation({
     mutationFn: (payload: { validated_by: string; validated_columns: string[] }) =>
@@ -220,6 +268,65 @@ export default function TableDetail() {
         {table.tags.map((t) => <TagChip key={t} tag={t} />)}
       </Box>
 
+      {/* Schema change alerts */}
+      {tableChanges.length > 0 && (
+        <Box
+          sx={{
+            mb: 2, border: '1px solid #f9a825',
+            borderRadius: 2, overflow: 'hidden',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1, bgcolor: '#fffde7', borderBottom: '1px solid #f9a825' }}>
+            <Typography variant="caption" fontWeight={700} sx={{ color: '#e65100', flex: 1 }}>
+              {tableChanges.length} schema change{tableChanges.length !== 1 ? 's' : ''} detected since last sync
+            </Typography>
+            <Button
+              size="small"
+              startIcon={<DoneAllIcon sx={{ fontSize: '13px !important' }} />}
+              onClick={() => ackAllChangesMutation.mutate()}
+              disabled={ackAllChangesMutation.isPending}
+              sx={{ fontSize: '0.68rem', textTransform: 'none', color: '#e65100' }}
+            >
+              Acknowledge all
+            </Button>
+          </Box>
+          {tableChanges.map((c) => (
+            <Box
+              key={c.id}
+              sx={{
+                display: 'flex', alignItems: 'center', gap: 1.5,
+                px: 2, py: 0.75,
+                borderBottom: '1px solid', borderColor: 'divider',
+                '&:last-child': { borderBottom: 'none' },
+              }}
+            >
+              {c.change_type === 'column_added'
+                ? <AddCircleOutlineIcon sx={{ fontSize: 15, color: '#2e7d32' }} />
+                : <RemoveCircleOutlineIcon sx={{ fontSize: 15, color: '#c62828' }} />
+              }
+              <Typography variant="body2" sx={{ flex: 1 }}>
+                Column <strong style={{ fontFamily: 'monospace' }}>{c.column_name}</strong>
+                {' '}
+                <span style={{ color: c.change_type === 'column_added' ? '#2e7d32' : '#c62828' }}>
+                  {c.change_type === 'column_added' ? 'was added' : 'was removed'}
+                </span>
+                <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                  · {new Date(c.detected_at).toLocaleString()}
+                </Typography>
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={() => ackChangeMutation.mutate(c.id)}
+                disabled={ackChangeMutation.isPending}
+                sx={{ color: 'text.disabled', '&:hover': { color: 'success.main' } }}
+              >
+                <CheckIcon sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Box>
+          ))}
+        </Box>
+      )}
+
       <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
         Schema ({table.columns.length} columns)
       </Typography>
@@ -273,10 +380,47 @@ export default function TableDetail() {
                         {col.is_nullable ? 'YES' : 'NO'}
                       </Typography>
                     </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" color="text.secondary">
-                        {col.description || '—'}
-                      </Typography>
+                    <TableCell
+                      onClick={() => editingColId !== col.id && startColEdit(col.id, col.description)}
+                      sx={{ cursor: 'text', minWidth: 220 }}
+                    >
+                      {editingColId === col.id ? (
+                        <TextField
+                          autoFocus
+                          fullWidth
+                          size="small"
+                          variant="standard"
+                          value={colDescDraft}
+                          onChange={(e) => setColDescDraft(e.target.value)}
+                          onBlur={commitColEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); commitColEdit() }
+                            if (e.key === 'Escape') cancelColEdit()
+                          }}
+                          placeholder="Add description…"
+                          InputProps={{ sx: { fontSize: '0.82rem' } }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <Box
+                          sx={{
+                            display: 'flex', alignItems: 'center', gap: 0.5,
+                            '&:hover .edit-hint': { opacity: 1 },
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            color={col.description ? 'text.secondary' : 'text.disabled'}
+                            sx={{ fontStyle: col.description ? 'normal' : 'italic', flex: 1 }}
+                          >
+                            {col.description || 'Add description…'}
+                          </Typography>
+                          <EditNoteIcon
+                            className="edit-hint"
+                            sx={{ fontSize: 14, color: 'text.disabled', opacity: 0, transition: 'opacity 0.15s', flexShrink: 0 }}
+                          />
+                        </Box>
+                      )}
                     </TableCell>
                     {table.is_validated && (
                       <TableCell align="center">
