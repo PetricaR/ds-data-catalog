@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -43,8 +43,9 @@ interface ColumnDraft {
 
 export default function RegisterTable() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const qc = useQueryClient()
-  const [datasetId, setDatasetId] = useState('')
+  const [datasetId, setDatasetId] = useState(searchParams.get('datasetId') ?? '')
   const [form, setForm] = useState({
     table_id: '',
     display_name: '',

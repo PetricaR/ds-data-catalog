@@ -11,9 +11,9 @@ import Skeleton from '@mui/material/Skeleton'
 import Divider from '@mui/material/Divider'
 import Chip from '@mui/material/Chip'
 import Alert from '@mui/material/Alert'
+import Button from '@mui/material/Button'
 import TableChartIcon from '@mui/icons-material/TableChart'
-import PersonIcon from '@mui/icons-material/Person'
-import LocationOnIcon from '@mui/icons-material/LocationOn'
+import AddIcon from '@mui/icons-material/Add'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import { datasetsApi } from '../api/datasets'
@@ -119,9 +119,19 @@ export default function DatasetDetail() {
 
         {/* Right — tables */}
         <Grid item xs={12} md={8}>
-          <Typography variant="h6" fontWeight={600} gutterBottom>
-            Tables ({tables?.length ?? 0})
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Typography variant="h6" fontWeight={600}>
+              Tables ({tables?.length ?? 0})
+            </Typography>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => navigate(`/register/table?datasetId=${id}`)}
+            >
+              Register Table
+            </Button>
+          </Box>
 
           {tablesLoading ? (
             [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={80} sx={{ mb: 1 }} />)

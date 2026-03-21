@@ -11,6 +11,8 @@ export interface Dataset {
   tags: string[]
   sensitivity_label: SensitivityLabel
   bq_location: string | null
+  bq_created_at: string | null
+  bq_last_modified: string | null
   is_active: boolean
   created_at: string
   updated_at: string
