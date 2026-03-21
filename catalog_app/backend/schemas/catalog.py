@@ -22,6 +22,12 @@ class ColumnCreate(ColumnBase):
 
 class ColumnResponse(ColumnBase):
     id: UUID
+    is_pii: bool = False
+    approx_count_distinct: Optional[int] = None
+    null_pct: Optional[float] = None
+    min_val: Optional[str] = None
+    max_val: Optional[str] = None
+    last_stats_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -119,6 +125,9 @@ class TableResponse(TableBase):
     dataset_project_id: Optional[str] = None
     dataset_display_name: Optional[str] = None
     dataset_bq_dataset_id: Optional[str] = None
+    upstream_refs: list[str] = []
+    downstream_refs: list[str] = []
+    quality_score: Optional[float] = None
 
     model_config = {"from_attributes": True}
 

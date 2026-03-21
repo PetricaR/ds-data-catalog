@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -21,6 +22,19 @@ from ..database import Base
 
 def utcnow():
     return datetime.now(timezone.utc)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(255))
+    picture = Column(String(500))
+    role = Column(String(50), nullable=False, default="viewer")  # viewer | editor | admin
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    last_login = Column(DateTime(timezone=True))
 
 
 class Dataset(Base):
@@ -75,6 +89,9 @@ class Table(Base):
     validated_at = Column(DateTime(timezone=True))
     example_queries = Column(JSONB, default=list, server_default="[]")
     validated_columns = Column(JSONB, default=list, server_default="[]")
+    upstream_refs = Column(JSONB, default=list, nullable=False, server_default="[]")
+    downstream_refs = Column(JSONB, default=list, nullable=False, server_default="[]")
+    quality_score = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     search_vector = Column(TSVECTOR)
@@ -104,6 +121,12 @@ class TableColumn(Base):
     is_nullable = Column(Boolean, default=True)
     is_primary_key = Column(Boolean, default=False)
     position = Column(Integer, default=0)
+    is_pii = Column(Boolean, default=False, nullable=False)
+    approx_count_distinct = Column(BigInteger, nullable=True)
+    null_pct = Column(Float, nullable=True)
+    min_val = Column(String(255), nullable=True)
+    max_val = Column(String(255), nullable=True)
+    last_stats_at = Column(DateTime(timezone=True), nullable=True)
 
     table = relationship("Table", back_populates="columns")
 
@@ -119,3 +142,19 @@ class SchemaChange(Base):
     is_acknowledged = Column(Boolean, default=False, nullable=False)
 
     table = relationship("Table")
+
+
+class MetadataChangeLog(Base):
+    __tablename__ = "metadata_change_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entity_type = Column(String(50), nullable=False)  # "dataset" | "table"
+    entity_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    entity_name = Column(String(255))
+    field_changed = Column(String(100))
+    old_value = Column(Text)
+    new_value = Column(Text)
+    changed_by = Column(String(255))  # email or "system"
+    changed_at = Column(DateTime(timezone=True), default=utcnow)
+    data_steward = Column(String(255))  # steward at time of change
+    is_notified = Column(Boolean, default=False)

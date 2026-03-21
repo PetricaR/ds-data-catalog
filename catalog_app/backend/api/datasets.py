@@ -6,10 +6,36 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models.catalog import Dataset, Table
+from ..dependencies.auth import get_current_user
+from ..models.catalog import Dataset, MetadataChangeLog, Table
 from ..schemas.catalog import DatasetCreate, DatasetResponse, DatasetUpdate
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
+
+
+def _log_dataset_field_changes(
+    db: Session,
+    ds: Dataset,
+    update_data: dict,
+    changed_by: str = "system",
+):
+    watch_fields = ["description", "sensitivity_label", "owner", "data_steward", "tags"]
+    for field in watch_fields:
+        if field not in update_data:
+            continue
+        old_val = getattr(ds, field, None)
+        new_val = update_data[field]
+        if old_val != new_val:
+            db.add(MetadataChangeLog(
+                entity_type="dataset",
+                entity_id=ds.id,
+                entity_name=ds.display_name or ds.dataset_id,
+                field_changed=field,
+                old_value=str(old_val) if old_val is not None else None,
+                new_value=str(new_val) if new_val is not None else None,
+                changed_by=changed_by,
+                data_steward=ds.data_steward,
+            ))
 
 
 def _dataset_response(ds: Dataset, db: Session) -> DatasetResponse:
@@ -68,19 +94,35 @@ def create_dataset(payload: DatasetCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{dataset_id}", response_model=DatasetResponse)
-def get_dataset(dataset_id: UUID, db: Session = Depends(get_db)):
+def get_dataset(
+    dataset_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
     ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.is_active == True).first()
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    if ds.sensitivity_label == "restricted" and (
+        not current_user or current_user["role"] not in ("editor", "admin")
+    ):
+        raise HTTPException(status_code=403, detail="This dataset is restricted. Admin or editor access required.")
     return _dataset_response(ds, db)
 
 
 @router.put("/{dataset_id}", response_model=DatasetResponse)
-def update_dataset(dataset_id: UUID, payload: DatasetUpdate, db: Session = Depends(get_db)):
+def update_dataset(
+    dataset_id: UUID,
+    payload: DatasetUpdate,
+    db: Session = Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
     ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.is_active == True).first()
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    for field, value in payload.model_dump(exclude_none=True).items():
+    update_data = payload.model_dump(exclude_none=True)
+    changed_by = (current_user or {}).get("email", "system")
+    _log_dataset_field_changes(db, ds, update_data, changed_by=changed_by)
+    for field, value in update_data.items():
         setattr(ds, field, value)
     db.commit()
     db.refresh(ds)

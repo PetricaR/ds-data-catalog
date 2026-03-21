@@ -1,16 +1,74 @@
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session, joinedload
 
 from ..config import settings
 from ..database import get_db
-from ..models.catalog import Dataset, Table, TableColumn
+from ..dependencies.auth import get_current_user
+from ..models.catalog import Dataset, MetadataChangeLog, Table, TableColumn
 from ..schemas.catalog import ColumnUpdate, ExampleQuery, QualityCheckResult, TableCreate, TableResponse, TableUpdate, ValidatePayload
 from ..services import bq_preview, bq_quality
 
 router = APIRouter(prefix="/tables", tags=["tables"])
+
+
+def _compute_quality_score(table: Table) -> float:
+    """
+    Score 0-100 based on:
+    - 30 pts: table has description
+    - 30 pts: column description coverage (% of cols with description)
+    - 20 pts: table is validated
+    - 10 pts: has tags
+    - 10 pts: has example queries
+    """
+    score = 0.0
+    if table.description:
+        score += 30
+    cols = table.columns
+    if cols:
+        desc_pct = sum(1 for c in cols if c.description) / len(cols)
+        score += 30 * desc_pct
+    if table.is_validated:
+        score += 20
+    if table.tags:
+        score += 10
+    if table.example_queries:
+        score += 10
+    return round(score, 1)
+
+
+def _log_field_changes(
+    db: Session,
+    entity_type: str,
+    entity_id,
+    entity_name: Optional[str],
+    old_obj,
+    new_data: dict,
+    changed_by: str = "system",
+    data_steward: Optional[str] = None,
+    fields: Optional[list] = None,
+):
+    """Log field-level changes to MetadataChangeLog."""
+    watch_fields = fields or ["description", "sensitivity_label", "owner", "data_steward", "tags"]
+    for field in watch_fields:
+        if field not in new_data:
+            continue
+        old_val = getattr(old_obj, field, None)
+        new_val = new_data[field]
+        if old_val != new_val:
+            db.add(MetadataChangeLog(
+                entity_type=entity_type,
+                entity_id=entity_id,
+                entity_name=entity_name,
+                field_changed=field,
+                old_value=str(old_val) if old_val is not None else None,
+                new_value=str(new_val) if new_val is not None else None,
+                changed_by=changed_by,
+                data_steward=data_steward or getattr(old_obj, "data_steward", None),
+            ))
 
 
 def _table_response(t: Table, db: Session) -> TableResponse:
@@ -86,12 +144,21 @@ def get_table(table_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.put("/{table_id}", response_model=TableResponse)
-def update_table(table_id: UUID, payload: TableUpdate, db: Session = Depends(get_db)):
-    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+def update_table(
+    table_id: UUID,
+    payload: TableUpdate,
+    db: Session = Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
-    for field, value in payload.model_dump(exclude_none=True).items():
+    update_data = payload.model_dump(exclude_none=True)
+    changed_by = (current_user or {}).get("email", "system")
+    _log_field_changes(db, "table", t.id, t.display_name or t.table_id, t, update_data, changed_by=changed_by)
+    for field, value in update_data.items():
         setattr(t, field, value)
+    t.quality_score = _compute_quality_score(t)
     db.commit()
     db.refresh(t)
     return _table_response(t, db)
@@ -99,8 +166,7 @@ def update_table(table_id: UUID, payload: TableUpdate, db: Session = Depends(get
 
 @router.patch("/{table_id}/validate", response_model=TableResponse)
 def validate_table(table_id: UUID, payload: ValidatePayload, db: Session = Depends(get_db)):
-    from datetime import datetime, timezone
-    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     if t.is_validated:
@@ -115,6 +181,7 @@ def validate_table(table_id: UUID, payload: ValidatePayload, db: Session = Depen
         t.validated_by = payload.validated_by or "anonymous"
         t.validated_at = datetime.now(timezone.utc)
         t.validated_columns = payload.validated_columns
+    t.quality_score = _compute_quality_score(t)
     db.commit()
     db.refresh(t)
     return _table_response(t, db)
@@ -122,7 +189,7 @@ def validate_table(table_id: UUID, payload: ValidatePayload, db: Session = Depen
 
 @router.patch("/{table_id}/columns", response_model=TableResponse)
 def update_columns(table_id: UUID, payload: list[ColumnUpdate], db: Session = Depends(get_db)):
-    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     col_map = {c.id: c for c in t.columns}
@@ -134,6 +201,7 @@ def update_columns(table_id: UUID, payload: list[ColumnUpdate], db: Session = De
             col.description = upd.description
         if upd.is_primary_key is not None:
             col.is_primary_key = upd.is_primary_key
+    t.quality_score = _compute_quality_score(t)
     db.commit()
     db.refresh(t)
     return _table_response(t, db)
@@ -190,13 +258,81 @@ def quality_check(table_id: UUID, db: Session = Depends(get_db)):
 
 @router.patch("/{table_id}/queries", response_model=TableResponse)
 def update_queries(table_id: UUID, payload: list[ExampleQuery], db: Session = Depends(get_db)):
-    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     t.example_queries = [q.model_dump() for q in payload]
+    t.quality_score = _compute_quality_score(t)
     db.commit()
     db.refresh(t)
     return _table_response(t, db)
+
+
+@router.patch("/{table_id}/columns/{column_id}/pii")
+def toggle_pii(
+    table_id: str,
+    column_id: str,
+    is_pii: bool = Body(..., embed=True),
+    db: Session = Depends(get_db),
+):
+    """Toggle PII flag for a specific column."""
+    col = db.query(TableColumn).filter(
+        TableColumn.id == UUID(column_id),
+        TableColumn.table_id == UUID(table_id),
+    ).first()
+    if not col:
+        raise HTTPException(status_code=404, detail="Column not found")
+    col.is_pii = is_pii
+    db.commit()
+    return {"id": str(col.id), "is_pii": col.is_pii}
+
+
+@router.put("/{table_id}/lineage")
+def update_lineage(
+    table_id: str,
+    upstream_refs: list[str] = Body(default=[]),
+    downstream_refs: list[str] = Body(default=[]),
+    db: Session = Depends(get_db),
+):
+    """Update upstream and downstream lineage references for a table."""
+    t = db.query(Table).filter(Table.id == UUID(table_id)).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    t.upstream_refs = upstream_refs
+    t.downstream_refs = downstream_refs
+    db.commit()
+    return {"upstream_refs": t.upstream_refs, "downstream_refs": t.downstream_refs}
+
+
+@router.post("/{table_id}/pull-stats")
+def pull_stats(table_id: str, db: Session = Depends(get_db)):
+    """Trigger column statistics pull from BigQuery."""
+    from ..services.bq_stats import pull_column_stats
+
+    t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == UUID(table_id)).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Parent dataset not found")
+
+    col_names = [c.name for c in t.columns]
+    stats = pull_column_stats(ds.project_id, ds.dataset_id, t.table_id, col_names)
+
+    now = datetime.now(timezone.utc)
+    updated = 0
+    for col in t.columns:
+        s = stats.get(col.name)
+        if s:
+            col.approx_count_distinct = s["approx_count_distinct"]
+            col.null_pct = s["null_pct"]
+            col.min_val = s["min_val"]
+            col.max_val = s["max_val"]
+            col.last_stats_at = now
+            updated += 1
+
+    db.commit()
+    return {"updated_columns": updated, "pulled_at": now.isoformat()}
 
 
 @router.delete("/{table_id}", status_code=status.HTTP_204_NO_CONTENT)

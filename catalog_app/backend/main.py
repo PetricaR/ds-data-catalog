@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import bq, datasets, schema_changes, search, stats, tables, tags
+from .api import auth, bq, datasets, notifications, schema_changes, search, stats, tables, tags
 from .config import settings
 from .database import init_db
 
@@ -30,6 +30,7 @@ app.add_middleware(
 )
 
 API_PREFIX = "/api/v1"
+app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(datasets.router, prefix=API_PREFIX)
 app.include_router(tables.router, prefix=API_PREFIX)
 app.include_router(search.router, prefix=API_PREFIX)
@@ -37,6 +38,7 @@ app.include_router(tags.router, prefix=API_PREFIX)
 app.include_router(stats.router, prefix=API_PREFIX)
 app.include_router(bq.router, prefix=API_PREFIX)
 app.include_router(schema_changes.router, prefix=API_PREFIX)
+app.include_router(notifications.router, prefix=API_PREFIX)
 
 
 @app.get("/health")

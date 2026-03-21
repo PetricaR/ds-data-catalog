@@ -42,6 +42,43 @@ def init_db():
             )""",
             "CREATE INDEX IF NOT EXISTS ix_schema_changes_table_id ON schema_changes(table_id)",
             "CREATE INDEX IF NOT EXISTS ix_schema_changes_acknowledged ON schema_changes(is_acknowledged)",
+            # ── New columns: table_columns ─────────────────────────────────
+            "ALTER TABLE table_columns ADD COLUMN IF NOT EXISTS is_pii BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE table_columns ADD COLUMN IF NOT EXISTS approx_count_distinct BIGINT",
+            "ALTER TABLE table_columns ADD COLUMN IF NOT EXISTS null_pct FLOAT",
+            "ALTER TABLE table_columns ADD COLUMN IF NOT EXISTS min_val VARCHAR(255)",
+            "ALTER TABLE table_columns ADD COLUMN IF NOT EXISTS max_val VARCHAR(255)",
+            "ALTER TABLE table_columns ADD COLUMN IF NOT EXISTS last_stats_at TIMESTAMPTZ",
+            # ── New columns: tables ────────────────────────────────────────
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS upstream_refs JSONB NOT NULL DEFAULT '[]'",
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS downstream_refs JSONB NOT NULL DEFAULT '[]'",
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS quality_score FLOAT",
+            # ── New tables ─────────────────────────────────────────────────
+            """CREATE TABLE IF NOT EXISTS users (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                email VARCHAR(255) UNIQUE NOT NULL,
+                name VARCHAR(255),
+                picture VARCHAR(500),
+                role VARCHAR(50) NOT NULL DEFAULT 'viewer',
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                last_login TIMESTAMPTZ
+            )""",
+            "CREATE INDEX IF NOT EXISTS ix_users_email ON users(email)",
+            """CREATE TABLE IF NOT EXISTS metadata_change_log (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                entity_type VARCHAR(50) NOT NULL,
+                entity_id UUID NOT NULL,
+                entity_name VARCHAR(255),
+                field_changed VARCHAR(100),
+                old_value TEXT,
+                new_value TEXT,
+                changed_by VARCHAR(255),
+                changed_at TIMESTAMPTZ DEFAULT NOW(),
+                data_steward VARCHAR(255),
+                is_notified BOOLEAN NOT NULL DEFAULT FALSE
+            )""",
+            "CREATE INDEX IF NOT EXISTS ix_metadata_change_log_entity_id ON metadata_change_log(entity_id)",
         ]:
             conn.execute(text(ddl))
         conn.commit()
