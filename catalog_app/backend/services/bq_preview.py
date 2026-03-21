@@ -20,12 +20,9 @@ def preview_table(
     credentials = _get_credentials(project_id, secret_name)
     client = _bq_client(project_id, credentials)
 
-    full_ref = f"`{project_id}.{dataset_id}.{table_id}`"
-    query = f"SELECT * FROM {full_ref} LIMIT {limit}"
     logger.info("Previewing %s.%s.%s", project_id, dataset_id, table_id)
-
-    job = client.query(query)
-    result = job.result()
+    table_ref = client.get_table(f"{project_id}.{dataset_id}.{table_id}")
+    result = client.list_rows(table_ref, max_results=limit)
 
     columns = [field.name for field in result.schema]
     rows = []

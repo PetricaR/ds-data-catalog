@@ -171,20 +171,9 @@ export default function TableDetail() {
       <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
         {/* Schema */}
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="h6" fontWeight={600}>
-              Schema ({table.columns.length} columns)
-            </Typography>
-            <Button
-              size="small"
-              variant={previewOpen ? 'contained' : 'outlined'}
-              startIcon={previewLoading ? <CircularProgress size={14} /> : <PreviewIcon />}
-              onClick={() => setPreviewOpen((o) => !o)}
-              color={previewOpen ? 'primary' : 'inherit'}
-            >
-              {previewOpen ? 'Hide Preview' : 'Preview Data'}
-            </Button>
-          </Box>
+          <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+            Schema ({table.columns.length} columns)
+          </Typography>
 
           <TableContainer component={Paper} variant="outlined">
             <Table size="small">
@@ -243,6 +232,18 @@ export default function TableDetail() {
               </TableBody>
             </Table>
           </TableContainer>
+
+          <Box sx={{ mt: 1.5 }}>
+            <Button
+              size="small"
+              variant={previewOpen ? 'contained' : 'outlined'}
+              startIcon={previewLoading ? <CircularProgress size={14} /> : <PreviewIcon />}
+              onClick={() => setPreviewOpen((o) => !o)}
+              color={previewOpen ? 'primary' : 'inherit'}
+            >
+              {previewOpen ? 'Hide Preview' : 'Preview Data'}
+            </Button>
+          </Box>
 
           {/* Data Preview */}
           {previewOpen && (
