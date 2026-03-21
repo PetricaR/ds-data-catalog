@@ -139,6 +139,7 @@ export default function Browse() {
       setSyncDialog(true)
       qc.invalidateQueries({ queryKey: ['datasets'] })
       qc.invalidateQueries({ queryKey: ['stats'] })
+      qc.invalidateQueries({ queryKey: ['schema-changes'] })
     },
     onError: (err: any) => {
       setSyncError(err.response?.data?.detail ?? 'Sync failed.')

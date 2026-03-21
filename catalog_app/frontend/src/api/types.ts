@@ -92,6 +92,7 @@ export interface Table {
   columns: Column[]
   dataset_project_id: string | null
   dataset_display_name: string | null
+  dataset_bq_dataset_id: string | null
 }
 
 export interface TableCreate {

@@ -118,6 +118,7 @@ class TableResponse(TableBase):
     columns: list[ColumnResponse] = []
     dataset_project_id: Optional[str] = None
     dataset_display_name: Optional[str] = None
+    dataset_bq_dataset_id: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

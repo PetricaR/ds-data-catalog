@@ -237,7 +237,7 @@ export default function TableDetail() {
             {table.display_name || table.table_id}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-            {table.dataset_project_id}.{table.dataset_id.toString()}.{table.table_id}
+            {table.dataset_project_id}.{table.dataset_bq_dataset_id || table.dataset_display_name}.{table.table_id}
           </Typography>
         </Box>
         <SensitivityChip label={table.sensitivity_label as SensitivityLabel} size="medium" />

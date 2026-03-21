@@ -19,6 +19,7 @@ def _table_response(t: Table, db: Session) -> TableResponse:
     if ds:
         resp.dataset_project_id = ds.project_id
         resp.dataset_display_name = ds.display_name or ds.dataset_id
+        resp.dataset_bq_dataset_id = ds.dataset_id
     return resp
 
 
@@ -145,6 +146,8 @@ def preview_estimate(table_id: UUID, db: Session = Depends(get_db)):
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Parent dataset not found")
     try:
         return bq_preview.estimate(ds.project_id, ds.dataset_id, t.table_id, settings.bq_secret_name)
     except Exception as exc:
@@ -158,6 +161,8 @@ def preview_run(table_id: UUID, db: Session = Depends(get_db)):
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Parent dataset not found")
     try:
         return bq_preview.run(ds.project_id, ds.dataset_id, t.table_id, settings.bq_secret_name)
     except Exception as exc:
@@ -171,6 +176,8 @@ def quality_check(table_id: UUID, db: Session = Depends(get_db)):
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Parent dataset not found")
     columns = [
         {"name": c.name, "data_type": c.data_type}
         for c in sorted(t.columns, key=lambda c: c.position)

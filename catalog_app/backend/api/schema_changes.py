@@ -22,7 +22,7 @@ def _enrich(change: SchemaChange, db: Session) -> SchemaChangeResponse:
         is_acknowledged=change.is_acknowledged,
         table_table_id=tbl.table_id if tbl else "",
         table_display_name=tbl.display_name if tbl else None,
-        dataset_uuid=ds.id if ds else tbl.dataset_id,
+        dataset_uuid=ds.id if ds else change.table_id,  # fallback to table_id to avoid None crash
         dataset_id_str=ds.dataset_id if ds else "",
         project_id=ds.project_id if ds else "",
     )
@@ -57,6 +57,6 @@ def acknowledge_all(table_id: UUID | None = None, db: Session = Depends(get_db))
     q = db.query(SchemaChange).filter(SchemaChange.is_acknowledged == False)  # noqa: E712
     if table_id:
         q = q.filter(SchemaChange.table_id == table_id)
-    count = q.update({"is_acknowledged": True})
+    count = q.update({"is_acknowledged": True}, synchronize_session=False)
     db.commit()
     return {"acknowledged": count}

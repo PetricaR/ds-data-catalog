@@ -22,7 +22,7 @@ export const schemaChangesApi = {
     client.patch<SchemaChange>(`/schema-changes/${id}/acknowledge`).then((r) => r.data),
 
   acknowledgeAll: (table_id?: string) =>
-    client.post<{ acknowledged: number }>('/schema-changes/acknowledge-all', null, {
+    client.post<{ acknowledged: number }>('/schema-changes/acknowledge-all', {}, {
       params: table_id ? { table_id } : undefined,
     }).then((r) => r.data),
 }
