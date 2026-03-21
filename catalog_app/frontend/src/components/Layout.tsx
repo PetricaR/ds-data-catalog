@@ -1,7 +1,10 @@
 import { useState, type ReactNode } from 'react'
 import { useLocation, Link } from 'react-router-dom'
 import AppBar from '@mui/material/AppBar'
+import Avatar from '@mui/material/Avatar'
+import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
+import Chip from '@mui/material/Chip'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
@@ -9,6 +12,8 @@ import ListItem from '@mui/material/ListItem'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Toolbar from '@mui/material/Toolbar'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
@@ -18,6 +23,10 @@ import StorageIcon from '@mui/icons-material/Storage'
 import MenuIcon from '@mui/icons-material/Menu'
 import TableChartIcon from '@mui/icons-material/TableChart'
 import VerifiedIcon from '@mui/icons-material/Verified'
+import NotificationsIcon from '@mui/icons-material/Notifications'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '../contexts/AuthContext'
+import { notificationsApi } from '../api/notifications'
 
 import SearchBar from './SearchBar'
 
@@ -73,6 +82,29 @@ function NavItem({
 export default function Layout({ children }: { children: ReactNode }) {
   const location = useLocation()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [notifAnchor, setNotifAnchor] = useState<null | HTMLElement>(null)
+  const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null)
+  const { user, logout } = useAuth()
+  const qc = useQueryClient()
+
+  const { data: notifications } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => notificationsApi.list(10),
+    refetchInterval: 30_000,
+  })
+
+  const dismissMutation = useMutation({
+    mutationFn: (id: string) => notificationsApi.dismiss(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  })
+
+  const dismissAllMutation = useMutation({
+    mutationFn: () => notificationsApi.dismissAll(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  })
+
+  const dismiss = (id: string) => dismissMutation.mutate(id)
+  const dismissAll = () => dismissAllMutation.mutate()
 
   const isActive = (path: string) => location.pathname.startsWith(path)
 
@@ -151,6 +183,83 @@ export default function Layout({ children }: { children: ReactNode }) {
           </Box>
 
           <Box sx={{ flex: 1 }} />
+
+          {/* Notifications */}
+          <Tooltip title="Notifications">
+            <IconButton onClick={(e) => setNotifAnchor(e.currentTarget)} sx={{ color: 'text.secondary' }}>
+              <Badge badgeContent={notifications?.length ?? 0} color="error" max={9}>
+                <NotificationsIcon />
+              </Badge>
+            </IconButton>
+          </Tooltip>
+          <Menu
+            anchorEl={notifAnchor}
+            open={!!notifAnchor}
+            onClose={() => setNotifAnchor(null)}
+            PaperProps={{ sx: { width: 360, maxHeight: 440 } }}
+          >
+            <Box sx={{ px: 2, py: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ flex: 1 }}>Metadata Changes</Typography>
+              {(notifications?.length ?? 0) > 0 && (
+                <Button size="small" sx={{ fontSize: '0.7rem' }} onClick={() => { dismissAll(); setNotifAnchor(null) }}>
+                  Clear all
+                </Button>
+              )}
+            </Box>
+            {!notifications?.length ? (
+              <MenuItem disabled>
+                <Typography variant="body2" color="text.secondary">No new notifications</Typography>
+              </MenuItem>
+            ) : (
+              notifications.map((n) => (
+                <MenuItem key={n.id} sx={{ alignItems: 'flex-start', gap: 1, py: 1 }} onClick={() => dismiss(n.id)}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" fontWeight={500} noWrap>{n.entity_name || n.entity_type}</Typography>
+                    <Typography variant="caption" color="text.secondary" noWrap>
+                      {n.field_changed} changed{n.changed_by ? ` by ${n.changed_by}` : ''}
+                    </Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, mt: 0.25 }}>
+                    {new Date(n.changed_at).toLocaleDateString()}
+                  </Typography>
+                </MenuItem>
+              ))
+            )}
+          </Menu>
+
+          {/* User menu */}
+          {user ? (
+            <>
+              <Tooltip title={`${user.name || user.email} (${user.role})`}>
+                <IconButton onClick={(e) => setUserMenuAnchor(e.currentTarget)} sx={{ p: 0.5 }}>
+                  {user.picture
+                    ? <Avatar src={user.picture} sx={{ width: 32, height: 32 }} />
+                    : <Avatar sx={{ width: 32, height: 32, fontSize: '0.85rem', bgcolor: '#1a73e8' }}>{(user.name || user.email)[0].toUpperCase()}</Avatar>
+                  }
+                </IconButton>
+              </Tooltip>
+              <Menu anchorEl={userMenuAnchor} open={!!userMenuAnchor} onClose={() => setUserMenuAnchor(null)}>
+                <Box sx={{ px: 2, py: 1 }}>
+                  <Typography variant="body2" fontWeight={600}>{user.name || user.email}</Typography>
+                  <Typography variant="caption" color="text.secondary">{user.email}</Typography>
+                  <Chip label={user.role} size="small" sx={{ mt: 0.5, fontSize: '0.65rem', height: 18 }} />
+                </Box>
+                <Divider />
+                <MenuItem onClick={() => { logout(); setUserMenuAnchor(null) }}>
+                  <Typography variant="body2" color="error">Sign out</Typography>
+                </MenuItem>
+              </Menu>
+            </>
+          ) : (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => { window.location.href = '/api/v1/auth/login' }}
+              sx={{ fontSize: '0.8rem', textTransform: 'none', ml: 1 }}
+            >
+              Sign in
+            </Button>
+          )}
 
         </Toolbar>
       </AppBar>

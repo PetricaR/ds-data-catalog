@@ -1,5 +1,5 @@
 import client from './client'
-import type { CatalogStats, SearchResponse } from './types'
+import type { CatalogStats, ColumnSearchResult, SearchResponse } from './types'
 
 export const searchApi = {
   search: (params: {
@@ -9,9 +9,13 @@ export const searchApi = {
     dataset_id?: string
     sensitivity_label?: string
     tags?: string[]
+    column_name?: string
     skip?: number
     limit?: number
   }) => client.get<SearchResponse>('/search', { params }).then((r) => r.data),
+
+  searchColumns: (name: string) =>
+    client.get<ColumnSearchResult[]>('/search/columns', { params: { name } }).then((r) => r.data),
 
   stats: () => client.get<CatalogStats>('/stats').then((r) => r.data),
 

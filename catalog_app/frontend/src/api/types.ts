@@ -51,6 +51,12 @@ export interface Column {
   is_nullable: boolean
   is_primary_key: boolean
   position: number
+  is_pii: boolean
+  approx_count_distinct: number | null
+  null_pct: number | null
+  min_val: string | null
+  max_val: string | null
+  last_stats_at: string | null
 }
 
 export interface ExampleQuery {
@@ -93,6 +99,9 @@ export interface Table {
   dataset_project_id: string | null
   dataset_display_name: string | null
   dataset_bq_dataset_id: string | null
+  upstream_refs: string[]
+  downstream_refs: string[]
+  quality_score: number | null
 }
 
 export interface TableCreate {
@@ -146,6 +155,42 @@ export interface QualityCheckResult {
   total_rows: number
   columns: QualityCheckColumn[]
   checked_at: string
+}
+
+export interface User {
+  id: string
+  email: string
+  name: string | null
+  picture: string | null
+  role: 'viewer' | 'editor' | 'admin'
+}
+
+export interface ColumnSearchResult {
+  column_id: string
+  column_name: string
+  data_type: string | null
+  is_pii: boolean
+  table_id: string
+  table_name: string
+  table_bq_id: string
+  dataset_id: string
+  dataset_name: string
+  dataset_bq_id: string
+  project_id: string
+}
+
+export interface MetadataNotification {
+  id: string
+  entity_type: 'dataset' | 'table'
+  entity_id: string
+  entity_name: string | null
+  field_changed: string | null
+  old_value: string | null
+  new_value: string | null
+  changed_by: string | null
+  changed_at: string
+  data_steward: string | null
+  is_notified: boolean
 }
 
 export interface CatalogStats {

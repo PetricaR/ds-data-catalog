@@ -5,19 +5,31 @@ import SearchResults from './pages/SearchResults'
 import DatasetDetail from './pages/DatasetDetail'
 import TableDetail from './pages/TableDetail'
 import TrustedData from './pages/TrustedData'
+import Login from './pages/Login'
+import { AuthProvider } from './contexts/AuthContext'
 
 export default function App() {
   return (
-    <Layout>
+    <AuthProvider>
       <Routes>
-        <Route path="/" element={<Navigate to="/browse" replace />} />
-        <Route path="/browse" element={<Browse />} />
-        <Route path="/search" element={<SearchResults />} />
-        <Route path="/datasets/:id" element={<DatasetDetail />} />
-        <Route path="/datasets/:datasetId/tables/:tableId" element={<TableDetail />} />
-        <Route path="/trusted" element={<TrustedData />} />
-        <Route path="*" element={<Navigate to="/browse" replace />} />
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="*"
+          element={
+            <Layout>
+              <Routes>
+                <Route path="/" element={<Navigate to="/browse" replace />} />
+                <Route path="/browse" element={<Browse />} />
+                <Route path="/search" element={<SearchResults />} />
+                <Route path="/datasets/:id" element={<DatasetDetail />} />
+                <Route path="/datasets/:datasetId/tables/:tableId" element={<TableDetail />} />
+                <Route path="/trusted" element={<TrustedData />} />
+                <Route path="*" element={<Navigate to="/browse" replace />} />
+              </Routes>
+            </Layout>
+          }
+        />
       </Routes>
-    </Layout>
+    </AuthProvider>
   )
 }

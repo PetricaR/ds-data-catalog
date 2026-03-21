@@ -41,6 +41,9 @@ import SaveIcon from '@mui/icons-material/Save'
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline'
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline'
 import DoneAllIcon from '@mui/icons-material/DoneAll'
+import SecurityIcon from '@mui/icons-material/Security'
+import BarChartIcon from '@mui/icons-material/BarChart'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import ValidationWizard from '../components/ValidationWizard'
@@ -72,6 +75,8 @@ export default function TableDetail() {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [editingColId, setEditingColId] = useState<string | null>(null)
   const [colDescDraft, setColDescDraft] = useState('')
+  const [editingLineage, setEditingLineage] = useState(false)
+  const [lineageDraft, setLineageDraft] = useState({ upstream: [''], downstream: [''] })
 
   const toggleExpand = (i: number) =>
     setExpandedQueries((prev) => {
@@ -143,6 +148,26 @@ export default function TableDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
   })
 
+  const piiMutation = useMutation({
+    mutationFn: ({ colId, isPii }: { colId: string; isPii: boolean }) =>
+      tablesApi.togglePii(tableId!, colId, isPii),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
+  })
+
+  const pullStatsMutation = useMutation({
+    mutationFn: () => tablesApi.pullStats(tableId!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
+  })
+
+  const lineageMutation = useMutation({
+    mutationFn: (refs: { upstream: string[]; downstream: string[] }) =>
+      tablesApi.updateLineage(tableId!, refs.upstream, refs.downstream),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['table', tableId] })
+      setEditingLineage(false)
+    },
+  })
+
   const { data: table, isLoading } = useQuery({
     queryKey: ['table', tableId],
     queryFn: () => tablesApi.get(tableId!),
@@ -152,6 +177,10 @@ export default function TableDetail() {
   useEffect(() => {
     if (table && queries === null) {
       setQueries(table.example_queries ?? [])
+      setLineageDraft({
+        upstream: table.upstream_refs?.length ? table.upstream_refs : [''],
+        downstream: table.downstream_refs?.length ? table.downstream_refs : [''],
+      })
     }
   }, [table]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -265,6 +294,21 @@ export default function TableDetail() {
           <Chip label={bytes(table.size_bytes)} size="small" variant="outlined" />
         )}
         <Chip label={`${table.columns.length} columns`} size="small" variant="outlined" />
+        {table.quality_score != null && (
+          <Tooltip title="Data quality score (0–100). Based on description, column docs, validation, tags, and example queries.">
+            <Chip
+              label={`Quality: ${table.quality_score}%`}
+              size="small"
+              variant="outlined"
+              sx={{
+                bgcolor: table.quality_score >= 80 ? '#e6f4ea' : table.quality_score >= 50 ? '#fff8e1' : '#fce8e6',
+                color: table.quality_score >= 80 ? '#137333' : table.quality_score >= 50 ? '#e37400' : '#c62828',
+                borderColor: 'transparent',
+                fontWeight: 600,
+              }}
+            />
+          </Tooltip>
+        )}
         {table.tags.map((t) => <TagChip key={t} tag={t} />)}
       </Box>
 
@@ -327,9 +371,22 @@ export default function TableDetail() {
         </Box>
       )}
 
-      <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
-        Schema ({table.columns.length} columns)
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+        <Typography variant="h6" fontWeight={600}>
+          Schema ({table.columns.length} columns)
+        </Typography>
+        <Box sx={{ flex: 1 }} />
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={pullStatsMutation.isPending ? <CircularProgress size={12} /> : <BarChartIcon />}
+          onClick={() => pullStatsMutation.mutate()}
+          disabled={pullStatsMutation.isPending}
+          sx={{ fontSize: '0.72rem', textTransform: 'none' }}
+        >
+          {pullStatsMutation.isPending ? 'Pulling…' : 'Pull stats'}
+        </Button>
+      </Box>
 
       {/* Schema table + Metadata side by side — same height */}
       <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'stretch', mb: 2 }}>
@@ -341,6 +398,8 @@ export default function TableDetail() {
                 <TableCell>Column</TableCell>
                 <TableCell>Type</TableCell>
                 <TableCell>Nullable</TableCell>
+                <TableCell>PII</TableCell>
+                <TableCell>Stats</TableCell>
                 <TableCell>Description</TableCell>
                 {table.is_validated && <TableCell align="center" sx={{ width: 80 }}>Validated</TableCell>}
               </TableRow>
@@ -348,7 +407,7 @@ export default function TableDetail() {
             <TableBody>
               {table.columns.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={table.is_validated ? 6 : 5} align="center">
+                  <TableCell colSpan={table.is_validated ? 8 : 7} align="center">
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                       No columns registered
                     </Typography>
@@ -379,6 +438,34 @@ export default function TableDetail() {
                       <Typography variant="body2" color={col.is_nullable ? 'text.secondary' : 'error.main'}>
                         {col.is_nullable ? 'YES' : 'NO'}
                       </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Tooltip title={col.is_pii ? 'PII — click to unflag' : 'Not PII — click to flag'}>
+                        <IconButton size="small" onClick={() => piiMutation.mutate({ colId: col.id, isPii: !col.is_pii })}>
+                          <SecurityIcon sx={{ fontSize: 15, color: col.is_pii ? '#c62828' : 'text.disabled' }} />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap', fontSize: '0.72rem', color: 'text.secondary' }}>
+                      {col.last_stats_at ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                          {col.approx_count_distinct != null && (
+                            <Typography variant="caption">~{col.approx_count_distinct.toLocaleString()} distinct</Typography>
+                          )}
+                          {col.null_pct != null && (
+                            <Typography variant="caption" color={col.null_pct > 20 ? 'warning.main' : 'text.secondary'}>
+                              {col.null_pct}% null
+                            </Typography>
+                          )}
+                          {(col.min_val != null || col.max_val != null) && (
+                            <Typography variant="caption">
+                              {col.min_val ?? '?'} – {col.max_val ?? '?'}
+                            </Typography>
+                          )}
+                        </Box>
+                      ) : (
+                        <Typography variant="caption" color="text.disabled">—</Typography>
+                      )}
                     </TableCell>
                     <TableCell
                       onClick={() => editingColId !== col.id && startColEdit(col.id, col.description)}
@@ -739,6 +826,89 @@ export default function TableDetail() {
             </Alert>
           )}
         </Box>
+      </Box>
+
+      {/* Data Lineage */}
+      <Box sx={{ mt: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <AccountTreeIcon sx={{ color: 'text.secondary' }} />
+          <Typography variant="h6" fontWeight={600}>Data Lineage</Typography>
+          <Box sx={{ flex: 1 }} />
+          {!editingLineage && (
+            <Button size="small" variant="outlined" startIcon={<EditNoteIcon />} onClick={() => setEditingLineage(true)}>
+              Edit
+            </Button>
+          )}
+        </Box>
+
+        {editingLineage ? (
+          <Box>
+            <TextField
+              fullWidth
+              multiline
+              minRows={2}
+              label="Upstream datasets (one per line)"
+              placeholder="project.dataset.table"
+              value={lineageDraft.upstream.join('\n')}
+              onChange={(e) => setLineageDraft(d => ({ ...d, upstream: e.target.value.split('\n') }))}
+              sx={{ mb: 2 }}
+              size="small"
+            />
+            <TextField
+              fullWidth
+              multiline
+              minRows={2}
+              label="Downstream datasets (one per line)"
+              placeholder="project.dataset.table"
+              value={lineageDraft.downstream.join('\n')}
+              onChange={(e) => setLineageDraft(d => ({ ...d, downstream: e.target.value.split('\n') }))}
+              sx={{ mb: 2 }}
+              size="small"
+            />
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+              <Button size="small" onClick={() => setEditingLineage(false)}>Cancel</Button>
+              <Button
+                size="small" variant="contained"
+                onClick={() => {
+                  lineageMutation.mutate({
+                    upstream: lineageDraft.upstream.filter(s => s.trim()),
+                    downstream: lineageDraft.downstream.filter(s => s.trim()),
+                  })
+                }}
+                disabled={lineageMutation.isPending}
+              >
+                Save
+              </Button>
+            </Box>
+          </Box>
+        ) : (
+          <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+            <Box sx={{ flex: 1, minWidth: 200 }}>
+              <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>
+                UPSTREAM (inputs)
+              </Typography>
+              {(table.upstream_refs ?? []).length === 0 ? (
+                <Typography variant="body2" color="text.disabled">None defined</Typography>
+              ) : (
+                (table.upstream_refs ?? []).map((ref) => (
+                  <Chip key={ref} label={ref} size="small" sx={{ fontFamily: 'monospace', mr: 0.5, mb: 0.5, fontSize: '0.72rem' }} />
+                ))
+              )}
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 200 }}>
+              <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>
+                DOWNSTREAM (consumers)
+              </Typography>
+              {(table.downstream_refs ?? []).length === 0 ? (
+                <Typography variant="body2" color="text.disabled">None defined</Typography>
+              ) : (
+                (table.downstream_refs ?? []).map((ref) => (
+                  <Chip key={ref} label={ref} size="small" sx={{ fontFamily: 'monospace', mr: 0.5, mb: 0.5, fontSize: '0.72rem' }} />
+                ))
+              )}
+            </Box>
+          </Box>
+        )}
       </Box>
 
       <ValidationWizard

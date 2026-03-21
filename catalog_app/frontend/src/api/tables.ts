@@ -37,5 +37,14 @@ export const tablesApi = {
   qualityCheck: (id: string) =>
     client.post<QualityCheckResult>(`/tables/${id}/quality-check`).then((r) => r.data),
 
+  togglePii: (tableId: string, columnId: string, is_pii: boolean) =>
+    client.patch(`/tables/${tableId}/columns/${columnId}/pii`, { is_pii }).then((r) => r.data),
+
+  updateLineage: (tableId: string, upstream_refs: string[], downstream_refs: string[]) =>
+    client.put(`/tables/${tableId}/lineage`, { upstream_refs, downstream_refs }).then((r) => r.data),
+
+  pullStats: (tableId: string) =>
+    client.post<{ updated_columns: number; pulled_at: string }>(`/tables/${tableId}/pull-stats`).then((r) => r.data),
+
   remove: (id: string) => client.delete(`/tables/${id}`),
 }
