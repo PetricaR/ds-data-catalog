@@ -74,6 +74,7 @@ class Table(Base):
     validated_by = Column(String(255))
     validated_at = Column(DateTime(timezone=True))
     example_queries = Column(JSONB, default=list, server_default="[]")
+    validated_columns = Column(JSONB, default=list, server_default="[]")
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     search_vector = Column(TSVECTOR)

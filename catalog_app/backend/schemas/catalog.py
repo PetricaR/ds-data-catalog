@@ -98,6 +98,11 @@ class TableUpdate(BaseModel):
     example_queries: Optional[list[ExampleQuery]] = None
 
 
+class ValidatePayload(BaseModel):
+    validated_by: str = "anonymous"
+    validated_columns: list[str] = []
+
+
 class TableResponse(TableBase):
     id: UUID
     row_count: Optional[int] = None
@@ -106,6 +111,7 @@ class TableResponse(TableBase):
     is_validated: bool = False
     validated_by: Optional[str] = None
     validated_at: Optional[datetime] = None
+    validated_columns: list[str] = []
     example_queries: list[ExampleQuery] = []
     created_at: datetime
     updated_at: datetime
@@ -143,6 +149,23 @@ class ColumnUpdate(BaseModel):
     id: UUID
     description: Optional[str] = None
     is_primary_key: Optional[bool] = None
+
+
+# ── Quality Check ─────────────────────────────────────────────────────────────
+
+class QualityCheckColumn(BaseModel):
+    name: str
+    data_type: Optional[str] = None
+    null_count: int
+    null_rate: float
+    min_value: Optional[str] = None
+    max_value: Optional[str] = None
+
+
+class QualityCheckResult(BaseModel):
+    total_rows: int
+    columns: list[QualityCheckColumn]
+    checked_at: str
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────

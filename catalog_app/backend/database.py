@@ -31,6 +31,7 @@ def init_db():
             "ALTER TABLE tables ADD COLUMN IF NOT EXISTS validated_by VARCHAR(255)",
             "ALTER TABLE tables ADD COLUMN IF NOT EXISTS validated_at TIMESTAMPTZ",
             "ALTER TABLE tables ADD COLUMN IF NOT EXISTS example_queries JSONB NOT NULL DEFAULT '[]'",
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS validated_columns JSONB NOT NULL DEFAULT '[]'",
         ]:
             conn.execute(text(ddl))
         conn.commit()

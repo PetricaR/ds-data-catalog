@@ -58,7 +58,14 @@ export interface ExampleQuery {
   sql: string
 }
 
-export interface TablePreview {
+export interface PreviewEstimate {
+  query: string
+  estimated_bytes: number
+  estimated_mb: number
+  estimated_cost_usd: number
+}
+
+export interface PreviewResult {
   columns: string[]
   rows: Record<string, string | null>[]
 }
@@ -78,6 +85,7 @@ export interface Table {
   is_validated: boolean
   validated_by: string | null
   validated_at: string | null
+  validated_columns: string[]
   example_queries: ExampleQuery[]
   created_at: string
   updated_at: string
@@ -122,6 +130,21 @@ export interface SearchResponse {
   query: string
   total: number
   results: SearchResult[]
+}
+
+export interface QualityCheckColumn {
+  name: string
+  data_type: string | null
+  null_count: number
+  null_rate: number
+  min_value?: string | null
+  max_value?: string | null
+}
+
+export interface QualityCheckResult {
+  total_rows: number
+  columns: QualityCheckColumn[]
+  checked_at: string
 }
 
 export interface CatalogStats {

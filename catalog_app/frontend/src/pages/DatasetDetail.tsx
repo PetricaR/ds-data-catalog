@@ -1,34 +1,27 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
-import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Link from '@mui/material/Link'
 import Skeleton from '@mui/material/Skeleton'
-import Divider from '@mui/material/Divider'
 import Chip from '@mui/material/Chip'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Tooltip from '@mui/material/Tooltip'
 import TableChartIcon from '@mui/icons-material/TableChart'
 import EditNoteIcon from '@mui/icons-material/EditNote'
+import PlaceIcon from '@mui/icons-material/Place'
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
+import PersonIcon from '@mui/icons-material/Person'
+import VerifiedIcon from '@mui/icons-material/Verified'
+import UpdateIcon from '@mui/icons-material/Update'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import { datasetsApi } from '../api/datasets'
 import type { SensitivityLabel } from '../api/types'
-
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
-  if (!value) return null
-  return (
-    <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
-      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 120 }}>{label}</Typography>
-      <Typography variant="body2">{value}</Typography>
-    </Box>
-  )
-}
 
 export default function DatasetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -71,110 +64,166 @@ export default function DatasetDetail() {
       </Breadcrumbs>
 
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="h4" fontWeight={700} gutterBottom>
-            {dataset.display_name || dataset.dataset_id}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-            {dataset.project_id}.{dataset.dataset_id}
-          </Typography>
+      <Box sx={{ mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 1 }}>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h5" fontWeight={700}>
+              {dataset.display_name || dataset.dataset_id}
+            </Typography>
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', color: 'text.disabled', mt: 0.25 }}>
+              {dataset.project_id}.{dataset.dataset_id}
+            </Typography>
+          </Box>
+          <SensitivityChip label={dataset.sensitivity_label as SensitivityLabel} size="medium" />
         </Box>
-        <SensitivityChip label={dataset.sensitivity_label as SensitivityLabel} size="medium" />
+
+        {dataset.description && (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            {dataset.description}
+          </Typography>
+        )}
+
+        {/* Inline metadata row */}
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          {dataset.bq_location && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <PlaceIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+              <Typography variant="caption" color="text.secondary">{dataset.bq_location}</Typography>
+            </Box>
+          )}
+          {dataset.owner && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <PersonIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+              <Typography variant="caption" color="text.secondary">Owner: {dataset.owner}</Typography>
+            </Box>
+          )}
+          {dataset.data_steward && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <PersonIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+              <Typography variant="caption" color="text.secondary">Steward: {dataset.data_steward}</Typography>
+            </Box>
+          )}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <CalendarTodayIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+            <Typography variant="caption" color="text.secondary">
+              Registered {new Date(dataset.created_at).toLocaleDateString()}
+            </Typography>
+          </Box>
+          {dataset.bq_created_at && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <CalendarTodayIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+              <Typography variant="caption" color="text.secondary">
+                Created {new Date(dataset.bq_created_at).toLocaleDateString()}
+              </Typography>
+            </Box>
+          )}
+          {dataset.tags.map((t) => <TagChip key={t} tag={t} />)}
+        </Box>
       </Box>
 
-      <Grid container spacing={3}>
-        {/* Left — metadata */}
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent>
-              <Typography variant="subtitle2" fontWeight={600} gutterBottom>About</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                {dataset.description || 'No description provided.'}
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <InfoRow label="Owner" value={dataset.owner} />
-              <InfoRow label="Data Steward" value={dataset.data_steward} />
-              <InfoRow label="Location" value={dataset.bq_location} />
-              <InfoRow
-                label="Created"
-                value={dataset.bq_created_at ? new Date(dataset.bq_created_at).toLocaleDateString() : undefined}
-              />
-              <InfoRow
-                label="Registered"
-                value={new Date(dataset.created_at).toLocaleDateString()}
-              />
-              {dataset.tags.length > 0 && (
-                <>
-                  <Divider sx={{ my: 2 }} />
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Tags</Typography>
-                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                    {dataset.tags.map((t) => <TagChip key={t} tag={t} />)}
-                  </Box>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
+      {/* Tables */}
+      <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+        Tables ({tables?.length ?? 0})
+      </Typography>
 
-        {/* Right — tables */}
-        <Grid item xs={12} md={8}>
-          <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-            Tables ({tables?.length ?? 0})
-          </Typography>
-
-          {tablesLoading ? (
-            [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={80} sx={{ mb: 1 }} />)
-          ) : tables?.length === 0 ? (
-            <Alert severity="info">No tables registered yet.</Alert>
-          ) : (
-            tables?.map((t) => (
-              <Card
-                key={t.id}
-                sx={{ mb: 1.5, cursor: 'pointer', '&:hover': { boxShadow: 2 } }}
-                onClick={() => navigate(`/datasets/${id}/tables/${t.id}`)}
-              >
-                <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                    <TableChartIcon sx={{ fontSize: 18, color: '#137333' }} />
+      {tablesLoading ? (
+        [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={80} sx={{ mb: 1 }} />)
+      ) : tables?.length === 0 ? (
+        <Alert severity="info">No tables registered yet.</Alert>
+      ) : (
+        tables?.map((t) => (
+          <Card
+            key={t.id}
+            sx={{ mb: 1.5, cursor: 'pointer', '&:hover': { boxShadow: 2 } }}
+            onClick={() => navigate(`/datasets/${id}/tables/${t.id}`)}
+          >
+            <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+              {/* Row 1: icon + name + validated + sensitivity + doc button */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                <TableChartIcon sx={{ fontSize: 18, color: t.is_validated ? '#2e7d32' : '#137333', flexShrink: 0 }} />
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                     <Typography variant="subtitle2" fontWeight={600}>
                       {t.display_name || t.table_id}
                     </Typography>
-                    <Box sx={{ flex: 1 }} />
-                    <SensitivityChip label={t.sensitivity_label as SensitivityLabel} />
-                    <Tooltip title={t.description ? 'Update documentation' : 'Add documentation'}>
-                      <Button
-                        size="small"
-                        variant={t.description ? 'text' : 'outlined'}
-                        startIcon={<EditNoteIcon sx={{ fontSize: '14px !important' }} />}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          navigate(`/register/table?datasetId=${id}&tableId=${t.id}`)
-                        }}
-                        sx={{ fontSize: '0.7rem', py: 0.3, minWidth: 0, color: t.description ? 'text.secondary' : 'primary.main' }}
-                      >
-                        {t.description ? 'Edit docs' : 'Document'}
-                      </Button>
-                    </Tooltip>
+                    {t.display_name && (
+                      <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.disabled' }}>
+                        {t.table_id}
+                      </Typography>
+                    )}
+                    {t.is_validated && (
+                      <Tooltip title={`Validated${t.validated_by ? ` by ${t.validated_by}` : ''}${t.validated_at ? ` · ${new Date(t.validated_at).toLocaleDateString()}` : ''}`}>
+                        <Chip
+                          icon={<VerifiedIcon sx={{ fontSize: '11px !important' }} />}
+                          label={t.validated_columns.length > 0 ? `${t.validated_columns.length} cols validated` : 'Validated'}
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                          sx={{ fontSize: '0.6rem', height: 18 }}
+                        />
+                      </Tooltip>
+                    )}
                   </Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ ml: 3.5 }} noWrap>
-                    {t.description || <em>No description — click Document to add</em>}
+                </Box>
+                <SensitivityChip label={t.sensitivity_label as SensitivityLabel} />
+                <Tooltip title={t.description ? 'Update documentation' : 'Add documentation'}>
+                  <Button
+                    size="small"
+                    variant={t.description ? 'text' : 'outlined'}
+                    startIcon={<EditNoteIcon sx={{ fontSize: '14px !important' }} />}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigate(`/register/table?datasetId=${id}&tableId=${t.id}`)
+                    }}
+                    sx={{ fontSize: '0.7rem', py: 0.3, minWidth: 0, flexShrink: 0, color: t.description ? 'text.secondary' : 'primary.main' }}
+                  >
+                    {t.description ? 'Edit docs' : 'Document'}
+                  </Button>
+                </Tooltip>
+              </Box>
+
+              {/* Row 2: description */}
+              <Typography variant="body2" color="text.secondary" sx={{ ml: 3.5, mb: 1 }} noWrap>
+                {t.description || <em style={{ color: '#aaa' }}>No description — click Document to add</em>}
+              </Typography>
+
+              {/* Row 3: stats chips + owner + updated */}
+              <Box sx={{ display: 'flex', gap: 1, ml: 3.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                {t.columns.length > 0 && (
+                  <Chip label={`${t.columns.length} cols`} size="small" sx={{ fontSize: '0.62rem', height: 20 }} />
+                )}
+                {t.row_count != null && (
+                  <Chip label={`${t.row_count.toLocaleString()} rows`} size="small" sx={{ fontSize: '0.62rem', height: 20 }} />
+                )}
+                {t.size_bytes != null && (
+                  <Chip
+                    label={t.size_bytes >= 1e9 ? `${(t.size_bytes / 1e9).toFixed(1)} GB`
+                      : t.size_bytes >= 1e6 ? `${(t.size_bytes / 1e6).toFixed(1)} MB`
+                      : t.size_bytes >= 1e3 ? `${(t.size_bytes / 1e3).toFixed(1)} KB`
+                      : `${t.size_bytes} B`}
+                    size="small"
+                    sx={{ fontSize: '0.62rem', height: 20 }}
+                  />
+                )}
+                {t.tags.slice(0, 3).map((tag) => <TagChip key={tag} tag={tag} />)}
+                <Box sx={{ flex: 1 }} />
+                {t.owner && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+                    <PersonIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+                    <Typography variant="caption" color="text.disabled">{t.owner}</Typography>
+                  </Box>
+                )}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+                  <UpdateIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+                  <Typography variant="caption" color="text.disabled">
+                    {new Date(t.updated_at).toLocaleDateString()}
                   </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, mt: 1, ml: 3.5, alignItems: 'center' }}>
-                    {t.columns.length > 0 && (
-                      <Chip label={`${t.columns.length} cols`} size="small" sx={{ fontSize: '0.65rem', height: 20 }} />
-                    )}
-                    {t.row_count != null && (
-                      <Chip label={`${t.row_count.toLocaleString()} rows`} size="small" sx={{ fontSize: '0.65rem', height: 20 }} />
-                    )}
-                    {t.tags.slice(0, 2).map((tag) => <TagChip key={tag} tag={tag} />)}
-                  </Box>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </Grid>
-      </Grid>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        ))
+      )}
     </Box>
   )
 }

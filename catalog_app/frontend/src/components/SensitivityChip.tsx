@@ -15,7 +15,9 @@ export default function SensitivityChip({
   label: SensitivityLabel
   size?: 'small' | 'medium'
 }) {
-  const { label: text, color, bg } = config[label] ?? config.internal
+  const cfg = config[label]
+  if (!cfg || label === 'internal') return null
+  const { label: text, color, bg } = cfg
   return (
     <Chip
       label={text}

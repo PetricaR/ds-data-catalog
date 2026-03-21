@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
@@ -23,15 +23,24 @@ import Tooltip from '@mui/material/Tooltip'
 import TextField from '@mui/material/TextField'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import KeyIcon from '@mui/icons-material/Key'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import PreviewIcon from '@mui/icons-material/Preview'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import CodeIcon from '@mui/icons-material/Code'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import CheckIcon from '@mui/icons-material/Check'
+import EditNoteIcon from '@mui/icons-material/EditNote'
 import SaveIcon from '@mui/icons-material/Save'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
+import ValidationWizard from '../components/ValidationWizard'
 import { tablesApi } from '../api/tables'
 import { datasetsApi } from '../api/datasets'
 import type { ExampleQuery, SensitivityLabel } from '../api/types'
@@ -48,21 +57,42 @@ export default function TableDetail() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
+  const previewScrollRef = useRef<HTMLDivElement>(null)
+  const [wizardOpen, setWizardOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [queries, setQueries] = useState<ExampleQuery[] | null>(null)
-  const [queriesDirty, setQueriesDirty] = useState(false)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null) // -1 = new
+  const [editDraft, setEditDraft] = useState<ExampleQuery>({ title: '', sql: '' })
+  const [expandedQueries, setExpandedQueries] = useState<Set<number>>(new Set())
+
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+
+  const toggleExpand = (i: number) =>
+    setExpandedQueries((prev) => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
+
+  const copySQL = (i: number, sql: string) => {
+    navigator.clipboard.writeText(sql)
+    setCopiedIndex(i)
+    setTimeout(() => setCopiedIndex(null), 2000)
+  }
 
   const validateMutation = useMutation({
-    mutationFn: () => tablesApi.validate(tableId!),
+    mutationFn: (payload: { validated_by: string; validated_columns: string[] }) =>
+      tablesApi.validate(tableId!, payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
+  })
+
+  const runPreviewMutation = useMutation({
+    mutationFn: () => tablesApi.previewRun(tableId!),
   })
 
   const saveQueriesMutation = useMutation({
     mutationFn: (qs: ExampleQuery[]) => tablesApi.patchQueries(tableId!, qs),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['table', tableId] })
-      setQueriesDirty(false)
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
   })
 
   const { data: table, isLoading } = useQuery({
@@ -75,11 +105,11 @@ export default function TableDetail() {
     if (table && queries === null) {
       setQueries(table.example_queries ?? [])
     }
-  }, [table])
+  }, [table]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { data: preview, isLoading: previewLoading, error: previewError } = useQuery({
-    queryKey: ['table', tableId, 'preview'],
-    queryFn: () => tablesApi.preview(tableId!),
+  const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery({
+    queryKey: ['table', tableId, 'preview-estimate'],
+    queryFn: () => tablesApi.previewEstimate(tableId!),
     enabled: previewOpen,
     retry: false,
   })
@@ -90,19 +120,40 @@ export default function TableDetail() {
     enabled: !!datasetId,
   })
 
-  const updateQuery = (i: number, field: keyof ExampleQuery, value: string) => {
-    setQueries((prev) => prev!.map((q, idx) => idx === i ? { ...q, [field]: value } : q))
-    setQueriesDirty(true)
+  const currentQueries = () => queries ?? []
+
+  const startAdd = () => {
+    setEditDraft({ title: '', sql: '' })
+    setEditingIndex(-1)
   }
 
-  const addQuery = () => {
-    setQueries((prev) => [...(prev ?? []), { title: '', sql: '' }])
-    setQueriesDirty(true)
+  const startEdit = (i: number) => {
+    setEditDraft({ ...currentQueries()[i] })
+    setEditingIndex(i)
   }
 
-  const removeQuery = (i: number) => {
-    setQueries((prev) => prev!.filter((_, idx) => idx !== i))
-    setQueriesDirty(true)
+  const cancelEdit = () => setEditingIndex(null)
+
+  const commitEdit = () => {
+    const qs = currentQueries()
+    const updated = editingIndex === -1
+      ? [...qs, editDraft]
+      : qs.map((q, i) => i === editingIndex ? editDraft : q)
+    setQueries(updated)
+    saveQueriesMutation.mutate(updated)
+    setEditingIndex(null)
+  }
+
+  const deleteQuery = (i: number) => {
+    const updated = currentQueries().filter((_, idx) => idx !== i)
+    setQueries(updated)
+    saveQueriesMutation.mutate(updated)
+  }
+
+  const saveFromPreview = (sql: string) => {
+    const updated = [...currentQueries(), { title: 'Sample query', sql }]
+    setQueries(updated)
+    saveQueriesMutation.mutate(updated)
   }
 
   if (isLoading) {
@@ -142,22 +193,23 @@ export default function TableDetail() {
           </Typography>
         </Box>
         <SensitivityChip label={table.sensitivity_label as SensitivityLabel} size="medium" />
-        <Tooltip title={table.is_validated ? 'Revoke validation' : 'Mark as trusted / validated source'}>
-          <Button
-            variant={table.is_validated ? 'contained' : 'outlined'}
-            size="small"
-            startIcon={<VerifiedIcon />}
-            onClick={() => validateMutation.mutate()}
-            disabled={validateMutation.isPending}
-            color={table.is_validated ? 'success' : 'inherit'}
-          >
-            {table.is_validated ? 'Validated' : 'Validate'}
-          </Button>
-        </Tooltip>
       </Box>
 
       {/* Stats chips */}
-      <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Tooltip title={table.is_validated ? 'Click to revoke trusted status' : 'Run validation wizard to mark as trusted'}>
+          <Button
+            variant={table.is_validated ? 'contained' : 'outlined'}
+            size="small"
+            startIcon={validateMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <VerifiedIcon />}
+            onClick={() => table.is_validated ? validateMutation.mutate({ validated_by: '', validated_columns: [] }) : setWizardOpen(true)}
+            disabled={validateMutation.isPending}
+            color={table.is_validated ? 'success' : 'inherit'}
+            sx={{ textTransform: 'none', fontWeight: 600 }}
+          >
+            {table.is_validated ? 'Trusted source' : 'Mark as trusted source'}
+          </Button>
+        </Tooltip>
         {table.row_count != null && (
           <Chip label={`${table.row_count.toLocaleString()} rows`} size="small" variant="outlined" />
         )}
@@ -168,127 +220,81 @@ export default function TableDetail() {
         {table.tags.map((t) => <TagChip key={t} tag={t} />)}
       </Box>
 
-      <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-        {/* Schema */}
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
-            Schema ({table.columns.length} columns)
-          </Typography>
+      <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+        Schema ({table.columns.length} columns)
+      </Typography>
 
-          <TableContainer component={Paper} variant="outlined">
-            <Table size="small">
-              <TableHead>
+      {/* Schema table + Metadata side by side — same height */}
+      <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'stretch', mb: 2 }}>
+        <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, minWidth: 0, alignSelf: 'stretch' }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>#</TableCell>
+                <TableCell>Column</TableCell>
+                <TableCell>Type</TableCell>
+                <TableCell>Nullable</TableCell>
+                <TableCell>Description</TableCell>
+                {table.is_validated && <TableCell align="center" sx={{ width: 80 }}>Validated</TableCell>}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {table.columns.length === 0 ? (
                 <TableRow>
-                  <TableCell>#</TableCell>
-                  <TableCell>Column</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell>Nullable</TableCell>
-                  <TableCell>Description</TableCell>
+                  <TableCell colSpan={table.is_validated ? 6 : 5} align="center">
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                      No columns registered
+                    </Typography>
+                  </TableCell>
                 </TableRow>
-              </TableHead>
-              <TableBody>
-                {table.columns.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} align="center">
-                      <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                        No columns registered
+              ) : (
+                table.columns.map((col) => (
+                  <TableRow key={col.id} hover>
+                    <TableCell sx={{ color: 'text.secondary', width: 40 }}>{col.position + 1}</TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {col.is_primary_key && (
+                          <KeyIcon sx={{ fontSize: 14, color: '#e37400' }} />
+                        )}
+                        <Typography variant="body2" fontWeight={col.is_primary_key ? 600 : 400} sx={{ fontFamily: 'monospace' }}>
+                          {col.name}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={col.data_type || '—'}
+                        size="small"
+                        sx={{ fontSize: '0.65rem', height: 20, fontFamily: 'monospace', backgroundColor: '#f1f3f4' }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color={col.is_nullable ? 'text.secondary' : 'error.main'}>
+                        {col.is_nullable ? 'YES' : 'NO'}
                       </Typography>
                     </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {col.description || '—'}
+                      </Typography>
+                    </TableCell>
+                    {table.is_validated && (
+                      <TableCell align="center">
+                        {table.validated_columns.includes(col.name)
+                          ? <VerifiedIcon sx={{ fontSize: 16, color: '#2e7d32' }} />
+                          : <Typography variant="caption" color="text.disabled">—</Typography>
+                        }
+                      </TableCell>
+                    )}
                   </TableRow>
-                ) : (
-                  table.columns.map((col) => (
-                    <TableRow key={col.id} hover>
-                      <TableCell sx={{ color: 'text.secondary', width: 40 }}>{col.position + 1}</TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          {col.is_primary_key && (
-                            <KeyIcon sx={{ fontSize: 14, color: '#e37400' }} />
-                          )}
-                          <Typography variant="body2" fontWeight={col.is_primary_key ? 600 : 400} sx={{ fontFamily: 'monospace' }}>
-                            {col.name}
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={col.data_type || '—'}
-                          size="small"
-                          sx={{ fontSize: '0.65rem', height: 20, fontFamily: 'monospace', backgroundColor: '#f1f3f4' }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" color={col.is_nullable ? 'text.secondary' : 'error.main'}>
-                          {col.is_nullable ? 'YES' : 'NO'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" color="text.secondary">
-                          {col.description || '—'}
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <Box sx={{ mt: 1.5 }}>
-            <Button
-              size="small"
-              variant={previewOpen ? 'contained' : 'outlined'}
-              startIcon={previewLoading ? <CircularProgress size={14} /> : <PreviewIcon />}
-              onClick={() => setPreviewOpen((o) => !o)}
-              color={previewOpen ? 'primary' : 'inherit'}
-            >
-              {previewOpen ? 'Hide Preview' : 'Preview Data'}
-            </Button>
-          </Box>
-
-          {/* Data Preview */}
-          {previewOpen && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
-                Data Preview (first 20 rows)
-              </Typography>
-              {previewLoading && <Skeleton variant="rounded" height={200} />}
-              {previewError && (
-                <Alert severity="error">
-                  {(previewError as any)?.response?.data?.detail ?? 'Failed to load preview.'}
-                </Alert>
+                ))
               )}
-              {preview && (
-                <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 360, overflow: 'auto' }}>
-                  <Table size="small" stickyHeader>
-                    <TableHead>
-                      <TableRow>
-                        {preview.columns.map((col) => (
-                          <TableCell key={col} sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.75rem', bgcolor: '#f8f9fa' }}>
-                            {col}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {preview.rows.map((row, i) => (
-                        <TableRow key={i} hover>
-                          {preview.columns.map((col) => (
-                            <TableCell key={col} sx={{ fontSize: '0.75rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {row[col] ?? <em style={{ color: '#aaa' }}>null</em>}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-            </Box>
-          )}
-        </Box>
+            </TableBody>
+          </Table>
+        </TableContainer>
 
         {/* Metadata */}
-        <Card sx={{ minWidth: 260, flex: '0 0 260px', mt: '40px' }}>
+        <Card sx={{ minWidth: 260, flex: '0 0 260px', alignSelf: 'stretch' }}>
           <CardContent>
             <Typography variant="subtitle2" fontWeight={600} gutterBottom>Metadata</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -313,67 +319,291 @@ export default function TableDetail() {
         </Card>
       </Box>
 
+      {/* Preview button + section */}
+      <Box>
+        <Box sx={{ mt: 1.5 }}>
+            <Button
+              size="small"
+              variant={previewOpen ? 'contained' : 'outlined'}
+              startIcon={estimateLoading ? <CircularProgress size={14} /> : <PreviewIcon />}
+              onClick={() => { setPreviewOpen((o) => { if (o) runPreviewMutation.reset(); return !o }) }}
+              color={previewOpen ? 'primary' : 'inherit'}
+            >
+              {previewOpen ? 'Hide Preview' : 'Preview Data'}
+            </Button>
+          </Box>
+
+          {/* Data Preview */}
+          {previewOpen && (
+            <Box sx={{ mt: 2 }}>
+              {estimateLoading && <Skeleton variant="rounded" height={120} />}
+              {estimateError && (
+                <Alert severity="error">
+                  {(estimateError as any)?.response?.data?.detail ?? 'Failed to load estimate.'}
+                </Alert>
+              )}
+              {estimate && !runPreviewMutation.data && (
+                <Card variant="outlined" sx={{ mb: 2 }}>
+                  <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Query to run</Typography>
+                    <Box
+                      component="pre"
+                      sx={{
+                        m: 0, p: 1.5, bgcolor: '#f8f9fa', borderRadius: 1,
+                        fontFamily: 'monospace', fontSize: '0.8rem',
+                        border: '1px solid', borderColor: 'divider',
+                        overflowX: 'auto', whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {estimate.query}
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1.5 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<SaveIcon />}
+                        onClick={() => saveFromPreview(estimate.query)}
+                      >
+                        Save query
+                      </Button>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                        <Typography variant="body2" color="text.secondary">
+                          Estimated: <strong>{estimate.estimated_mb} MB</strong>
+                          {estimate.estimated_cost_usd > 0
+                            ? ` (~$${estimate.estimated_cost_usd.toFixed(4)})`
+                            : ' (< $0.0001)'}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ flex: 1 }} />
+                      <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={runPreviewMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <PlayArrowIcon />}
+                        onClick={() => runPreviewMutation.mutate()}
+                        disabled={runPreviewMutation.isPending}
+                      >
+                        {runPreviewMutation.isPending ? 'Running…' : 'Run Query'}
+                      </Button>
+                    </Box>
+                    {runPreviewMutation.isError && (
+                      <Alert severity="error" sx={{ mt: 1 }}>
+                        {(runPreviewMutation.error as any)?.response?.data?.detail ?? 'Query failed.'}
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {runPreviewMutation.data && (
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Typography variant="subtitle2" fontWeight={600}>
+                      Results — {runPreviewMutation.data.rows.length} rows
+                    </Typography>
+                    <Box sx={{ flex: 1 }} />
+                    <IconButton size="small" onClick={() => { if (previewScrollRef.current) previewScrollRef.current.scrollLeft -= 300 }}>
+                      <ChevronLeftIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" onClick={() => { if (previewScrollRef.current) previewScrollRef.current.scrollLeft += 300 }}>
+                      <ChevronRightIcon fontSize="small" />
+                    </IconButton>
+                    <Button size="small" variant="text" onClick={() => runPreviewMutation.reset()}>
+                      Re-run
+                    </Button>
+                  </Box>
+                  <Paper variant="outlined" sx={{ borderRadius: 1 }}>
+                    <Box
+                      ref={previewScrollRef}
+                      sx={{ maxHeight: 400, overflowX: 'auto', overflowY: 'auto' }}
+                    >
+                      <Table size="small" sx={{ minWidth: 'max-content', tableLayout: 'auto' }}>
+                        <TableHead>
+                          <TableRow>
+                            {runPreviewMutation.data.columns.map((col) => (
+                              <TableCell key={col} sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.75rem', bgcolor: '#f8f9fa', whiteSpace: 'nowrap' }}>
+                                {col}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {runPreviewMutation.data.rows.map((row, i) => (
+                            <TableRow key={i} hover>
+                              {runPreviewMutation.data!.columns.map((col) => (
+                                <TableCell key={col} sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap', minWidth: 120 }}>
+                                  {row[col] ?? <em style={{ color: '#aaa' }}>null</em>}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </Box>
+                  </Paper>
+                </Box>
+              )}
+            </Box>
+          )}
+      </Box>
+
       {/* Example Queries */}
       <Box sx={{ mt: 4 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
           <CodeIcon sx={{ color: 'text.secondary' }} />
           <Typography variant="h6" fontWeight={600}>Example Queries</Typography>
+          <Chip label={displayQueries.length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
           <Box sx={{ flex: 1 }} />
-          {queriesDirty && (
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={saveQueriesMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <SaveIcon />}
-              onClick={() => saveQueriesMutation.mutate(displayQueries)}
-              disabled={saveQueriesMutation.isPending}
-            >
-              Save
+          {editingIndex === null && (
+            <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={startAdd}>
+              Add Query
             </Button>
           )}
-          <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={addQuery}>
-            Add Query
-          </Button>
         </Box>
 
-        {displayQueries.length === 0 ? (
-          <Alert severity="info" icon={<CodeIcon />}>
-            No example queries yet. Click <strong>Add Query</strong> to add a useful SQL snippet for this table.
-          </Alert>
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {displayQueries.map((q, i) => (
-              <Card key={i} variant="outlined">
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          {/* Saved queries list */}
+          {displayQueries.map((q, i) => (
+            editingIndex === i ? (
+              /* Edit form */
+              <Card key={`edit-${i}`} variant="outlined" sx={{ borderColor: 'primary.main', borderWidth: 2 }}>
                 <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                    <TextField
-                      size="small"
-                      label="Title"
-                      value={q.title}
-                      onChange={(e) => updateQuery(i, 'title', e.target.value)}
-                      sx={{ flex: '0 0 260px' }}
-                      placeholder="e.g. Get last 7 days"
-                    />
-                    <Box sx={{ flex: 1 }} />
-                    <IconButton size="small" color="error" onClick={() => removeQuery(i)}>
+                  <TextField
+                    fullWidth size="small" label="Title"
+                    value={editDraft.title}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, title: e.target.value }))}
+                    placeholder="e.g. Get last 7 days"
+                    sx={{ mb: 1.5 }}
+                    autoFocus
+                  />
+                  <TextField
+                    fullWidth multiline minRows={3} maxRows={10}
+                    label="SQL"
+                    value={editDraft.sql}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, sql: e.target.value }))}
+                    placeholder="SELECT * FROM ..."
+                    InputProps={{ sx: { fontFamily: 'monospace', fontSize: '0.82rem' } }}
+                    sx={{ mb: 1.5 }}
+                  />
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                    <Button size="small" onClick={cancelEdit}>Cancel</Button>
+                    <Button
+                      size="small" variant="contained"
+                      startIcon={saveQueriesMutation.isPending ? <CircularProgress size={13} color="inherit" /> : <SaveIcon />}
+                      onClick={commitEdit}
+                      disabled={!editDraft.title.trim() || !editDraft.sql.trim() || saveQueriesMutation.isPending}
+                    >
+                      Save
+                    </Button>
+                  </Box>
+                </CardContent>
+              </Card>
+            ) : (
+              /* Read-only card — title only, expand to see SQL */
+              <Card key={`query-${i}`} variant="outlined" sx={{ '&:hover': { borderColor: 'primary.light' } }}>
+                <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CodeIcon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0 }} />
+                    <Typography variant="subtitle2" fontWeight={600} sx={{ flex: 1 }}>
+                      {q.title || <em style={{ color: '#aaa' }}>Untitled</em>}
+                    </Typography>
+                    <Button
+                      size="small" variant="text"
+                      endIcon={<ExpandMoreIcon sx={{ transform: expandedQueries.has(i) ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />}
+                      onClick={() => toggleExpand(i)}
+                      sx={{ fontSize: '0.72rem', color: 'text.secondary', textTransform: 'none', minWidth: 0 }}
+                    >
+                      {expandedQueries.has(i) ? 'Hide' : 'Preview'}
+                    </Button>
+                    <IconButton size="small" onClick={() => startEdit(i)} disabled={editingIndex !== null}>
+                      <EditNoteIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" color="error" onClick={() => deleteQuery(i)} disabled={editingIndex !== null}>
                       <DeleteIcon fontSize="small" />
                     </IconButton>
                   </Box>
-                  <TextField
-                    fullWidth
-                    multiline
-                    minRows={2}
-                    maxRows={8}
-                    value={q.sql}
-                    onChange={(e) => updateQuery(i, 'sql', e.target.value)}
-                    placeholder="SELECT * FROM ..."
-                    InputProps={{ sx: { fontFamily: 'monospace', fontSize: '0.8rem' } }}
-                  />
+                  {expandedQueries.has(i) && (
+                    <Box sx={{ mt: 1, position: 'relative' }}>
+                      <Tooltip title={copiedIndex === i ? 'Copied!' : 'Copy SQL'}>
+                        <IconButton
+                          size="small"
+                          onClick={() => copySQL(i, q.sql)}
+                          sx={{ position: 'absolute', top: 6, right: 6, zIndex: 1, bgcolor: 'white', '&:hover': { bgcolor: '#f0f0f0' } }}
+                        >
+                          {copiedIndex === i
+                            ? <CheckIcon sx={{ fontSize: 15, color: 'success.main' }} />
+                            : <ContentCopyIcon sx={{ fontSize: 15 }} />}
+                        </IconButton>
+                      </Tooltip>
+                      <Box
+                        component="pre"
+                        sx={{
+                          m: 0, p: 1.5, pr: 5, bgcolor: '#f8f9fa', borderRadius: 1,
+                          fontFamily: 'monospace', fontSize: '0.8rem',
+                          border: '1px solid', borderColor: 'divider',
+                          overflowX: 'auto', whiteSpace: 'pre-wrap', color: 'text.primary',
+                        }}
+                      >
+                        {q.sql}
+                      </Box>
+                    </Box>
+                  )}
                 </CardContent>
               </Card>
-            ))}
-          </Box>
-        )}
+            )
+          ))}
+
+          {/* New query form */}
+          {editingIndex === -1 && (
+            <Card key="new-query" variant="outlined" sx={{ borderColor: 'primary.main', borderWidth: 2 }}>
+              <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                <TextField
+                  fullWidth size="small" label="Title"
+                  value={editDraft.title}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, title: e.target.value }))}
+                  placeholder="e.g. Get last 7 days"
+                  sx={{ mb: 1.5 }}
+                  autoFocus
+                />
+                <TextField
+                  fullWidth multiline minRows={3} maxRows={10}
+                  label="SQL"
+                  value={editDraft.sql}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, sql: e.target.value }))}
+                  placeholder="SELECT * FROM ..."
+                  InputProps={{ sx: { fontFamily: 'monospace', fontSize: '0.82rem' } }}
+                  sx={{ mb: 1.5 }}
+                />
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                  <Button size="small" onClick={cancelEdit}>Cancel</Button>
+                  <Button
+                    size="small" variant="contained"
+                    startIcon={saveQueriesMutation.isPending ? <CircularProgress size={13} color="inherit" /> : <SaveIcon />}
+                    onClick={commitEdit}
+                    disabled={!editDraft.title.trim() || !editDraft.sql.trim() || saveQueriesMutation.isPending}
+                  >
+                    Save
+                  </Button>
+                </Box>
+              </CardContent>
+            </Card>
+          )}
+
+          {displayQueries.length === 0 && editingIndex === null && (
+            <Alert severity="info" icon={<CodeIcon />}>
+              No example queries yet. Click <strong>Add Query</strong> to add a useful SQL snippet.
+            </Alert>
+          )}
+        </Box>
       </Box>
+
+      <ValidationWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        table={table}
+        onValidate={(validatedBy, validatedColumns) => validateMutation.mutate({ validated_by: validatedBy, validated_columns: validatedColumns })}
+        isValidating={validateMutation.isPending}
+      />
     </Box>
   )
 }

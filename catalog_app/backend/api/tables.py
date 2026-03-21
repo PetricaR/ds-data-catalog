@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..models.catalog import Dataset, Table, TableColumn
-from ..schemas.catalog import ColumnUpdate, ExampleQuery, TableCreate, TableResponse, TableUpdate
-from ..services.bq_preview import preview_table
+from ..schemas.catalog import ColumnUpdate, ExampleQuery, QualityCheckResult, TableCreate, TableResponse, TableUpdate, ValidatePayload
+from ..services import bq_preview, bq_quality
 
 router = APIRouter(prefix="/tables", tags=["tables"])
 
@@ -97,14 +97,23 @@ def update_table(table_id: UUID, payload: TableUpdate, db: Session = Depends(get
 
 
 @router.patch("/{table_id}/validate", response_model=TableResponse)
-def validate_table(table_id: UUID, validated_by: str = "anonymous", db: Session = Depends(get_db)):
+def validate_table(table_id: UUID, payload: ValidatePayload, db: Session = Depends(get_db)):
     from datetime import datetime, timezone
     t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
-    t.is_validated = not t.is_validated
-    t.validated_by = validated_by if t.is_validated else None
-    t.validated_at = datetime.now(timezone.utc) if t.is_validated else None
+    if t.is_validated:
+        # Revoke
+        t.is_validated = False
+        t.validated_by = None
+        t.validated_at = None
+        t.validated_columns = []
+    else:
+        # Mark as trusted
+        t.is_validated = True
+        t.validated_by = payload.validated_by or "anonymous"
+        t.validated_at = datetime.now(timezone.utc)
+        t.validated_columns = payload.validated_columns
     db.commit()
     db.refresh(t)
     return _table_response(t, db)
@@ -130,16 +139,46 @@ def update_columns(table_id: UUID, payload: list[ColumnUpdate], db: Session = De
 
 
 @router.get("/{table_id}/preview")
-def get_table_preview(table_id: UUID, db: Session = Depends(get_db)):
+def preview_estimate(table_id: UUID, db: Session = Depends(get_db)):
+    """Dry-run: returns query SQL + byte/cost estimate without reading any data."""
     t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
     try:
-        data = preview_table(ds.project_id, ds.dataset_id, t.table_id, settings.bq_secret_name)
+        return bq_preview.estimate(ds.project_id, ds.dataset_id, t.table_id, settings.bq_secret_name)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"BigQuery preview failed: {exc}")
-    return data
+        raise HTTPException(status_code=502, detail=f"Estimate failed: {exc}")
+
+
+@router.post("/{table_id}/preview/run")
+def preview_run(table_id: UUID, db: Session = Depends(get_db)):
+    """Execute the TABLESAMPLE query and return rows."""
+    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    try:
+        return bq_preview.run(ds.project_id, ds.dataset_id, t.table_id, settings.bq_secret_name)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"BigQuery query failed: {exc}")
+
+
+@router.post("/{table_id}/quality-check", response_model=QualityCheckResult)
+def quality_check(table_id: UUID, db: Session = Depends(get_db)):
+    """Run data quality checks: null rates per column + timestamp ranges."""
+    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    columns = [
+        {"name": c.name, "data_type": c.data_type}
+        for c in sorted(t.columns, key=lambda c: c.position)
+    ]
+    try:
+        return bq_quality.run(ds.project_id, ds.dataset_id, t.table_id, columns, settings.bq_secret_name)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Quality check failed: {exc}")
 
 
 @router.patch("/{table_id}/queries", response_model=TableResponse)
