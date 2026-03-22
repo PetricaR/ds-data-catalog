@@ -6,11 +6,12 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models.catalog import MetadataChangeLog
+from ..schemas.catalog import NotificationResponse
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
-@router.get("")
+@router.get("", response_model=list[NotificationResponse])
 def list_notifications(limit: int = 20, db: Session = Depends(get_db)):
     """Return recent unnotified metadata changes."""
     logs = (
@@ -20,22 +21,7 @@ def list_notifications(limit: int = 20, db: Session = Depends(get_db)):
         .limit(limit)
         .all()
     )
-    return [
-        {
-            "id": str(log.id),
-            "entity_type": log.entity_type,
-            "entity_id": str(log.entity_id),
-            "entity_name": log.entity_name,
-            "field_changed": log.field_changed,
-            "old_value": log.old_value,
-            "new_value": log.new_value,
-            "changed_by": log.changed_by,
-            "changed_at": log.changed_at.isoformat() if log.changed_at else None,
-            "data_steward": log.data_steward,
-            "is_notified": log.is_notified,
-        }
-        for log in logs
-    ]
+    return [NotificationResponse.model_validate(log) for log in logs]
 
 
 @router.post("/{notification_id}/dismiss")
