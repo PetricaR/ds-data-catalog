@@ -122,17 +122,16 @@ def callback(code: str, request: Request, db: Session = Depends(get_db)):
     db.refresh(user)
 
     jwt_token = _create_jwt(user)
-    return {
-        "access_token": jwt_token,
-        "token_type": "bearer",
-        "user": {
-            "id": str(user.id),
-            "email": user.email,
-            "name": user.name,
-            "picture": user.picture,
-            "role": user.role,
-        },
-    }
+    import json, urllib.parse
+    user_json = urllib.parse.quote(json.dumps({
+        "id": str(user.id),
+        "email": user.email,
+        "name": user.name,
+        "picture": user.picture,
+        "role": user.role,
+    }))
+    frontend_url = str(request.base_url).rstrip("/")
+    return RedirectResponse(url=f"{frontend_url}/login?token={jwt_token}&user={user_json}")
 
 
 @router.get("/me")

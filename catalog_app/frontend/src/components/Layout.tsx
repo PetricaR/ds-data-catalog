@@ -32,7 +32,7 @@ import SearchBar from './SearchBar'
 
 const DRAWER_WIDTH = 200
 
-const SECTIONS = [
+const SECTIONS: { heading?: string; items: { label: string; path: string; icon: ReactNode }[] }[] = [
   {
     items: [
       { label: 'Browse',       path: '/browse',  icon: <StorageIcon /> },

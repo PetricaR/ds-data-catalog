@@ -28,6 +28,7 @@ import Skeleton from '@mui/material/Skeleton'
 import InputAdornment from '@mui/material/InputAdornment'
 import TableChartIcon from '@mui/icons-material/TableChart'
 import AddIcon from '@mui/icons-material/Add'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 
 import { datasetsApi } from '../api/datasets'
 import { tablesApi } from '../api/tables'

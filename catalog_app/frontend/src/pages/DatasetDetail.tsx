@@ -232,6 +232,20 @@ export default function DatasetDetail() {
                   />
                 )}
                 {t.tags.slice(0, 3).map((tag) => <TagChip key={tag} tag={tag} />)}
+                {t.quality_score != null && (
+                  <Tooltip title="Data quality score (0–100): description, column docs, validation, tags, example queries">
+                    <Chip
+                      label={`Q: ${t.quality_score}%`}
+                      size="small"
+                      sx={{
+                        fontSize: '0.62rem', height: 20,
+                        bgcolor: t.quality_score >= 80 ? '#e6f4ea' : t.quality_score >= 50 ? '#fff8e1' : '#fce8e6',
+                        color: t.quality_score >= 80 ? '#137333' : t.quality_score >= 50 ? '#e37400' : '#c62828',
+                        fontWeight: 600,
+                      }}
+                    />
+                  </Tooltip>
+                )}
                 <Box sx={{ flex: 1 }} />
                 {t.owner && (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
