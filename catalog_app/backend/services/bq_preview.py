@@ -18,7 +18,11 @@ BQ_COST_PER_TB = 6.25  # USD per TiB (BigQuery on-demand pricing)
 
 
 def _get_query_credentials(project_id: str, secret_name: str):
-    """Full bigquery scope — needed for running jobs (dry-run + actual query)."""
+    """Full bigquery scope — needed for running jobs (dry-run + actual query).
+    Falls back to ADC when secret_name is empty."""
+    if not secret_name:
+        return None  # bigquery.Client will use ADC
+
     from google.cloud import secretmanager
     from google.oauth2 import service_account
     import json

@@ -15,9 +15,9 @@ import Tooltip from '@mui/material/Tooltip'
 import InputAdornment from '@mui/material/InputAdornment'
 import TextField from '@mui/material/TextField'
 import IconButton from '@mui/material/IconButton'
-import TableChartIcon from '@mui/icons-material/TableChart'
+import GridOnIcon from '@mui/icons-material/GridOn'
 import EditNoteIcon from '@mui/icons-material/EditNote'
-import PlaceIcon from '@mui/icons-material/Place'
+import LanguageIcon from '@mui/icons-material/Language'
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
 import PersonIcon from '@mui/icons-material/Person'
 import VerifiedIcon from '@mui/icons-material/Verified'
@@ -27,10 +27,14 @@ import FolderSpecialIcon from '@mui/icons-material/FolderSpecial'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
+import NumbersIcon from '@mui/icons-material/Numbers'
+import ViewWeekIcon from '@mui/icons-material/ViewWeek'
+import SdStorageIcon from '@mui/icons-material/SdStorage'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import { datasetsApi } from '../api/datasets'
 import type { ProjectUsage, SensitivityLabel } from '../api/types'
+import { pill, pillIcon, pillText, MONO_PATH, CARD_CONTENT_SX, CARD_ROW_MB } from '../design'
 
 export default function DatasetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -88,12 +92,12 @@ export default function DatasetDetail() {
 
       {/* Header */}
       <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: CARD_ROW_MB }}>
           <Box sx={{ flex: 1 }}>
             <Typography variant="h5" fontWeight={700}>
               {dataset.display_name || dataset.dataset_id}
             </Typography>
-            <Typography variant="body2" sx={{ fontFamily: 'monospace', color: 'text.disabled', mt: 0.25 }}>
+            <Typography variant="body2" sx={{ ...MONO_PATH, mt: 0.25 }}>
               {dataset.project_id}.{dataset.dataset_id}
             </Typography>
           </Box>
@@ -107,37 +111,23 @@ export default function DatasetDetail() {
         )}
 
         {/* Inline metadata row */}
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', alignItems: 'center' }}>
           {dataset.bq_location && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <PlaceIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-              <Typography variant="caption" color="text.secondary">{dataset.bq_location}</Typography>
-            </Box>
+            <Box sx={pill('blue')}><LanguageIcon sx={pillIcon('blue')} /><Typography sx={{ ...pillText, color: '#1a73e8' }}>{dataset.bq_location}</Typography></Box>
+          )}
+          {dataset.bq_created_at && (
+            <Box sx={pill('gray')}><CalendarTodayIcon sx={pillIcon('gray')} /><Typography sx={{ ...pillText, color: '#3c4043' }}>{new Date(dataset.bq_created_at).toLocaleDateString()}</Typography></Box>
           )}
           {dataset.owner && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <PersonIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-              <Typography variant="caption" color="text.secondary">Owner: {dataset.owner}</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 0.5 }}>
+              <PersonIcon sx={{ fontSize: 13, color: 'text.disabled' }} />
+              <Typography variant="caption" color="text.secondary">{dataset.owner}</Typography>
             </Box>
           )}
           {dataset.data_steward && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <PersonIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+              <PersonIcon sx={{ fontSize: 13, color: 'text.disabled' }} />
               <Typography variant="caption" color="text.secondary">Steward: {dataset.data_steward}</Typography>
-            </Box>
-          )}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <CalendarTodayIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
-            <Typography variant="caption" color="text.secondary">
-              Registered {new Date(dataset.created_at).toLocaleDateString()}
-            </Typography>
-          </Box>
-          {dataset.bq_created_at && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <CalendarTodayIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
-              <Typography variant="caption" color="text.secondary">
-                Created {new Date(dataset.bq_created_at).toLocaleDateString()}
-              </Typography>
             </Box>
           )}
           {dataset.tags.map((t) => <TagChip key={t} tag={t} />)}
@@ -295,10 +285,10 @@ export default function DatasetDetail() {
             sx={{ mb: 1.5, cursor: 'pointer', '&:hover': { boxShadow: 2 } }}
             onClick={() => navigate(`/datasets/${id}/tables/${t.id}`)}
           >
-            <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+            <CardContent sx={CARD_CONTENT_SX}>
               {/* Row 1: icon + name + validated + sensitivity + doc button */}
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                <TableChartIcon sx={{ fontSize: 18, color: t.is_validated ? '#2e7d32' : '#137333', flexShrink: 0 }} />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: CARD_ROW_MB }}>
+                <GridOnIcon sx={{ fontSize: 18, color: t.is_validated ? '#2e7d32' : '#137333', flexShrink: 0 }} />
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                     <Typography variant="subtitle2" fontWeight={600}>
@@ -341,41 +331,34 @@ export default function DatasetDetail() {
               </Box>
 
               {/* Row 2: description */}
-              <Typography variant="body2" color="text.secondary" sx={{ ml: 3.5, mb: 1 }} noWrap>
+              <Typography variant="body2" color="text.secondary" sx={{ ml: 3.5, mb: CARD_ROW_MB }} noWrap>
                 {t.description || <em style={{ color: '#aaa' }}>No description — open table to add</em>}
               </Typography>
 
-              {/* Row 3: stats chips + owner + updated */}
-              <Box sx={{ display: 'flex', gap: 1, ml: 3.5, alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* Row 3: stats pills + owner + updated */}
+              <Box sx={{ display: 'flex', gap: 0.75, ml: 3.5, alignItems: 'center', flexWrap: 'wrap' }}>
                 {t.columns.length > 0 && (
-                  <Chip label={`${t.columns.length} cols`} size="small" sx={{ fontSize: '0.62rem', height: 20 }} />
+                  <Box sx={pill('gray')}><ViewWeekIcon sx={pillIcon('gray')} /><Typography sx={{ ...pillText, color: '#3c4043' }}>{t.columns.length} cols</Typography></Box>
                 )}
                 {t.row_count != null && (
-                  <Chip label={`${t.row_count.toLocaleString()} rows`} size="small" sx={{ fontSize: '0.62rem', height: 20 }} />
+                  <Box sx={pill('gray')}><NumbersIcon sx={pillIcon('gray')} /><Typography sx={{ ...pillText, color: '#3c4043' }}>{t.row_count.toLocaleString()} rows</Typography></Box>
                 )}
                 {t.size_bytes != null && (
-                  <Chip
-                    label={t.size_bytes >= 1e9 ? `${(t.size_bytes / 1e9).toFixed(1)} GB`
+                  <Box sx={pill('gray')}><SdStorageIcon sx={pillIcon('gray')} /><Typography sx={{ ...pillText, color: '#3c4043' }}>
+                    {t.size_bytes >= 1e9 ? `${(t.size_bytes / 1e9).toFixed(1)} GB`
                       : t.size_bytes >= 1e6 ? `${(t.size_bytes / 1e6).toFixed(1)} MB`
                       : t.size_bytes >= 1e3 ? `${(t.size_bytes / 1e3).toFixed(1)} KB`
                       : `${t.size_bytes} B`}
-                    size="small"
-                    sx={{ fontSize: '0.62rem', height: 20 }}
-                  />
+                  </Typography></Box>
                 )}
                 {t.tags.slice(0, 3).map((tag) => <TagChip key={tag} tag={tag} />)}
                 {t.quality_score != null && (
                   <Tooltip title="Data quality score (0–100): description, column docs, validation, tags, example queries">
-                    <Chip
-                      label={`Q: ${t.quality_score}%`}
-                      size="small"
-                      sx={{
-                        fontSize: '0.62rem', height: 20,
-                        bgcolor: t.quality_score >= 80 ? '#e6f4ea' : t.quality_score >= 50 ? '#fff8e1' : '#fce8e6',
-                        color: t.quality_score >= 80 ? '#137333' : t.quality_score >= 50 ? '#e37400' : '#c62828',
-                        fontWeight: 600,
-                      }}
-                    />
+                    <Box sx={pill(t.quality_score >= 80 ? 'green' : t.quality_score >= 50 ? 'amber' : 'red')}>
+                      <Typography sx={{ ...pillText, color: t.quality_score >= 80 ? '#137333' : t.quality_score >= 50 ? '#b06000' : '#c5221f', fontWeight: 600 }}>
+                        Q: {t.quality_score}%
+                      </Typography>
+                    </Box>
                   </Tooltip>
                 )}
                 <Box sx={{ flex: 1 }} />

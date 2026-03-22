@@ -16,16 +16,19 @@ import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
 import Stack from '@mui/material/Stack'
 import Divider from '@mui/material/Divider'
-import TableChartIcon from '@mui/icons-material/TableChart'
+import GridOnIcon from '@mui/icons-material/GridOn'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import GppBadIcon from '@mui/icons-material/GppBad'
 import PersonIcon from '@mui/icons-material/Person'
 import AccessTimeIcon from '@mui/icons-material/AccessTime'
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight'
+import NumbersIcon from '@mui/icons-material/Numbers'
+import ViewWeekIcon from '@mui/icons-material/ViewWeek'
 import { tablesApi } from '../api/tables'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import type { SensitivityLabel, Table } from '../api/types'
+import { pill, pillIcon, pillText, MONO_PATH, CARD_CONTENT_SX, PAGE_HEADER_MB } from '../design'
 
 export default function TrustedData() {
   const navigate = useNavigate()
@@ -49,7 +52,7 @@ export default function TrustedData() {
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 4 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: PAGE_HEADER_MB }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Box sx={{ p: 1.25, borderRadius: 2.5, bgcolor: '#e6f4ea' }}>
             <VerifiedIcon sx={{ color: '#137333', fontSize: 28 }} />
@@ -63,9 +66,9 @@ export default function TrustedData() {
         </Box>
         {(tables?.length ?? 0) > 0 && (
           <Chip
-            icon={<TableChartIcon sx={{ fontSize: '15px !important' }} />}
+            icon={<GridOnIcon sx={{ fontSize: '15px !important' }} />}
             label={`${tables?.length} validated`}
-            sx={{ bgcolor: '#e6f4ea', color: '#0d5225', fontWeight: 600, fontSize: '0.8rem' }}
+            sx={{ bgcolor: '#e6f4ea', color: '#137333', fontWeight: 600, fontSize: '0.8rem' }}
           />
         )}
       </Box>
@@ -94,11 +97,11 @@ export default function TrustedData() {
               sx={{ cursor: 'pointer' }}
               onClick={() => navigate(`/datasets/${t.dataset_id}/tables/${t.id}`)}
             >
-              <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
+              <CardContent sx={CARD_CONTENT_SX}>
                 <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
                   {/* Icon */}
                   <Box sx={{ p: 1.25, borderRadius: 2, bgcolor: '#e6f4ea', flexShrink: 0 }}>
-                    <TableChartIcon sx={{ color: '#137333', fontSize: 20 }} />
+                    <GridOnIcon sx={{ color: '#137333', fontSize: 20 }} />
                   </Box>
 
                   {/* Content */}
@@ -111,15 +114,15 @@ export default function TrustedData() {
                       <VerifiedIcon sx={{ fontSize: 16, color: '#137333' }} />
                       <SensitivityChip label={t.sensitivity_label as SensitivityLabel} />
                       {t.columns.length > 0 && (
-                        <Chip label={`${t.columns.length} cols`} size="small" variant="outlined" />
+                        <Box sx={pill('gray')}><ViewWeekIcon sx={pillIcon('gray')} /><Typography sx={{ ...pillText, color: '#3c4043' }}>{t.columns.length} cols</Typography></Box>
                       )}
                       {t.row_count != null && (
-                        <Chip label={`${t.row_count.toLocaleString()} rows`} size="small" variant="outlined" />
+                        <Box sx={pill('gray')}><NumbersIcon sx={pillIcon('gray')} /><Typography sx={{ ...pillText, color: '#3c4043' }}>{t.row_count.toLocaleString()} rows</Typography></Box>
                       )}
                     </Box>
 
                     {/* Breadcrumb */}
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#9aa0a6' }}>
+                    <Typography variant="caption" sx={{ ...MONO_PATH }}>
                       {t.dataset_project_id}.{t.dataset_display_name}.{t.table_id}
                     </Typography>
 
@@ -134,13 +137,13 @@ export default function TrustedData() {
                     <Box sx={{ display: 'flex', gap: 2.5, mt: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                       {t.validated_by && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <PersonIcon sx={{ fontSize: 13, color: '#9aa0a6' }} />
+                          <PersonIcon sx={{ fontSize: 13, color: 'text.disabled' }} />
                           <Typography variant="caption" color="text.secondary">{t.validated_by}</Typography>
                         </Box>
                       )}
                       {t.validated_at && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <AccessTimeIcon sx={{ fontSize: 13, color: '#9aa0a6' }} />
+                          <AccessTimeIcon sx={{ fontSize: 13, color: 'text.disabled' }} />
                           <Typography variant="caption" color="text.secondary">
                             {new Date(t.validated_at).toLocaleDateString()}
                           </Typography>

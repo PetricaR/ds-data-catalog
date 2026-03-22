@@ -20,7 +20,7 @@ import type { GCPSource } from '../api/types'
 // ── Status chip ───────────────────────────────────────────────────────────────
 
 function StatusChip({ status }: { status: GCPSource['last_sync_status'] }) {
-  if (!status) return <Chip label="Never synced" size="small" variant="outlined" sx={{ color: '#9aa0a6', borderColor: '#e8eaed' }} />
+  if (!status) return <Chip label="Never synced" size="small" variant="outlined" sx={{ color: 'text.disabled', borderColor: 'divider' }} />
   const map: Record<string, { color: 'success' | 'error' | 'warning' | 'default'; icon: React.ReactElement }> = {
     ok:      { color: 'success', icon: <CheckCircleIcon fontSize="small" /> },
     partial: { color: 'warning', icon: <PendingIcon fontSize="small" /> },
@@ -265,7 +265,7 @@ export default function Sources() {
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 4 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Box sx={{ p: 1.25, borderRadius: 2.5, bgcolor: '#e8f0fe' }}>
             <CloudSyncIcon sx={{ color: '#1a73e8', fontSize: 28 }} />

@@ -11,8 +11,8 @@ import Divider from '@mui/material/Divider'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Collapse from '@mui/material/Collapse'
-import StorageIcon from '@mui/icons-material/Storage'
-import TableChartIcon from '@mui/icons-material/TableChart'
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'
+import GridOnIcon from '@mui/icons-material/GridOn'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
@@ -116,10 +116,10 @@ export default function Home() {
         ) : stats ? (
           <>
             <Grid item xs={12} sm={6} md={3}>
-              <StatCard icon={<StorageIcon />} value={stats.total_datasets} label="Datasets" color="#1a73e8" />
+              <StatCard icon={<FolderOpenIcon />} value={stats.total_datasets} label="Datasets" color="#1a73e8" />
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
-              <StatCard icon={<TableChartIcon />} value={stats.total_tables} label="Tables" color="#137333" />
+              <StatCard icon={<GridOnIcon />} value={stats.total_tables} label="Tables" color="#137333" />
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
               <StatCard icon={<ViewColumnIcon />} value={stats.total_columns} label="Columns" color="#e37400" />

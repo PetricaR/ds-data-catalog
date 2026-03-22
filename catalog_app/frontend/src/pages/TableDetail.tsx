@@ -49,6 +49,13 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined'
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark'
+import GridOnIcon from '@mui/icons-material/GridOn'
+import NumbersIcon from '@mui/icons-material/Numbers'
+import SdStorageIcon from '@mui/icons-material/SdStorage'
+import ViewWeekIcon from '@mui/icons-material/ViewWeek'
+import LanguageIcon from '@mui/icons-material/Language'
+import UpdateIcon from '@mui/icons-material/Update'
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import ValidationWizard from '../components/ValidationWizard'
@@ -85,6 +92,8 @@ export default function TableDetail() {
   const emptyProject = (): ProjectUsage => ({ project_name: '', jira_id: '', repo_url: '' })
   const [editingProjects, setEditingProjects] = useState(false)
   const [projectsDraft, setProjectsDraft] = useState<ProjectUsage[]>([emptyProject()])
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [descDraft, setDescDraft] = useState('')
 
   const toggleExpand = (i: number) =>
     setExpandedQueries((prev) => {
@@ -184,6 +193,14 @@ export default function TableDetail() {
     },
   })
 
+  const descMutation = useMutation({
+    mutationFn: (description: string) => tablesApi.update(tableId!, { description }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['table', tableId] })
+      setEditingDesc(false)
+    },
+  })
+
   const insightsMutation = useMutation({
     mutationFn: () => tablesApi.generateInsights(tableId!),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
@@ -273,67 +290,91 @@ export default function TableDetail() {
   return (
     <Box>
       {/* Breadcrumb */}
-      <Breadcrumbs sx={{ mb: 2 }}>
-        <Link underline="hover" color="inherit" sx={{ cursor: 'pointer' }} onClick={() => navigate('/browse')}>
+      <Breadcrumbs sx={{ mb: 2, '& .MuiBreadcrumbs-ol': { flexWrap: 'nowrap' } }}>
+        <Link underline="hover" color="inherit" sx={{ cursor: 'pointer', fontSize: '0.8rem' }} onClick={() => navigate('/browse')}>
           Catalog
         </Link>
-        <Link underline="hover" color="inherit" sx={{ cursor: 'pointer' }} onClick={() => navigate(`/datasets/${datasetId}`)}>
+        <Link underline="hover" color="inherit" sx={{ cursor: 'pointer', fontSize: '0.8rem' }} onClick={() => navigate(`/datasets/${datasetId}`)}>
           {dataset?.display_name || dataset?.dataset_id || 'Dataset'}
         </Link>
-        <Typography color="text.primary">{table.display_name || table.table_id}</Typography>
+        <Typography sx={{ fontSize: '0.8rem', color: 'text.primary', fontWeight: 500 }}>
+          {table.display_name || table.table_id}
+        </Typography>
       </Breadcrumbs>
 
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 3 }}>
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="h4" fontWeight={700} gutterBottom>
-            {table.display_name || table.table_id}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-            {table.dataset_project_id}.{table.dataset_bq_dataset_id || table.dataset_display_name}.{table.table_id}
-          </Typography>
-        </Box>
-        <SensitivityChip label={table.sensitivity_label as SensitivityLabel} size="medium" />
-      </Box>
+      {/* Header card */}
+      <Box sx={{ mb: 3, p: 3, borderRadius: 3, border: '1px solid', borderColor: 'divider', bgcolor: '#fff' }}>
 
-      {/* Stats chips */}
-      <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-        <Tooltip title={table.is_validated ? 'Click to revoke trusted status' : 'Run validation wizard to mark as trusted'}>
-          <Button
-            variant={table.is_validated ? 'contained' : 'outlined'}
-            size="small"
-            startIcon={validateMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <VerifiedIcon />}
-            onClick={() => table.is_validated ? validateMutation.mutate({ validated_by: '', validated_columns: [] }) : setWizardOpen(true)}
-            disabled={validateMutation.isPending}
-            color={table.is_validated ? 'success' : 'inherit'}
-            sx={{ textTransform: 'none', fontWeight: 600 }}
-          >
-            {table.is_validated ? 'Trusted source' : 'Mark as trusted source'}
-          </Button>
-        </Tooltip>
-        {table.row_count != null && (
-          <Chip label={`${table.row_count.toLocaleString()} rows`} size="small" variant="outlined" />
-        )}
-        {table.size_bytes != null && (
-          <Chip label={bytes(table.size_bytes)} size="small" variant="outlined" />
-        )}
-        <Chip label={`${table.columns.length} columns`} size="small" variant="outlined" />
-        {table.quality_score != null && (
-          <Tooltip title="Data quality score (0–100). Based on description, column docs, validation, tags, and example queries.">
-            <Chip
-              label={`Quality: ${table.quality_score}%`}
+        {/* Top row: icon + name + button */}
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2.5 }}>
+          <Box sx={{ p: 1.25, borderRadius: 2.5, bgcolor: '#e8f0fe', flexShrink: 0, mt: 0.25 }}>
+            <GridOnIcon sx={{ color: '#1a73e8', fontSize: 28 }} />
+          </Box>
+
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="h5" fontWeight={700} sx={{ fontSize: '1.35rem', lineHeight: 1.3, mb: 0.4 }}>
+              {table.display_name || table.table_id}
+            </Typography>
+            <Typography sx={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'text.disabled', lineHeight: 1.4 }}>
+              {table.dataset_project_id}.{table.dataset_bq_dataset_id || table.dataset_display_name}.{table.table_id}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+              {table.is_validated && (
+                <Chip
+                  icon={<VerifiedIcon sx={{ fontSize: '13px !important' }} />}
+                  label="Trusted source"
+                  size="small"
+                  sx={{ height: 22, fontSize: '0.72rem', fontWeight: 600, bgcolor: '#e6f4ea', color: '#137333', border: 'none' }}
+                />
+              )}
+              <SensitivityChip label={table.sensitivity_label as SensitivityLabel} size="small" />
+              {table.tags.map((t) => <TagChip key={t} tag={t} />)}
+            </Box>
+          </Box>
+
+          <Tooltip title={table.is_validated ? 'Click to revoke trusted status' : 'Run validation wizard to mark as trusted'}>
+            <Button
+              variant={table.is_validated ? 'contained' : 'outlined'}
               size="small"
-              variant="outlined"
-              sx={{
-                bgcolor: table.quality_score >= 80 ? '#e6f4ea' : table.quality_score >= 50 ? '#fff8e1' : '#fce8e6',
-                color: table.quality_score >= 80 ? '#137333' : table.quality_score >= 50 ? '#e37400' : '#c62828',
-                borderColor: 'transparent',
-                fontWeight: 600,
-              }}
-            />
+              startIcon={validateMutation.isPending ? <CircularProgress size={13} color="inherit" /> : <VerifiedIcon />}
+              onClick={() => table.is_validated ? validateMutation.mutate({ validated_by: '', validated_columns: [] }) : setWizardOpen(true)}
+              disabled={validateMutation.isPending}
+              color={table.is_validated ? 'success' : 'inherit'}
+              sx={{ textTransform: 'none', fontWeight: 600, fontSize: '0.8rem', flexShrink: 0, mt: 0.25 }}
+            >
+              {table.is_validated ? 'Trusted' : 'Mark as trusted'}
+            </Button>
           </Tooltip>
-        )}
-        {table.tags.map((t) => <TagChip key={t} tag={t} />)}
+        </Box>
+
+        {/* Divider */}
+        <Box sx={{ borderTop: '1px solid', borderColor: 'divider', mb: 2 }} />
+
+        {/* Stats pills row */}
+        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', alignItems: 'center' }}>
+          {[
+            table.row_count != null && { icon: <NumbersIcon />, label: `${table.row_count.toLocaleString()} rows`, bg: '#f1f3f4', color: '#3c4043', iconColor: '#5f6368' },
+            table.size_bytes != null && { icon: <SdStorageIcon />, label: bytes(table.size_bytes), bg: '#f1f3f4', color: '#3c4043', iconColor: '#5f6368' },
+            { icon: <ViewWeekIcon />, label: `${table.columns.length} cols`, bg: '#f1f3f4', color: '#3c4043', iconColor: '#5f6368' },
+            dataset?.bq_location && { icon: <LanguageIcon />, label: dataset.bq_location, bg: '#e8f0fe', color: '#1a73e8', iconColor: '#1a73e8' },
+            table.bq_created_at && { icon: <CalendarTodayIcon />, label: `Created ${new Date(table.bq_created_at).toLocaleDateString()}`, bg: '#fce8e6', color: '#c5221f', iconColor: '#c5221f' },
+            table.bq_last_modified && { icon: <UpdateIcon />, label: `Modified ${new Date(table.bq_last_modified).toLocaleDateString()}`, bg: '#e6f4ea', color: '#137333', iconColor: '#137333' },
+            table.quality_score != null && {
+              icon: null,
+              label: `Quality ${table.quality_score}%`,
+              bg: table.quality_score >= 80 ? '#e6f4ea' : table.quality_score >= 50 ? '#fff8e1' : '#fce8e6',
+              color: table.quality_score >= 80 ? '#137333' : table.quality_score >= 50 ? '#e37400' : '#c62828',
+              iconColor: '',
+            },
+          ].filter(Boolean).map((item: any, i) => (
+            <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.1, py: 0.45, borderRadius: '8px', bgcolor: item.bg }}>
+              {item.icon && <Box sx={{ display: 'flex', color: item.iconColor, '& svg': { fontSize: '12px !important' } }}>{item.icon}</Box>}
+              <Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: item.color, lineHeight: 1 }}>
+                {item.label}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
       </Box>
 
       {/* Schema change alerts */}
@@ -392,6 +433,55 @@ export default function TableDetail() {
               </IconButton>
             </Box>
           ))}
+        </Box>
+      )}
+
+      {/* Table description */}
+      {editingDesc ? (
+        <Box sx={{ mb: 2 }}>
+          <TextField
+            fullWidth
+            multiline
+            minRows={2}
+            size="small"
+            autoFocus
+            value={descDraft}
+            onChange={(e) => setDescDraft(e.target.value)}
+            placeholder="Add a description for this table…"
+            onKeyDown={(e) => { if (e.key === 'Escape') setEditingDesc(false) }}
+          />
+          <Box sx={{ display: 'flex', gap: 1, mt: 0.75 }}>
+            <Button size="small" variant="contained" disabled={descMutation.isPending}
+              onClick={() => descMutation.mutate(descDraft)}>
+              {descMutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+            <Button size="small" onClick={() => setEditingDesc(false)}>Cancel</Button>
+          </Box>
+        </Box>
+      ) : (
+        <Box
+          onClick={() => { setDescDraft(table.description || ''); setEditingDesc(true) }}
+          sx={{
+            mb: 2.5, px: 2, py: 1.5, cursor: 'text',
+            borderRadius: 2,
+            border: '1px solid',
+            borderColor: table.description ? 'divider' : '#e0e0e0',
+            bgcolor: table.description ? '#f8f9fa' : '#fafafa',
+            '&:hover': { borderColor: '#1a73e8', bgcolor: '#f0f6ff' },
+            transition: 'border-color 0.15s, background 0.15s',
+          }}
+        >
+          <Typography variant="caption" fontWeight={700} color="text.secondary"
+            sx={{ textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', mb: 0.5 }}>
+            Table Description
+          </Typography>
+          <Typography
+            variant="body1"
+            color={table.description ? 'text.primary' : 'text.disabled'}
+            sx={{ lineHeight: 1.75, whiteSpace: 'pre-wrap', fontStyle: table.description ? 'normal' : 'italic' }}
+          >
+            {table.description || 'Click to add a description…'}
+          </Typography>
         </Box>
       )}
 

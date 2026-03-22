@@ -26,24 +26,25 @@ import AccordionSummary from '@mui/material/AccordionSummary'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import Divider from '@mui/material/Divider'
 import Tooltip from '@mui/material/Tooltip'
-import SyncIcon from '@mui/icons-material/Sync'
+import CloudSyncIcon from '@mui/icons-material/CloudSync'       // Sync from BigQuery
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
-import CloudIcon from '@mui/icons-material/Cloud'
-import StorageIcon from '@mui/icons-material/Storage'
-import TableChartIcon from '@mui/icons-material/TableChart'
-import ViewColumnIcon from '@mui/icons-material/ViewColumn'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'      // GCP Project
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'        // BQ Dataset
+import GridOnIcon from '@mui/icons-material/GridOn'                // table row item
+import ViewWeekIcon from '@mui/icons-material/ViewWeek'            // columns
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import VerifiedIcon from '@mui/icons-material/Verified'
+import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'    // validated
+import VerifiedIcon from '@mui/icons-material/Verified'            // stat: documented
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline'
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import DoneAllIcon from '@mui/icons-material/DoneAll'
-import DatasetIcon from '@mui/icons-material/Dataset'
-import AccessTimeIcon from '@mui/icons-material/AccessTime'
-import EventIcon from '@mui/icons-material/Event'
-import PlaceIcon from '@mui/icons-material/Place'
-import TableRowsIcon from '@mui/icons-material/TableRows'
+import SdStorageIcon from '@mui/icons-material/SdStorage'          // storage size
+import UpdateIcon from '@mui/icons-material/Update'                // last modified
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday'  // created date
+import LanguageIcon from '@mui/icons-material/Language'            // BQ region / location
+import NumbersIcon from '@mui/icons-material/Numbers'              // row count
 import { datasetsApi } from '../api/datasets'
 import { tablesApi } from '../api/tables'
 import { bqApi } from '../api/bq'
@@ -95,56 +96,71 @@ function TablesList({ datasetId, datasetDbId, bqLocation, onNavigate, onOpenData
           <ListItemButton
             key={t.id}
             onClick={() => onNavigate(t.id)}
-            sx={{ pl: 7, pr: 2, py: 0.75, alignItems: 'flex-start', '&:hover': { bgcolor: '#f8faff' } }}
+            sx={{ pl: 9, pr: 2, py: 1, alignItems: 'center', '&:hover': { bgcolor: '#f8faff' } }}
           >
-            <ListItemIcon sx={{ minWidth: 24, mt: 0.25 }}>
+            <ListItemIcon sx={{ minWidth: 28 }}>
               {t.is_validated
-                ? <VerifiedIcon sx={{ fontSize: 13, color: '#137333' }} />
-                : <TableChartIcon sx={{ fontSize: 13, color: '#9aa0a6' }} />
+                ? <VerifiedUserIcon sx={{ fontSize: 15, color: '#137333' }} />
+                : <GridOnIcon sx={{ fontSize: 15, color: '#9aa0a6' }} />
               }
             </ListItemIcon>
-            <ListItemText
-              primary={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem', fontWeight: 500 }}>
-                    {t.table_id}
+
+            {/* Table name + meta pills on same row */}
+            <Box sx={{ flex: 1, minWidth: 0, mr: 2, display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.82rem', fontWeight: 600, color: '#202124', flexShrink: 0 }}>
+                {t.table_id}
+              </Typography>
+              {t.row_count != null && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
+                  <NumbersIcon sx={{ fontSize: 11, color: '#5f6368' }} />
+                  <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
+                    {t.row_count.toLocaleString()} rows
                   </Typography>
-                  {t.columns.length > 0 && (
-                    <Chip label={`${t.columns.length} cols`} size="small" variant="outlined"
-                      sx={{ height: 16, fontSize: '0.65rem', borderRadius: '4px' }} />
-                  )}
-                  {bqLocation && (
-                    <Chip label={bqLocation} size="small"
-                      sx={{ height: 16, fontSize: '0.65rem', borderRadius: '4px', bgcolor: '#e8f0fe', color: '#1a73e8', border: 'none' }} />
-                  )}
                 </Box>
-              }
-              secondary={
-                <Box sx={{ display: 'flex', gap: 2, mt: 0.3, flexWrap: 'wrap' }}>
-                  {t.row_count != null && (
-                    <Typography variant="caption" color="text.disabled">
-                      {t.row_count.toLocaleString()} rows
-                    </Typography>
-                  )}
-                  {fmtBytes(t.size_bytes) && (
-                    <Typography variant="caption" color="text.disabled">
-                      {fmtBytes(t.size_bytes)}
-                    </Typography>
-                  )}
-                  {t.bq_created_at && (
-                    <Typography variant="caption" color="text.disabled">
-                      Created {new Date(t.bq_created_at).toLocaleDateString()}
-                    </Typography>
-                  )}
-                  {t.bq_last_modified && (
-                    <Typography variant="caption" color="text.disabled">
-                      Modified {new Date(t.bq_last_modified).toLocaleDateString()}
-                    </Typography>
-                  )}
+              )}
+              {(t.columns?.length ?? 0) > 0 && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
+                  <ViewWeekIcon sx={{ fontSize: 11, color: '#5f6368' }} />
+                  <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
+                    {t.columns.length} cols
+                  </Typography>
                 </Box>
-              }
-            />
-            <ChevronRightIcon sx={{ fontSize: 14, color: '#dadce0', mt: 0.5, flexShrink: 0 }} />
+              )}
+              {fmtBytes(t.size_bytes) && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
+                  <SdStorageIcon sx={{ fontSize: 11, color: '#5f6368' }} />
+                  <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
+                    {fmtBytes(t.size_bytes)}
+                  </Typography>
+                </Box>
+              )}
+              {bqLocation && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#e8f0fe' }}>
+                  <LanguageIcon sx={{ fontSize: 11, color: '#1a73e8' }} />
+                  <Typography sx={{ fontSize: '0.68rem', color: '#1a73e8', fontWeight: 500, lineHeight: 1 }}>
+                    {bqLocation}
+                  </Typography>
+                </Box>
+              )}
+              {t.bq_created_at && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#fce8e6' }}>
+                  <CalendarTodayIcon sx={{ fontSize: 11, color: '#c5221f' }} />
+                  <Typography sx={{ fontSize: '0.68rem', color: '#c5221f', fontWeight: 500, lineHeight: 1 }}>
+                    Created {new Date(t.bq_created_at).toLocaleDateString()}
+                  </Typography>
+                </Box>
+              )}
+              {t.bq_last_modified && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#e6f4ea' }}>
+                  <UpdateIcon sx={{ fontSize: 11, color: '#137333' }} />
+                  <Typography sx={{ fontSize: '0.68rem', color: '#137333', fontWeight: 500, lineHeight: 1 }}>
+                    Modified {new Date(t.bq_last_modified).toLocaleDateString()}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+
+            <ChevronRightIcon sx={{ fontSize: 14, color: '#dadce0', flexShrink: 0 }} />
           </ListItemButton>
         ))}
       </List>
@@ -320,7 +336,7 @@ export default function Browse() {
         <Typography variant="h6" fontWeight={700}>Browse Catalog</Typography>
         <Button
           variant="contained"
-          startIcon={syncMutation.isPending ? <CircularProgress size={15} color="inherit" /> : <SyncIcon />}
+          startIcon={syncMutation.isPending ? <CircularProgress size={15} color="inherit" /> : <CloudSyncIcon />}
           onClick={() => syncMutation.mutate()}
           disabled={syncMutation.isPending}
           sx={{ borderRadius: 2, px: 2.5, py: 1, fontWeight: 600, textTransform: 'none', boxShadow: 'none', '&:hover': { boxShadow: 1 } }}
@@ -333,9 +349,9 @@ export default function Browse() {
       {stats && (
         <Grid container spacing={2} sx={{ mb: 3 }}>
           {[
-            { icon: <StorageIcon />, value: stats.total_datasets, label: 'Datasets', color: '#1a73e8' },
-            { icon: <TableChartIcon />, value: stats.total_tables, label: 'Tables', color: '#137333' },
-            { icon: <ViewColumnIcon />, value: stats.total_columns, label: 'Columns', color: '#e37400' },
+            { icon: <FolderOpenIcon />, value: stats.total_datasets, label: 'Datasets', color: '#1a73e8' },
+            { icon: <GridOnIcon />, value: stats.total_tables, label: 'Tables', color: '#137333' },
+            { icon: <ViewWeekIcon />, value: stats.total_columns, label: 'Columns', color: '#e37400' },
             { icon: <VerifiedIcon />, value: `${stats.documentation_coverage}%`, label: 'Documented', color: '#9334e6' },
           ].map(({ icon, value, label, color }) => (
             <Grid item xs={6} sm={3} key={label}>
@@ -378,7 +394,7 @@ export default function Browse() {
               sx={{ px: 2.5, py: 1, bgcolor: '#f8f9fa', borderRadius: '10px', minHeight: 52 }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1, mr: 1 }}>
-                <CloudIcon sx={{ color: '#1a73e8', fontSize: 20 }} />
+                <AccountTreeIcon sx={{ color: '#1a73e8', fontSize: 20 }} />
                 <Box sx={{ flex: 1 }}>
                   <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.3 }}>
                     {projectId}
@@ -417,7 +433,7 @@ export default function Browse() {
                     }}
                     onClick={(e) => toggleValidated(ds.id, e)}
                   >
-                    <TableChartIcon sx={{ color: '#9aa0a6', fontSize: 15, flexShrink: 0 }} />
+                    <FolderOpenIcon sx={{ color: '#9aa0a6', fontSize: 15, flexShrink: 0 }} />
                     <Typography variant="body2" fontWeight={600} noWrap sx={{ flex: 1, minWidth: 0 }}>
                       {ds.display_name || ds.dataset_id}
                     </Typography>
@@ -427,16 +443,18 @@ export default function Browse() {
                       sx={{ fontSize: '0.7rem', height: 18, bgcolor: '#f1f3f4', color: '#5f6368', flexShrink: 0 }}
                     />
                     {ds.bq_location && (
-                      <Chip
-                        label={ds.bq_location}
-                        size="small"
-                        sx={{ fontSize: '0.7rem', height: 18, bgcolor: '#e8f0fe', color: '#1a73e8', border: 'none', flexShrink: 0 }}
-                      />
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.8, py: 0.2, borderRadius: '6px', bgcolor: '#e8f0fe', flexShrink: 0 }}>
+                        <LanguageIcon sx={{ fontSize: 11, color: '#1a73e8' }} />
+                        <Typography sx={{ fontSize: '0.68rem', color: '#1a73e8', fontWeight: 500, lineHeight: 1 }}>{ds.bq_location}</Typography>
+                      </Box>
                     )}
                     {ds.bq_last_modified && (
-                      <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>
-                        Modified {new Date(ds.bq_last_modified).toLocaleDateString()}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.8, py: 0.2, borderRadius: '6px', bgcolor: '#e6f4ea', flexShrink: 0 }}>
+                        <UpdateIcon sx={{ fontSize: 11, color: '#137333' }} />
+                        <Typography sx={{ fontSize: '0.68rem', color: '#137333', fontWeight: 500, lineHeight: 1 }}>
+                          {new Date(ds.bq_last_modified).toLocaleDateString()}
+                        </Typography>
+                      </Box>
                     )}
                     {ds.is_validated && (
                       <VerifiedIcon sx={{ fontSize: 14, color: '#137333', flexShrink: 0 }} />

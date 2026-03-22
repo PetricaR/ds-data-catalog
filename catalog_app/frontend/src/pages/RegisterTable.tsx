@@ -26,7 +26,7 @@ import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Link from '@mui/material/Link'
 import Skeleton from '@mui/material/Skeleton'
 import InputAdornment from '@mui/material/InputAdornment'
-import TableChartIcon from '@mui/icons-material/TableChart'
+import GridOnIcon from '@mui/icons-material/GridOn'
 import AddIcon from '@mui/icons-material/Add'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 
@@ -213,7 +213,7 @@ export default function RegisterTable() {
                   <Card key={t.id} variant="outlined" sx={{ '&:hover': { borderColor: 'primary.main', boxShadow: 2 } }}>
                     <CardActionArea onClick={() => pickTable(t)} sx={{ p: 2 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <TableChartIcon sx={{ color: '#137333', fontSize: 28 }} />
+                        <GridOnIcon sx={{ color: '#137333', fontSize: 28 }} />
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Typography variant="subtitle2" fontWeight={600} noWrap>
                             {t.display_name || t.table_id}

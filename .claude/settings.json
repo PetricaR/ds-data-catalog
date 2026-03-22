@@ -10,7 +10,21 @@
       "Bash(curl -s http://localhost:8000/api/v1/datasets?limit=1)",
       "Bash(curl -s http://localhost:8000/api/v1/stats)",
       "Bash(curl -s \"http://localhost:8000/api/v1/datasets\")",
-      "Bash(kubectl logs:*)"
+      "Bash(kubectl logs:*)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(/usr/local/bin/node node_modules/.bin/tsc --noEmit)",
+      "Read(//opt/homebrew/Cellar/node/25.4.0/bin/**)",
+      "Read(//opt/homebrew/bin/**)",
+      "Bash(command -v node)",
+      "Bash(ls /opt/homebrew/bin/node*)",
+      "Bash(ls /usr/local/lib/node*)",
+      "Bash(grep -E \"^\\(CloudSync|AccountTree|FolderOpen|GridOn|ViewWeek|VerifiedUser|SdStorage|Update|CalendarToday|Language|Numbers\\)\\\\.js$\")",
+      "Bash(curl -s \"http://localhost:5174/@fs/Users/radanpetrica/PFA/hackathons/resources/catalog-ds/ds-data-catalog/catalog_app/frontend/src/pages/Browse.tsx\")",
+      "Bash(cat /Users/radanpetrica/PFA/hackathons/resources/catalog-ds/ds-data-catalog/catalog_app/frontend/.eslintrc*)",
+      "Bash(cat /Users/radanpetrica/PFA/hackathons/resources/catalog-ds/ds-data-catalog/catalog_app/frontend/eslint.config*)",
+      "Bash(git stash:*)",
+      "Bash(/opt/homebrew/bin/node catalog_app/frontend/node_modules/.bin/vite build --config catalog_app/frontend/vite.config.ts)",
+      "Bash(grep -A 20 \"^def list_tables\\\\|^@router.get.*/$\" /Users/radanpetrica/PFA/hackathons/resources/catalog-ds/ds-data-catalog/catalog_app/backend/api/tables.py)"
     ]
   }
 }

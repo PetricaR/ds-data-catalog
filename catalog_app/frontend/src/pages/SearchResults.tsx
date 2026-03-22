@@ -13,14 +13,15 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Alert from '@mui/material/Alert'
 import Stack from '@mui/material/Stack'
-import StorageIcon from '@mui/icons-material/Storage'
-import TableChartIcon from '@mui/icons-material/TableChart'
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'
+import GridOnIcon from '@mui/icons-material/GridOn'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import { searchApi } from '../api/search'
 import type { SensitivityLabel } from '../api/types'
+import { MONO_PATH } from '../design'
 
 export default function SearchResults() {
   const [params, setParams] = useSearchParams()
@@ -112,7 +113,7 @@ export default function SearchResults() {
 
       {!q && (
         <Box sx={{ textAlign: 'center', py: 8 }}>
-          <StorageIcon sx={{ fontSize: 48, color: '#dadce0', mb: 2 }} />
+          <FolderOpenIcon sx={{ fontSize: 48, color: '#dadce0', mb: 2 }} />
           <Typography variant="h6" color="text.secondary" gutterBottom>Start searching</Typography>
           <Typography variant="body2" color="text.disabled">
             Type in the search bar above to find datasets, tables, and columns.
@@ -138,7 +139,7 @@ export default function SearchResults() {
                 sx={{ cursor: 'pointer' }}
                 onClick={() => navigate(`/datasets/${col.dataset_id}/tables/${col.table_id}`)}
               >
-                <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                   <Box sx={{ p: 1, borderRadius: 2, bgcolor: '#f3e8ff' }}>
                     <ViewColumnIcon sx={{ color: '#9334e6', fontSize: 20 }} />
                   </Box>
@@ -174,7 +175,7 @@ export default function SearchResults() {
             : allResults.length === 0 && !isLoading
             ? (
               <Box sx={{ textAlign: 'center', py: 8 }}>
-                <StorageIcon sx={{ fontSize: 48, color: '#dadce0', mb: 2 }} />
+                <GridOnIcon sx={{ fontSize: 48, color: '#dadce0', mb: 2 }} />
                 <Typography variant="h6" color="text.secondary" gutterBottom>No results found</Typography>
                 <Typography variant="body2" color="text.disabled">
                   Try different keywords or remove filters.
@@ -195,8 +196,8 @@ export default function SearchResults() {
                       bgcolor: isDataset ? '#e8f0fe' : '#e6f4ea',
                     }}>
                       {isDataset
-                        ? <StorageIcon sx={{ color: '#1a73e8', fontSize: 20 }} />
-                        : <TableChartIcon sx={{ color: '#137333', fontSize: 20 }} />
+                        ? <FolderOpenIcon sx={{ color: '#1a73e8', fontSize: 20 }} />
+                        : <GridOnIcon sx={{ color: '#137333', fontSize: 20 }} />
                       }
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -213,7 +214,7 @@ export default function SearchResults() {
                         />
                         <SensitivityChip label={result.sensitivity_label as SensitivityLabel} />
                       </Box>
-                      <Typography variant="caption" color="text.disabled" sx={{ fontFamily: 'monospace', display: 'block', mb: 0.5 }}>
+                      <Typography variant="caption" sx={{ ...MONO_PATH, display: 'block', mb: 0.5 }}>
                         {result.project_id}.{result.dataset_id}{result.table_id ? `.${result.table_id}` : ''}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" noWrap>
