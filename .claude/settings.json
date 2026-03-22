@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(/opt/homebrew/bin/node node_modules/.bin/tsc --noEmit)",
+      "Bash(ls /Users/radanpetrica/PFA/hackathons/resources/catalog-ds/ds-data-catalog/catalog_app/frontend/node_modules/@mui/icons-material/CloudSync*)",
+      "Bash(curl -s \"http://localhost:5173/src/App.tsx\")",
+      "Bash(curl -s \"http://localhost:5173/src/pages/Sources.tsx\")",
+      "Bash(/opt/homebrew/bin/node node_modules/.bin/vite build)",
+      "Bash(curl -s http://localhost:8000/api/v1/datasets?limit=1)",
+      "Bash(curl -s http://localhost:8000/api/v1/stats)",
+      "Bash(curl -s \"http://localhost:8000/api/v1/datasets\")"
+    ]
+  }
+}

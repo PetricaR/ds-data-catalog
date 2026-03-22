@@ -1,5 +1,18 @@
 export type SensitivityLabel = 'public' | 'internal' | 'confidential' | 'restricted'
 
+export interface GCPSource {
+  id: string
+  project_id: string
+  display_name: string | null
+  secret_name: string | null
+  is_active: boolean
+  last_synced_at: string | null
+  last_sync_status: 'ok' | 'partial' | 'error' | 'running' | null
+  last_sync_summary: Record<string, unknown> | null
+  created_at: string | null
+  created_by: string | null
+}
+
 export interface Dataset {
   id: string
   project_id: string

@@ -162,3 +162,19 @@ class MetadataChangeLog(Base):
     changed_at = Column(DateTime(timezone=True), default=utcnow)
     data_steward = Column(String(255))  # steward at time of change
     is_notified = Column(Boolean, default=False)
+
+
+class GCPSource(Base):
+    """A GCP project to sync BigQuery metadata from."""
+    __tablename__ = "gcp_sources"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(String(255), unique=True, nullable=False, index=True)
+    display_name = Column(String(255))          # human label, e.g. "Analytics Prod"
+    secret_name = Column(String(255))           # Secret Manager secret; NULL = use Workload Identity / ADC
+    is_active = Column(Boolean, default=True, nullable=False)
+    last_synced_at = Column(DateTime(timezone=True))
+    last_sync_status = Column(String(50))       # "ok" | "error" | "running"
+    last_sync_summary = Column(JSONB)           # SyncResult dict from last run
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    created_by = Column(String(255))

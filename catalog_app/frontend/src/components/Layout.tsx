@@ -23,6 +23,7 @@ import StorageIcon from '@mui/icons-material/Storage'
 import MenuIcon from '@mui/icons-material/Menu'
 import TableChartIcon from '@mui/icons-material/TableChart'
 import VerifiedIcon from '@mui/icons-material/Verified'
+import CloudSyncIcon from '@mui/icons-material/CloudSync'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
@@ -37,6 +38,12 @@ const SECTIONS: { heading?: string; items: { label: string; path: string; icon: 
     items: [
       { label: 'Browse',       path: '/browse',  icon: <StorageIcon /> },
       { label: 'Trusted Data', path: '/trusted', icon: <VerifiedIcon /> },
+    ],
+  },
+  {
+    heading: 'Admin',
+    items: [
+      { label: 'GCP Sources', path: '/sources', icon: <CloudSyncIcon /> },
     ],
   },
 ]

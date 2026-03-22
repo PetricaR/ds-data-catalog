@@ -5,6 +5,7 @@ import SearchResults from './pages/SearchResults'
 import DatasetDetail from './pages/DatasetDetail'
 import TableDetail from './pages/TableDetail'
 import TrustedData from './pages/TrustedData'
+import Sources from './pages/Sources'
 import Login from './pages/Login'
 import { AuthProvider } from './contexts/AuthContext'
 
@@ -24,6 +25,7 @@ export default function App() {
                 <Route path="/datasets/:id" element={<DatasetDetail />} />
                 <Route path="/datasets/:datasetId/tables/:tableId" element={<TableDetail />} />
                 <Route path="/trusted" element={<TrustedData />} />
+                <Route path="/sources" element={<Sources />} />
                 <Route path="*" element={<Navigate to="/browse" replace />} />
               </Routes>
             </Layout>

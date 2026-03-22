@@ -21,11 +21,18 @@ logger = logging.getLogger(__name__)
 
 # ── Credentials ───────────────────────────────────────────────────────────────
 
-def _get_credentials(project_id: str, secret_name: str, secret_version: str = "latest"):
+def _get_credentials(project_id: str, secret_name: str | None, secret_version: str = "latest"):
     """
-    Retrieve a service account JSON key from Secret Manager and return
-    google.oauth2 Credentials scoped for BigQuery.
+    Return BigQuery credentials.
+
+    If `secret_name` is provided, fetch a SA key JSON from Secret Manager.
+    If `secret_name` is None/empty, fall back to Application Default Credentials
+    (Workload Identity on GKE, or gcloud ADC locally) — no key needed.
     """
+    if not secret_name:
+        logger.info("No secret_name — using Application Default Credentials for project %s", project_id)
+        return None  # bigquery.Client() will use ADC automatically
+
     sm_client = secretmanager.SecretManagerServiceClient()
     secret_path = f"projects/{project_id}/secrets/{secret_name}/versions/{secret_version}"
 
@@ -47,6 +54,7 @@ def _get_credentials(project_id: str, secret_name: str, secret_version: str = "l
 # ── BQ helpers ────────────────────────────────────────────────────────────────
 
 def _bq_client(project_id: str, credentials) -> bigquery.Client:
+    # credentials=None → bigquery.Client uses ADC / Workload Identity
     return bigquery.Client(project=project_id, credentials=credentials)
 
 
@@ -83,7 +91,7 @@ class SyncResult:
 def sync_project(
     db: Session,
     project_id: str,
-    secret_name: str,
+    secret_name: str | None = None,
     secret_version: str = "latest",
     dataset_filter: str | None = None,
 ) -> SyncResult:

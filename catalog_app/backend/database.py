@@ -83,6 +83,20 @@ def init_db():
                 is_notified BOOLEAN NOT NULL DEFAULT FALSE
             )""",
             "CREATE INDEX IF NOT EXISTS ix_metadata_change_log_entity_id ON metadata_change_log(entity_id)",
+            # ── GCP Sources ────────────────────────────────────────────────
+            """CREATE TABLE IF NOT EXISTS gcp_sources (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                project_id VARCHAR(255) UNIQUE NOT NULL,
+                display_name VARCHAR(255),
+                secret_name VARCHAR(255),
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                last_synced_at TIMESTAMPTZ,
+                last_sync_status VARCHAR(50),
+                last_sync_summary JSONB,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                created_by VARCHAR(255)
+            )""",
+            "CREATE INDEX IF NOT EXISTS ix_gcp_sources_project_id ON gcp_sources(project_id)",
         ]:
             conn.execute(text(ddl))
         conn.commit()
