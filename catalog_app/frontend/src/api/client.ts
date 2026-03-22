@@ -14,4 +14,17 @@ client.interceptors.request.use((config) => {
   return config
 })
 
+// Auto-logout on 401
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      localStorage.removeItem('ds_catalog_token')
+      localStorage.removeItem('ds_catalog_user')
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  }
+)
+
 export default client

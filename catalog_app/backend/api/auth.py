@@ -69,33 +69,34 @@ def callback(code: str, request: Request, db: Session = Depends(get_db)):
 
     redirect_uri = _build_redirect_uri(request)
 
-    # Exchange code for tokens
-    with httpx.Client() as client:
-        token_resp = client.post(
-            GOOGLE_TOKEN_URL,
-            data={
-                "code": code,
-                "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
-                "redirect_uri": redirect_uri,
-                "grant_type": "authorization_code",
-            },
-        )
-    if token_resp.status_code != 200:
-        raise HTTPException(status_code=400, detail=f"Token exchange failed: {token_resp.text}")
-    token_data = token_resp.json()
-    access_token = token_data.get("access_token")
-    if not access_token:
-        raise HTTPException(status_code=400, detail="No access_token in response")
-
-    # Fetch user info
-    with httpx.Client() as client:
-        userinfo_resp = client.get(
-            GOOGLE_USERINFO_URL,
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-    if userinfo_resp.status_code != 200:
-        raise HTTPException(status_code=400, detail="Failed to fetch user info from Google")
+    try:
+        with httpx.Client(follow_redirects=True, timeout=10) as http:
+            token_resp = http.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": settings.google_client_id,
+                    "client_secret": settings.google_client_secret,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+            )
+            token_resp.raise_for_status()
+            token_data = token_resp.json()
+            access_token = token_data.get("access_token")
+            if not access_token:
+                raise HTTPException(status_code=400, detail="No access_token in response")
+            userinfo_resp = http.get(
+                GOOGLE_USERINFO_URL,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            userinfo_resp.raise_for_status()
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=400, detail=f"Google OAuth error: {exc.response.text[:200]}")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach Google: {exc}")
     userinfo = userinfo_resp.json()
 
     email = userinfo.get("email")
