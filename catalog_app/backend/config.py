@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     frontend_url: str = "http://localhost:5173"
+    google_chat_webhook_url: str = ""  # Google Chat space webhook URL
     # JWT
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"

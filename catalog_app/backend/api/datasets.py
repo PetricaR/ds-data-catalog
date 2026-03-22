@@ -5,10 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..database import get_db
 from ..dependencies.auth import get_current_user
 from ..models.catalog import Dataset, MetadataChangeLog, Table
 from ..schemas.catalog import DatasetCreate, DatasetResponse, DatasetUpdate
+from ..services.gchat import notify_metadata_change
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -121,11 +123,25 @@ def update_dataset(
         raise HTTPException(status_code=404, detail="Dataset not found")
     update_data = payload.model_dump(exclude_none=True)
     changed_by = (current_user or {}).get("email", "system")
+    watch = ["description", "sensitivity_label", "owner", "data_steward", "tags"]
+    changes = [(f, getattr(ds, f, None), update_data[f]) for f in watch if f in update_data and getattr(ds, f, None) != update_data[f]]
     _log_dataset_field_changes(db, ds, update_data, changed_by=changed_by)
     for field, value in update_data.items():
         setattr(ds, field, value)
     db.commit()
     db.refresh(ds)
+    for field, old_val, new_val in changes:
+        notify_metadata_change(
+            entity_type="dataset",
+            entity_name=ds.display_name or ds.dataset_id,
+            field=field,
+            old_value=str(old_val) if old_val is not None else None,
+            new_value=str(new_val),
+            changed_by=changed_by,
+            data_steward=ds.data_steward,
+            frontend_url=settings.frontend_url,
+            entity_id=str(ds.id),
+        )
     return _dataset_response(ds, db)
 
 

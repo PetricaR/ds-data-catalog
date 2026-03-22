@@ -29,11 +29,14 @@ def notify_trusted(
     validated_columns: list[str],
     frontend_url: Optional[str] = None,
     table_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    dataset_name: Optional[str] = None,
+    dataset_id: Optional[str] = None,
 ) -> None:
     """Notify when a table is marked as a trusted source."""
-    link = f"{frontend_url}/datasets/-/tables/{table_id}" if frontend_url and table_id else table_bq_path
+    link = f"{frontend_url}/datasets/{dataset_id}/tables/{table_id}" if frontend_url and dataset_id and table_id else table_bq_path
     cols_text = (
-        f"{len(validated_columns)} column(s) validated: `{'`, `'.join(validated_columns[:5])}`"
+        f"{len(validated_columns)} column(s): `{'`, `'.join(validated_columns[:5])}`"
         + (" …" if len(validated_columns) > 5 else "")
         if validated_columns
         else "No specific columns selected"
@@ -47,8 +50,43 @@ def notify_trusted(
             "sections": [{
                 "widgets": [
                     {"keyValue": {"topLabel": "Table", "content": table_name}},
+                    *([ {"keyValue": {"topLabel": "Project", "content": project_id}} ] if project_id else []),
+                    *([ {"keyValue": {"topLabel": "Dataset", "content": dataset_name}} ] if dataset_name else []),
+                    {"keyValue": {"topLabel": "BQ path", "content": table_bq_path}},
                     {"keyValue": {"topLabel": "Validated by", "content": validated_by}},
-                    {"keyValue": {"topLabel": "Columns", "content": cols_text}},
+                    {"keyValue": {"topLabel": "Columns validated", "content": cols_text}},
+                    {"buttons": [{"textButton": {"text": "Open in DS Catalog", "onClick": {"openLink": {"url": link}}}}]},
+                ]
+            }]
+        }]
+    })
+
+
+def notify_revoked(
+    table_name: str,
+    table_bq_path: str,
+    revoked_by: Optional[str] = None,
+    frontend_url: Optional[str] = None,
+    table_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    dataset_name: Optional[str] = None,
+    dataset_id: Optional[str] = None,
+) -> None:
+    """Notify when a table's trusted source status is revoked."""
+    link = f"{frontend_url}/datasets/{dataset_id}/tables/{table_id}" if frontend_url and dataset_id and table_id else table_bq_path
+    _send({
+        "cards": [{
+            "header": {
+                "title": "⚠️ Trusted Source status revoked",
+                "subtitle": table_bq_path,
+            },
+            "sections": [{
+                "widgets": [
+                    {"keyValue": {"topLabel": "Table", "content": table_name}},
+                    *([ {"keyValue": {"topLabel": "Project", "content": project_id}} ] if project_id else []),
+                    *([ {"keyValue": {"topLabel": "Dataset", "content": dataset_name}} ] if dataset_name else []),
+                    {"keyValue": {"topLabel": "BQ path", "content": table_bq_path}},
+                    {"keyValue": {"topLabel": "Revoked by", "content": revoked_by or "unknown"}},
                     {"buttons": [{"textButton": {"text": "Open in DS Catalog", "onClick": {"openLink": {"url": link}}}}]},
                 ]
             }]

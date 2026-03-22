@@ -11,6 +11,7 @@ from ..dependencies.auth import get_current_user
 from ..models.catalog import Dataset, MetadataChangeLog, Table, TableColumn
 from ..schemas.catalog import ColumnUpdate, ExampleQuery, QualityCheckResult, TableCreate, TableResponse, TableUpdate, ValidatePayload
 from ..services import bq_preview, bq_quality
+from ..services.gchat import notify_trusted, notify_revoked, notify_metadata_change
 
 router = APIRouter(prefix="/tables", tags=["tables"])
 
@@ -155,21 +156,43 @@ def update_table(
         raise HTTPException(status_code=404, detail="Table not found")
     update_data = payload.model_dump(exclude_none=True)
     changed_by = (current_user or {}).get("email", "system")
+    watch = ["description", "sensitivity_label", "owner", "tags"]
+    changes = [(f, getattr(t, f, None), update_data[f]) for f in watch if f in update_data and getattr(t, f, None) != update_data[f]]
     _log_field_changes(db, "table", t.id, t.display_name or t.table_id, t, update_data, changed_by=changed_by)
     for field, value in update_data.items():
         setattr(t, field, value)
     t.quality_score = _compute_quality_score(t)
     db.commit()
     db.refresh(t)
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    for field, old_val, new_val in changes:
+        notify_metadata_change(
+            entity_type="table",
+            entity_name=t.display_name or t.table_id,
+            field=field,
+            old_value=str(old_val) if old_val is not None else None,
+            new_value=str(new_val),
+            changed_by=changed_by,
+            data_steward=ds.data_steward if ds else None,
+            frontend_url=settings.frontend_url,
+            entity_id=str(t.id),
+        )
     return _table_response(t, db)
 
 
 @router.patch("/{table_id}/validate", response_model=TableResponse)
-def validate_table(table_id: UUID, payload: ValidatePayload, db: Session = Depends(get_db)):
+def validate_table(
+    table_id: UUID,
+    payload: ValidatePayload,
+    db: Session = Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
     t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
-    if t.is_validated:
+    was_validated = t.is_validated
+    prev_validated_by = t.validated_by
+    if was_validated:
         # Revoke
         t.is_validated = False
         t.validated_by = None
@@ -184,6 +207,26 @@ def validate_table(table_id: UUID, payload: ValidatePayload, db: Session = Depen
     t.quality_score = _compute_quality_score(t)
     db.commit()
     db.refresh(t)
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    bq_path = f"{ds.project_id}.{ds.dataset_id}.{t.table_id}" if ds else t.table_id
+    if t.is_validated:
+        notify_trusted(
+            table_name=t.display_name or t.table_id,
+            table_bq_path=bq_path,
+            validated_by=t.validated_by,
+            validated_columns=list(t.validated_columns or []),
+            frontend_url=settings.frontend_url,
+            table_id=str(t.id),
+        )
+    else:
+        revoked_by = (current_user or {}).get("email") or payload.validated_by or prev_validated_by or "unknown"
+        notify_revoked(
+            table_name=t.display_name or t.table_id,
+            table_bq_path=bq_path,
+            revoked_by=revoked_by,
+            frontend_url=settings.frontend_url,
+            table_id=str(t.id),
+        )
     return _table_response(t, db)
 
 
