@@ -19,7 +19,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
-SCOPES = "openid email profile"
+SCOPES = "openid email profile https://www.googleapis.com/auth/bigquery.readonly https://www.googleapis.com/auth/cloud-platform.read-only"
 
 
 def _build_redirect_uri(request: Request) -> str:
@@ -84,6 +84,12 @@ def callback(code: str, request: Request, db: Session = Depends(get_db)):
             token_resp.raise_for_status()
             token_data = token_resp.json()
             access_token = token_data.get("access_token")
+            refresh_token = token_data.get("refresh_token")
+            expires_in = token_data.get("expires_in")  # seconds
+            token_expiry = (
+                datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+                if expires_in else None
+            )
             if not access_token:
                 raise HTTPException(status_code=400, detail="No access_token in response")
             userinfo_resp = http.get(
@@ -110,6 +116,10 @@ def callback(code: str, request: Request, db: Session = Depends(get_db)):
         user.name = userinfo.get("name", user.name)
         user.picture = userinfo.get("picture", user.picture)
         user.last_login = now
+        user.gcp_access_token = access_token
+        if refresh_token:
+            user.gcp_refresh_token = refresh_token
+        user.gcp_token_expiry = token_expiry
     else:
         user = User(
             email=email,
@@ -117,6 +127,9 @@ def callback(code: str, request: Request, db: Session = Depends(get_db)):
             picture=userinfo.get("picture"),
             role="viewer",
             last_login=now,
+            gcp_access_token=access_token,
+            gcp_refresh_token=refresh_token,
+            gcp_token_expiry=token_expiry,
         )
         db.add(user)
     db.commit()

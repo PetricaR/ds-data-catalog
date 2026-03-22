@@ -11,7 +11,8 @@ import logging
 from datetime import timezone
 
 from google.cloud import bigquery, secretmanager
-from google.oauth2 import service_account
+from google.oauth2 import credentials as oauth2_credentials, service_account
+from google.auth.transport.requests import Request as GoogleAuthRequest
 from sqlalchemy.orm import Session
 
 from ..models.catalog import Dataset, SchemaChange, Table, TableColumn
@@ -23,15 +24,11 @@ logger = logging.getLogger(__name__)
 
 def _get_credentials(project_id: str, secret_name: str | None, secret_version: str = "latest"):
     """
-    Return BigQuery credentials.
-
-    If `secret_name` is provided, fetch a SA key JSON from Secret Manager.
-    If `secret_name` is None/empty, fall back to Application Default Credentials
-    (Workload Identity on GKE, or gcloud ADC locally) — no key needed.
+    Return BigQuery credentials from a Secret Manager SA key JSON.
+    If `secret_name` is None, returns None (caller should use user credentials or ADC).
     """
     if not secret_name:
-        logger.info("No secret_name — using Application Default Credentials for project %s", project_id)
-        return None  # bigquery.Client() will use ADC automatically
+        return None
 
     sm_client = secretmanager.SecretManagerServiceClient()
     secret_path = f"projects/{project_id}/secrets/{secret_name}/versions/{secret_version}"
@@ -41,14 +38,40 @@ def _get_credentials(project_id: str, secret_name: str | None, secret_version: s
     key_json = response.payload.data.decode("utf-8")
     key_dict = json.loads(key_json)
 
-    credentials = service_account.Credentials.from_service_account_info(
+    return service_account.Credentials.from_service_account_info(
         key_dict,
         scopes=[
             "https://www.googleapis.com/auth/bigquery.readonly",
             "https://www.googleapis.com/auth/cloud-platform.read-only",
         ],
     )
-    return credentials
+
+
+def _credentials_from_user_token(
+    access_token: str,
+    refresh_token: str | None,
+    client_id: str | None,
+    client_secret: str | None,
+    token_expiry=None,
+):
+    """Build google.oauth2.credentials.Credentials from a stored user OAuth token."""
+    creds = oauth2_credentials.Credentials(
+        token=access_token,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=["https://www.googleapis.com/auth/bigquery.readonly"],
+    )
+    if token_expiry:
+        creds.expiry = token_expiry.replace(tzinfo=None)  # google-auth expects naive UTC
+    # Refresh if expired
+    if not creds.valid and creds.refresh_token:
+        try:
+            creds.refresh(GoogleAuthRequest())
+        except Exception as exc:
+            logger.warning("Could not refresh user token: %s", exc)
+    return creds
 
 
 # ── BQ helpers ────────────────────────────────────────────────────────────────
@@ -94,22 +117,27 @@ def sync_project(
     secret_name: str | None = None,
     secret_version: str = "latest",
     dataset_filter: str | None = None,
+    user_credentials=None,
 ) -> SyncResult:
     """
     Main entry point: discover all BigQuery datasets (and their tables/schemas)
     in `project_id` and upsert them into the catalog.
 
-    Args:
-        db:             SQLAlchemy session.
-        project_id:     GCP project to scan.
-        secret_name:    Secret Manager secret name holding the SA key JSON.
-        secret_version: Secret version (default "latest").
-        dataset_filter: Optional dataset ID prefix to limit scope.
+    Credential priority:
+      1. `user_credentials` — google.oauth2.credentials.Credentials from the logged-in user
+      2. `secret_name` — SA key JSON fetched from Secret Manager
+      3. None → ADC / Workload Identity
     """
     result = SyncResult()
 
     try:
-        credentials = _get_credentials(project_id, secret_name, secret_version)
+        if user_credentials is not None:
+            credentials = user_credentials
+            logger.info("Using user OAuth credentials for project %s", project_id)
+        else:
+            credentials = _get_credentials(project_id, secret_name, secret_version)
+            if credentials is None:
+                logger.info("Using ADC/Workload Identity for project %s", project_id)
         client = _bq_client(project_id, credentials)
     except Exception as exc:
         msg = f"Failed to initialise BQ client: {exc}"
@@ -199,7 +227,8 @@ def sync_project(
                 .filter(Table.dataset_id == db_ds.id, Table.table_id == tbl_id)
                 .first()
             )
-            if db_tbl is None:
+            table_is_new = db_tbl is None
+            if table_is_new:
                 db_tbl = Table(
                     dataset_id=db_ds.id,
                     table_id=tbl_id,
@@ -235,30 +264,32 @@ def sync_project(
                 existing_names = set(existing_cols.keys())
                 new_names = {field.name for field in bq_tbl.schema}
 
-                # Detect and record schema changes (skip if already unacknowledged)
-                existing_unacked = {
-                    (c.change_type, c.column_name)
-                    for c in db.query(SchemaChange).filter(
-                        SchemaChange.table_id == db_tbl.id,
-                        SchemaChange.is_acknowledged == False,  # noqa: E712
-                    ).all()
-                }
-                for col_name in sorted(new_names - existing_names):
-                    if ("column_added", col_name) not in existing_unacked:
-                        db.add(SchemaChange(
-                            table_id=db_tbl.id,
-                            change_type="column_added",
-                            column_name=col_name,
-                        ))
-                        logger.info("Schema change — column added: %s.%s.%s", ds_id, tbl_id, col_name)
-                for col_name in sorted(existing_names - new_names):
-                    if ("column_removed", col_name) not in existing_unacked:
-                        db.add(SchemaChange(
-                            table_id=db_tbl.id,
-                            change_type="column_removed",
-                            column_name=col_name,
-                        ))
-                        logger.info("Schema change — column removed: %s.%s.%s", ds_id, tbl_id, col_name)
+                # Detect schema changes only for tables that already existed in the catalog.
+                # New tables have no prior state, so every column would appear as "added" — skip.
+                if not table_is_new:
+                    existing_unacked = {
+                        (c.change_type, c.column_name)
+                        for c in db.query(SchemaChange).filter(
+                            SchemaChange.table_id == db_tbl.id,
+                            SchemaChange.is_acknowledged == False,  # noqa: E712
+                        ).all()
+                    }
+                    for col_name in sorted(new_names - existing_names):
+                        if ("column_added", col_name) not in existing_unacked:
+                            db.add(SchemaChange(
+                                table_id=db_tbl.id,
+                                change_type="column_added",
+                                column_name=col_name,
+                            ))
+                            logger.info("Schema change — column added: %s.%s.%s", ds_id, tbl_id, col_name)
+                    for col_name in sorted(existing_names - new_names):
+                        if ("column_removed", col_name) not in existing_unacked:
+                            db.add(SchemaChange(
+                                table_id=db_tbl.id,
+                                change_type="column_removed",
+                                column_name=col_name,
+                            ))
+                            logger.info("Schema change — column removed: %s.%s.%s", ds_id, tbl_id, col_name)
 
                 # Replace columns, preserving user-edited descriptions and pk flags
                 db.query(TableColumn).filter(TableColumn.table_id == db_tbl.id).delete()

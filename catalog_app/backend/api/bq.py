@@ -2,14 +2,16 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from ..models.catalog import GCPSource
-from ..services.bq_sync import SyncResult, sync_project
+from ..dependencies.auth import get_current_user
+from ..models.catalog import GCPSource, User
+from ..services.bq_sync import SyncResult, _credentials_from_user_token, sync_project
 
 router = APIRouter(prefix="/bq", tags=["bigquery"])
 
@@ -54,6 +56,86 @@ class SyncRequest(BaseModel):
 class SyncResponse(BaseModel):
     project_id: str
     result: dict
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _get_user_credentials(current_user: dict | None, db: Session):
+    """Return google.oauth2.credentials.Credentials for the current user, or None."""
+    if not current_user:
+        return None
+    user = db.query(User).filter(User.id == current_user["id"]).first()
+    if not user or not user.gcp_access_token:
+        return None
+    return _credentials_from_user_token(
+        access_token=user.gcp_access_token,
+        refresh_token=user.gcp_refresh_token,
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+        token_expiry=user.gcp_token_expiry,
+    )
+
+
+# ── Project discovery ─────────────────────────────────────────────────────────
+
+class ProjectInfo(BaseModel):
+    project_id: str
+    display_name: str
+    already_added: bool
+
+
+@router.get("/projects", response_model=list[ProjectInfo])
+def list_accessible_projects(
+    db: Session = Depends(get_db),
+    current_user: dict | None = Depends(get_current_user),
+):
+    """
+    List all GCP projects the logged-in user has access to,
+    annotated with whether they're already added as sources.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    user = db.query(User).filter(User.id == current_user["id"]).first()
+    if not user or not user.gcp_access_token:
+        raise HTTPException(
+            status_code=400,
+            detail="No GCP credentials on file — please sign out and sign in again to grant access.",
+        )
+
+    try:
+        resp = httpx.get(
+            "https://cloudresourcemanager.googleapis.com/v1/projects",
+            headers={"Authorization": f"Bearer {user.gcp_access_token}"},
+            params={"filter": "lifecycleState:ACTIVE"},
+            timeout=15,
+        )
+        if resp.status_code == 401:
+            raise HTTPException(
+                status_code=401,
+                detail="GCP token expired — please sign out and sign in again.",
+            )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail=f"Cloud Resource Manager error: {exc.response.text[:200]}")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach Google API: {exc}")
+
+    existing_ids = {s.project_id for s in db.query(GCPSource.project_id).all()}
+
+    projects = []
+    for p in resp.json().get("projects", []):
+        if p.get("lifecycleState") != "ACTIVE":
+            continue
+        pid = p["projectId"]
+        projects.append(ProjectInfo(
+            project_id=pid,
+            display_name=p.get("name") or pid,
+            already_added=pid in existing_ids,
+        ))
+
+    projects.sort(key=lambda p: (p.already_added, p.display_name.lower()))
+    return projects
 
 
 # ── Sources CRUD ──────────────────────────────────────────────────────────────
@@ -113,11 +195,15 @@ def delete_source(source_id: UUID, db: Session = Depends(get_db)):
 # ── Sync endpoints ────────────────────────────────────────────────────────────
 
 @router.post("/sync", response_model=SyncResponse)
-def sync_one(req: SyncRequest = SyncRequest(), db: Session = Depends(get_db)):
+def sync_one(
+    req: SyncRequest = SyncRequest(),
+    db: Session = Depends(get_db),
+    current_user: dict | None = Depends(get_current_user),
+):
     """
     Sync a single GCP project.  Defaults to GCP_PROJECT_ID from config.
-    Pass secret_name to use a SA key from Secret Manager, or omit to use
-    Workload Identity / Application Default Credentials.
+    Uses the logged-in user's OAuth credentials if available, then falls back
+    to Secret Manager SA key or Workload Identity / ADC.
     """
     project_id = req.project_id or settings.gcp_project_id
     if not project_id:
@@ -126,18 +212,23 @@ def sync_one(req: SyncRequest = SyncRequest(), db: Session = Depends(get_db)):
             detail="project_id required (set GCP_PROJECT_ID in config or pass in body)",
         )
 
+    user_creds = _get_user_credentials(current_user, db)
     result = sync_project(
         db=db,
         project_id=project_id,
         secret_name=req.secret_name or None,
         secret_version=req.secret_version,
         dataset_filter=req.dataset_filter,
+        user_credentials=user_creds,
     )
     return SyncResponse(project_id=project_id, result=result.to_dict())
 
 
 @router.post("/sync/all", response_model=list[SyncResponse])
-def sync_all(db: Session = Depends(get_db)):
+def sync_all(
+    db: Session = Depends(get_db),
+    current_user: dict | None = Depends(get_current_user),
+):
     """
     Sync all active GCP sources in order.
     Each source is synced sequentially; errors in one source do not stop others.
@@ -148,6 +239,8 @@ def sync_all(db: Session = Depends(get_db)):
             status_code=404,
             detail="No active sources found. Add sources via POST /bq/sources first.",
         )
+
+    user_creds = _get_user_credentials(current_user, db)
 
     responses = []
     for source in sources:
@@ -160,6 +253,7 @@ def sync_all(db: Session = Depends(get_db)):
                 db=db,
                 project_id=source.project_id,
                 secret_name=source.secret_name,
+                user_credentials=user_creds,
             )
             source.last_sync_status = "ok" if not result.errors else "partial"
             source.last_sync_summary = result.to_dict()
@@ -178,7 +272,11 @@ def sync_all(db: Session = Depends(get_db)):
 
 
 @router.post("/sync/source/{source_id}", response_model=SyncResponse)
-def sync_one_source(source_id: UUID, db: Session = Depends(get_db)):
+def sync_one_source(
+    source_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: dict | None = Depends(get_current_user),
+):
     """Sync a specific source by its ID."""
     source = db.query(GCPSource).filter(GCPSource.id == source_id).first()
     if not source:
@@ -187,8 +285,14 @@ def sync_one_source(source_id: UUID, db: Session = Depends(get_db)):
     source.last_sync_status = "running"
     db.commit()
 
+    user_creds = _get_user_credentials(current_user, db)
     try:
-        result = sync_project(db=db, project_id=source.project_id, secret_name=source.secret_name)
+        result = sync_project(
+            db=db,
+            project_id=source.project_id,
+            secret_name=source.secret_name,
+            user_credentials=user_creds,
+        )
         source.last_sync_status = "ok" if not result.errors else "partial"
         source.last_sync_summary = result.to_dict()
     except Exception as exc:

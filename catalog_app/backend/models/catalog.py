@@ -35,6 +35,9 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     last_login = Column(DateTime(timezone=True))
+    gcp_access_token = Column(Text)
+    gcp_refresh_token = Column(Text)
+    gcp_token_expiry = Column(DateTime(timezone=True))
 
 
 class Dataset(Base):

@@ -351,7 +351,8 @@ export default function Browse() {
                   {/* Dataset row */}
                   <Box
                     sx={{
-                      px: 2.5,
+                      pl: 4,
+                      pr: 2.5,
                       pt: 1.5,
                       pb: expandedValidated.has(ds.id) ? 1 : 1.5,
                       borderLeft: ds.is_validated ? '3px solid #2e7d32' : '3px solid transparent',

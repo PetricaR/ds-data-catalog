@@ -19,62 +19,59 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
 import Button from '@mui/material/Button'
-import StorageIcon from '@mui/icons-material/Storage'
+import SchemaIcon from '@mui/icons-material/Schema'
 import MenuIcon from '@mui/icons-material/Menu'
-import TableChartIcon from '@mui/icons-material/TableChart'
+import StorageIcon from '@mui/icons-material/Storage'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import CloudSyncIcon from '@mui/icons-material/CloudSync'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
 import { notificationsApi } from '../api/notifications'
-
 import SearchBar from './SearchBar'
 
-const DRAWER_WIDTH = 200
+const DRAWER_WIDTH = 210
 
 const SECTIONS: { heading?: string; items: { label: string; path: string; icon: ReactNode }[] }[] = [
   {
     items: [
-      { label: 'Browse',       path: '/browse',  icon: <StorageIcon /> },
-      { label: 'Trusted Data', path: '/trusted', icon: <VerifiedIcon /> },
+      { label: 'Browse',       path: '/browse',  icon: <StorageIcon fontSize="small" /> },
+      { label: 'Trusted Data', path: '/trusted', icon: <VerifiedIcon fontSize="small" /> },
     ],
   },
   {
     heading: 'Admin',
     items: [
-      { label: 'GCP Sources', path: '/sources', icon: <CloudSyncIcon /> },
+      { label: 'GCP Sources', path: '/sources', icon: <CloudSyncIcon fontSize="small" /> },
     ],
   },
 ]
 
-function NavItem({
-  label, path, icon, active, onClick,
-}: {
+function NavItem({ label, path, icon, active, onClick }: {
   label: string; path: string; icon: ReactNode; active: boolean; onClick: () => void
 }) {
   return (
-    <ListItem disablePadding sx={{ mb: 0.5 }}>
+    <ListItem disablePadding sx={{ mb: 0.25 }}>
       <ListItemButton
         component={Link}
         to={path}
         selected={active}
         onClick={onClick}
         sx={{
-          mx: 1.5,
+          mx: 1,
           px: 1.5,
-          py: 0.9,
-          borderRadius: 3,
-          transition: 'background 0.15s',
+          py: 0.875,
+          borderRadius: 2.5,
+          transition: 'background 0.12s',
           '&.Mui-selected': {
             bgcolor: '#e8f0fe',
             '& .MuiListItemIcon-root': { color: '#1a73e8' },
             '& .MuiListItemText-primary': { color: '#1a73e8', fontWeight: 600 },
           },
-          '&:hover:not(.Mui-selected)': { bgcolor: '#f1f3f4' },
+          '&:hover:not(.Mui-selected)': { bgcolor: 'rgba(0,0,0,0.04)' },
         }}
       >
-        <ListItemIcon sx={{ minWidth: 36, color: active ? '#1a73e8' : 'text.secondary' }}>
+        <ListItemIcon sx={{ minWidth: 34, color: active ? '#1a73e8' : '#5f6368' }}>
           {icon}
         </ListItemIcon>
         <ListItemText
@@ -110,28 +107,19 @@ export default function Layout({ children }: { children: ReactNode }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
-  const dismiss = (id: string) => dismissMutation.mutate(id)
-  const dismissAll = () => dismissAllMutation.mutate()
-
   const isActive = (path: string) => location.pathname.startsWith(path)
 
   const drawer = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', pt: 1.5, pb: 2 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', pt: 1, pb: 2 }}>
       {SECTIONS.map((section, si) => (
         <Box key={si}>
           {section.heading && (
             <Typography
               variant="caption"
               sx={{
-                display: 'block',
-                px: 3,
-                pt: 1.5,
-                pb: 0.5,
-                color: 'text.disabled',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                fontSize: '0.68rem',
+                display: 'block', px: 2.5, pt: 1.5, pb: 0.5,
+                color: '#9aa0a6', fontWeight: 700,
+                textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '0.65rem',
               }}
             >
               {section.heading}
@@ -151,11 +139,9 @@ export default function Layout({ children }: { children: ReactNode }) {
         </Box>
       ))}
 
-      {/* Spacer pushes version to bottom */}
       <Box sx={{ flex: 1 }} />
-
       <Divider sx={{ mx: 2, mb: 1.5 }} />
-      <Typography variant="caption" sx={{ px: 3, color: 'text.disabled' }}>
+      <Typography variant="caption" sx={{ px: 2.5, color: '#bdc1c6', fontSize: '0.7rem' }}>
         DS Data Catalog v1.0
       </Typography>
     </Box>
@@ -163,28 +149,38 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* Top App Bar */}
+      {/* AppBar */}
       <AppBar position="fixed" sx={{ zIndex: (t) => t.zIndex.drawer + 1 }}>
-        <Toolbar sx={{ gap: 1 }}>
+        <Toolbar sx={{ gap: 1, minHeight: '60px !important' }}>
           <IconButton
             edge="start"
             onClick={() => setDrawerOpen(!drawerOpen)}
-            sx={{ color: 'text.secondary', display: { sm: 'none' } }}
+            sx={{ color: '#5f6368', display: { sm: 'none' }, mr: 0.5 }}
           >
             <MenuIcon />
           </IconButton>
 
+          {/* Logo */}
           <Box
             component={Link}
             to="/browse"
             sx={{ display: 'flex', alignItems: 'center', gap: 1, textDecoration: 'none', mr: 2, flexShrink: 0 }}
           >
-            <StorageIcon sx={{ color: '#1a73e8', fontSize: 26 }} />
-            <Typography variant="h6" sx={{ color: 'text.primary', fontWeight: 700, display: { xs: 'none', sm: 'block' } }}>
+            <Box sx={{
+              width: 32, height: 32, borderRadius: 2, bgcolor: '#1a73e8',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <SchemaIcon sx={{ color: '#fff', fontSize: 20 }} />
+            </Box>
+            <Typography
+              variant="subtitle1"
+              sx={{ color: '#1f1f1f', fontWeight: 700, display: { xs: 'none', sm: 'block' }, letterSpacing: '-0.01em' }}
+            >
               DS Catalog
             </Typography>
           </Box>
 
+          {/* Search */}
           <Box sx={{ flex: 1, maxWidth: 560 }}>
             <SearchBar size="small" />
           </Box>
@@ -192,36 +188,49 @@ export default function Layout({ children }: { children: ReactNode }) {
           <Box sx={{ flex: 1 }} />
 
           {/* Notifications */}
-          <Tooltip title="Notifications">
-            <IconButton onClick={(e) => setNotifAnchor(e.currentTarget)} sx={{ color: 'text.secondary' }}>
+          <Tooltip title="Notifications" arrow>
+            <IconButton onClick={(e) => setNotifAnchor(e.currentTarget)} sx={{ color: '#5f6368' }}>
               <Badge badgeContent={notifications?.length ?? 0} color="error" max={9}>
-                <NotificationsIcon />
+                <NotificationsIcon sx={{ fontSize: 22 }} />
               </Badge>
             </IconButton>
           </Tooltip>
+
           <Menu
             anchorEl={notifAnchor}
             open={!!notifAnchor}
             onClose={() => setNotifAnchor(null)}
-            PaperProps={{ sx: { width: 360, maxHeight: 440 } }}
+            PaperProps={{ sx: { width: 360, maxHeight: 480, borderRadius: 3, mt: 1 } }}
           >
-            <Box sx={{ px: 2, py: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="subtitle2" fontWeight={700} sx={{ flex: 1 }}>Metadata Changes</Typography>
+            <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ flex: 1 }}>Notifications</Typography>
               {(notifications?.length ?? 0) > 0 && (
-                <Button size="small" sx={{ fontSize: '0.7rem' }} onClick={() => { dismissAll(); setNotifAnchor(null) }}>
+                <Button size="small" sx={{ fontSize: '0.75rem', color: '#1a73e8' }}
+                  onClick={() => { dismissAllMutation.mutate(); setNotifAnchor(null) }}>
                   Clear all
                 </Button>
               )}
             </Box>
             {!notifications?.length ? (
-              <MenuItem disabled>
+              <Box sx={{ px: 3, py: 4, textAlign: 'center' }}>
+                <NotificationsIcon sx={{ fontSize: 32, color: '#dadce0', mb: 1 }} />
                 <Typography variant="body2" color="text.secondary">No new notifications</Typography>
-              </MenuItem>
+              </Box>
             ) : (
               notifications.map((n) => (
-                <MenuItem key={n.id} sx={{ alignItems: 'flex-start', gap: 1, py: 1 }} onClick={() => dismiss(n.id)}>
+                <MenuItem
+                  key={n.id}
+                  sx={{ alignItems: 'flex-start', gap: 1.5, py: 1.5, px: 2 }}
+                  onClick={() => dismissMutation.mutate(n.id)}
+                >
+                  <Box sx={{
+                    width: 8, height: 8, borderRadius: '50%', bgcolor: '#1a73e8',
+                    flexShrink: 0, mt: 0.75,
+                  }} />
                   <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography variant="body2" fontWeight={500} noWrap>{n.entity_name || n.entity_type}</Typography>
+                    <Typography variant="body2" fontWeight={500} noWrap>
+                      {n.entity_name || n.entity_type}
+                    </Typography>
                     <Typography variant="caption" color="text.secondary" noWrap>
                       {n.field_changed} changed{n.changed_by ? ` by ${n.changed_by}` : ''}
                     </Typography>
@@ -237,23 +246,30 @@ export default function Layout({ children }: { children: ReactNode }) {
           {/* User menu */}
           {user ? (
             <>
-              <Tooltip title={`${user.name || user.email} (${user.role})`}>
+              <Tooltip title={`${user.name || user.email} · ${user.role}`} arrow>
                 <IconButton onClick={(e) => setUserMenuAnchor(e.currentTarget)} sx={{ p: 0.5 }}>
                   {user.picture
                     ? <Avatar src={user.picture} sx={{ width: 32, height: 32 }} />
-                    : <Avatar sx={{ width: 32, height: 32, fontSize: '0.85rem', bgcolor: '#1a73e8' }}>{(user.name || user.email)[0].toUpperCase()}</Avatar>
+                    : <Avatar sx={{ width: 32, height: 32, fontSize: '0.875rem', bgcolor: '#1a73e8', fontWeight: 600 }}>
+                        {(user.name || user.email)[0].toUpperCase()}
+                      </Avatar>
                   }
                 </IconButton>
               </Tooltip>
-              <Menu anchorEl={userMenuAnchor} open={!!userMenuAnchor} onClose={() => setUserMenuAnchor(null)}>
-                <Box sx={{ px: 2, py: 1 }}>
+              <Menu
+                anchorEl={userMenuAnchor}
+                open={!!userMenuAnchor}
+                onClose={() => setUserMenuAnchor(null)}
+                PaperProps={{ sx: { width: 240, borderRadius: 3, mt: 1 } }}
+              >
+                <Box sx={{ px: 2, py: 1.5 }}>
                   <Typography variant="body2" fontWeight={600}>{user.name || user.email}</Typography>
-                  <Typography variant="caption" color="text.secondary">{user.email}</Typography>
-                  <Chip label={user.role} size="small" sx={{ mt: 0.5, fontSize: '0.65rem', height: 18 }} />
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{user.email}</Typography>
+                  <Chip label={user.role} size="small" sx={{ mt: 0.75, fontSize: '0.7rem', height: 20, bgcolor: '#e8f0fe', color: '#1a73e8' }} />
                 </Box>
                 <Divider />
-                <MenuItem onClick={() => { logout(); setUserMenuAnchor(null) }}>
-                  <Typography variant="body2" color="error">Sign out</Typography>
+                <MenuItem onClick={() => { logout(); setUserMenuAnchor(null) }} sx={{ py: 1.25 }}>
+                  <Typography variant="body2" color="error.main" fontWeight={500}>Sign out</Typography>
                 </MenuItem>
               </Menu>
             </>
@@ -262,16 +278,15 @@ export default function Layout({ children }: { children: ReactNode }) {
               size="small"
               variant="outlined"
               onClick={() => { window.location.href = '/api/v1/auth/login' }}
-              sx={{ fontSize: '0.8rem', textTransform: 'none', ml: 1 }}
+              sx={{ fontSize: '0.8rem', ml: 1 }}
             >
               Sign in
             </Button>
           )}
-
         </Toolbar>
       </AppBar>
 
-      {/* Side Drawer – persistent on desktop */}
+      {/* Permanent sidebar */}
       <Drawer
         variant="permanent"
         sx={{
@@ -281,40 +296,33 @@ export default function Layout({ children }: { children: ReactNode }) {
           '& .MuiDrawer-paper': {
             width: DRAWER_WIDTH,
             boxSizing: 'border-box',
-            top: 64,
-            height: 'calc(100% - 64px)',
-            borderRight: '1px solid',
-            borderColor: 'divider',
+            top: 60,
+            height: 'calc(100% - 60px)',
+            borderRight: '1px solid #e8eaed',
+            bgcolor: '#f8f9fa',
           },
         }}
       >
         {drawer}
       </Drawer>
 
-      {/* Mobile Drawer */}
+      {/* Mobile drawer */}
       <Drawer
         variant="temporary"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         sx={{
           display: { xs: 'block', sm: 'none' },
-          '& .MuiDrawer-paper': { width: DRAWER_WIDTH, boxSizing: 'border-box' },
+          '& .MuiDrawer-paper': { width: DRAWER_WIDTH },
         }}
       >
-        <Toolbar />
+        <Toolbar sx={{ minHeight: '60px !important' }} />
         {drawer}
       </Drawer>
 
-      {/* Main content */}
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          pt: '64px',
-          minHeight: '100vh',
-        }}
-      >
-        <Box sx={{ pt: { xs: 1.5, sm: 2 }, pb: { xs: 1.5, sm: 2 }, pl: { xs: 1.5, sm: 2 }, pr: { xs: 1.5, sm: 2 } }}>{children}</Box>
+      {/* Main */}
+      <Box component="main" sx={{ flexGrow: 1, pt: '60px', minHeight: '100vh' }}>
+        <Box sx={{ p: { xs: 2, sm: 3 } }}>{children}</Box>
       </Box>
     </Box>
   )

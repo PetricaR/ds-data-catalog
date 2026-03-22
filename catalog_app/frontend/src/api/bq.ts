@@ -34,6 +34,12 @@ export interface SourceUpdate {
   is_active?: boolean
 }
 
+export interface ProjectInfo {
+  project_id: string
+  display_name: string
+  already_added: boolean
+}
+
 export const bqApi = {
   // Single ad-hoc sync
   sync: (req: SyncRequest = {}) =>
@@ -59,4 +65,8 @@ export const bqApi = {
   // Sync one source by ID
   syncSource: (id: string) =>
     client.post<SyncResponse>(`/bq/sync/source/${id}`).then((r) => r.data),
+
+  // Discover all GCP projects the current user has access to
+  listAccessibleProjects: () =>
+    client.get<ProjectInfo[]>('/bq/projects').then((r) => r.data),
 }

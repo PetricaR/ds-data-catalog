@@ -97,6 +97,10 @@ def init_db():
                 created_by VARCHAR(255)
             )""",
             "CREATE INDEX IF NOT EXISTS ix_gcp_sources_project_id ON gcp_sources(project_id)",
+            # ── User OAuth tokens ──────────────────────────────────────────
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS gcp_access_token TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS gcp_refresh_token TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS gcp_token_expiry TIMESTAMPTZ",
         ]:
             conn.execute(text(ddl))
         conn.commit()
