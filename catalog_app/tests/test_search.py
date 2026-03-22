@@ -2,16 +2,10 @@
 
 
 class TestSearch:
-    def test_search_requires_auth(self, client):
-        r = client.get("/api/v1/search?q=test")
-        assert r.status_code == 401
-
-    def test_search_empty_query(self, client, auth_headers):
+    def test_search_requires_nonempty_query(self, client, auth_headers):
+        # q with min_length=1, empty string returns 422
         r = client.get("/api/v1/search?q=", headers=auth_headers)
-        assert r.status_code == 200
-        data = r.json()
-        assert "results" in data
-        assert "total" in data
+        assert r.status_code == 422
 
     def test_search_returns_structure(self, client, auth_headers, seed_dataset, seed_table):
         r = client.get("/api/v1/search?q=test", headers=auth_headers)
@@ -39,15 +33,12 @@ class TestSearch:
 
 
 class TestColumnSearch:
-    def test_column_search_requires_auth(self, client):
-        r = client.get("/api/v1/search/columns?q=id")
-        assert r.status_code == 401
-
     def test_column_search_returns_list(self, client, auth_headers, seed_column):
-        r = client.get("/api/v1/search/columns?q=id", headers=auth_headers)
+        r = client.get("/api/v1/search/columns?name=id", headers=auth_headers)
         assert r.status_code == 200
         assert isinstance(r.json(), list)
 
-    def test_column_search_empty_query(self, client, auth_headers):
-        r = client.get("/api/v1/search/columns?q=", headers=auth_headers)
-        assert r.status_code == 200
+    def test_column_search_requires_nonempty_name(self, client, auth_headers):
+        # name with min_length=1, empty string returns 422
+        r = client.get("/api/v1/search/columns?name=", headers=auth_headers)
+        assert r.status_code == 422

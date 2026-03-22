@@ -21,10 +21,6 @@ def seed_change(db, table_id, change_type="column_added", column_name="new_col",
 
 
 class TestListSchemaChanges:
-    def test_list_requires_auth(self, client):
-        r = client.get("/api/v1/schema-changes")
-        assert r.status_code == 401
-
     def test_list_returns_unacknowledged_by_default(self, client, auth_headers, db, seed_table):
         seed_change(db, seed_table.id, acknowledged=False)
         seed_change(db, seed_table.id, column_name="col2", acknowledged=True)

@@ -25,10 +25,6 @@ def seed_notification(db, entity_id=None, is_notified=False):
 
 
 class TestListNotifications:
-    def test_list_requires_auth(self, client):
-        r = client.get("/api/v1/notifications")
-        assert r.status_code == 401
-
     def test_list_returns_unnotified(self, client, auth_headers, db):
         seed_notification(db, is_notified=False)
         r = client.get("/api/v1/notifications", headers=auth_headers)

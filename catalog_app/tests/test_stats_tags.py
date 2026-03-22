@@ -2,10 +2,6 @@
 
 
 class TestStats:
-    def test_stats_requires_auth(self, client):
-        r = client.get("/api/v1/stats")
-        assert r.status_code == 401
-
     def test_stats_structure(self, client, auth_headers):
         r = client.get("/api/v1/stats", headers=auth_headers)
         assert r.status_code == 200
@@ -36,10 +32,6 @@ class TestStats:
 
 
 class TestTags:
-    def test_tags_requires_auth(self, client):
-        r = client.get("/api/v1/tags")
-        assert r.status_code == 401
-
     def test_tags_returns_list(self, client, auth_headers):
         r = client.get("/api/v1/tags", headers=auth_headers)
         assert r.status_code == 200

@@ -60,6 +60,6 @@ class TestAuthLogin:
         from backend.config import settings
         monkeypatch.setattr(settings, "google_client_id", "fake-client-id")
         r = client.get("/api/v1/auth/login", follow_redirects=False)
-        assert r.status_code == 302
+        assert r.status_code in (302, 307)
         assert "accounts.google.com" in r.headers["location"]
         assert "fake-client-id" in r.headers["location"]

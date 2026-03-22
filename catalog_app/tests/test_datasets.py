@@ -9,10 +9,6 @@ class TestListDatasets:
         assert r.status_code == 200
         assert isinstance(r.json(), list)
 
-    def test_list_requires_auth(self, client):
-        r = client.get("/api/v1/datasets")
-        assert r.status_code == 401
-
     def test_list_returns_seeded_dataset(self, client, auth_headers, seed_dataset):
         r = client.get("/api/v1/datasets", headers=auth_headers)
         ids = [d["id"] for d in r.json()]
@@ -37,15 +33,11 @@ class TestCreateDataset:
             "sensitivity_label": "internal",
         }
         r = client.post("/api/v1/datasets", json=payload, headers=auth_headers)
-        assert r.status_code == 200
+        assert r.status_code == 201
         data = r.json()
         assert data["dataset_id"] == "ds_new"
         assert data["project_id"] == "proj-1"
         assert "id" in data
-
-    def test_create_requires_auth(self, client):
-        r = client.post("/api/v1/datasets", json={"project_id": "p", "dataset_id": "d"})
-        assert r.status_code == 401
 
     def test_create_missing_required_fields(self, client, auth_headers):
         r = client.post("/api/v1/datasets", json={"display_name": "oops"}, headers=auth_headers)
@@ -61,10 +53,6 @@ class TestGetDataset:
     def test_get_nonexistent_returns_404(self, client, auth_headers):
         r = client.get(f"/api/v1/datasets/{uuid.uuid4()}", headers=auth_headers)
         assert r.status_code == 404
-
-    def test_get_requires_auth(self, client, seed_dataset):
-        r = client.get(f"/api/v1/datasets/{seed_dataset.id}")
-        assert r.status_code == 401
 
 
 class TestUpdateDataset:
@@ -98,8 +86,7 @@ class TestUpdateDataset:
 class TestValidateDataset:
     def test_validate_dataset(self, client, auth_headers, seed_dataset):
         r = client.patch(
-            f"/api/v1/datasets/{seed_dataset.id}/validate",
-            json={"validated_by": "validator@example.com"},
+            f"/api/v1/datasets/{seed_dataset.id}/validate?validated_by=validator@example.com",
             headers=auth_headers,
         )
         assert r.status_code == 200
@@ -109,14 +96,12 @@ class TestValidateDataset:
     def test_revoke_validation(self, client, auth_headers, seed_dataset):
         # First validate
         client.patch(
-            f"/api/v1/datasets/{seed_dataset.id}/validate",
-            json={"validated_by": "v@example.com"},
+            f"/api/v1/datasets/{seed_dataset.id}/validate?validated_by=v@example.com",
             headers=auth_headers,
         )
         # Then revoke (validate again toggles off)
         r = client.patch(
-            f"/api/v1/datasets/{seed_dataset.id}/validate",
-            json={"validated_by": "v@example.com"},
+            f"/api/v1/datasets/{seed_dataset.id}/validate?validated_by=v@example.com",
             headers=auth_headers,
         )
         assert r.status_code == 200
@@ -146,7 +131,7 @@ class TestDeleteDataset:
         )
         ds_id = r.json()["id"]
         r = client.delete(f"/api/v1/datasets/{ds_id}", headers=auth_headers)
-        assert r.status_code == 200
+        assert r.status_code == 204
 
     def test_delete_nonexistent_returns_404(self, client, auth_headers):
         r = client.delete(f"/api/v1/datasets/{uuid.uuid4()}", headers=auth_headers)

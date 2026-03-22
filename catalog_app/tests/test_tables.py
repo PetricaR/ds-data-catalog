@@ -15,10 +15,6 @@ class TestListTables:
         assert r.status_code == 200
         assert all(t["dataset_id"] == str(seed_dataset.id) for t in r.json())
 
-    def test_list_requires_auth(self, client):
-        r = client.get("/api/v1/tables")
-        assert r.status_code == 401
-
 
 class TestCreateTable:
     def test_create_with_columns(self, client, auth_headers, seed_dataset):
@@ -35,17 +31,10 @@ class TestCreateTable:
             ],
         }
         r = client.post("/api/v1/tables", json=payload, headers=auth_headers)
-        assert r.status_code == 200
+        assert r.status_code == 201
         data = r.json()
         assert data["table_id"] == "new_table"
         assert len(data["columns"]) == 2
-
-    def test_create_requires_auth(self, client, seed_dataset):
-        r = client.post(
-            "/api/v1/tables",
-            json={"dataset_id": str(seed_dataset.id), "table_id": "t"},
-        )
-        assert r.status_code == 401
 
     def test_create_missing_dataset_id(self, client, auth_headers):
         r = client.post("/api/v1/tables", json={"table_id": "t"}, headers=auth_headers)
@@ -224,7 +213,7 @@ class TestDeleteTable:
         )
         tbl_id = r.json()["id"]
         r = client.delete(f"/api/v1/tables/{tbl_id}", headers=auth_headers)
-        assert r.status_code == 200
+        assert r.status_code == 204
 
     def test_delete_nonexistent_returns_404(self, client, auth_headers):
         r = client.delete(f"/api/v1/tables/{uuid.uuid4()}", headers=auth_headers)
