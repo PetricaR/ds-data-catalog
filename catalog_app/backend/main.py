@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import auth, bq, datasets, notifications, schema_changes, search, stats, tables, tags
+from .api import auth, bq, datasets, notifications, schema_changes, search, setup, stats, tables, tags
 from .config import settings
 from .database import init_db
 
@@ -15,8 +15,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="DS Data Catalog",
-    description="BigQuery dataset and table catalog for data science teams",
+    title="Light Data Catalog",
+    description="Lightweight BigQuery dataset and table catalog for your organization",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -39,6 +39,7 @@ app.include_router(stats.router, prefix=API_PREFIX)
 app.include_router(bq.router, prefix=API_PREFIX)
 app.include_router(schema_changes.router, prefix=API_PREFIX)
 app.include_router(notifications.router, prefix=API_PREFIX)
+app.include_router(setup.router, prefix=API_PREFIX)
 
 
 @app.get("/health")

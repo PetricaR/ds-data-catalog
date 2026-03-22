@@ -55,7 +55,7 @@ def notify_trusted(
                     {"keyValue": {"topLabel": "BQ path", "content": table_bq_path}},
                     {"keyValue": {"topLabel": "Validated by", "content": validated_by}},
                     {"keyValue": {"topLabel": "Columns validated", "content": cols_text}},
-                    {"buttons": [{"textButton": {"text": "Open in DS Catalog", "onClick": {"openLink": {"url": link}}}}]},
+                    {"buttons": [{"textButton": {"text": "Open in Light Data Catalog", "onClick": {"openLink": {"url": link}}}}]},
                 ]
             }]
         }]
@@ -87,7 +87,7 @@ def notify_revoked(
                     *([ {"keyValue": {"topLabel": "Dataset", "content": dataset_name}} ] if dataset_name else []),
                     {"keyValue": {"topLabel": "BQ path", "content": table_bq_path}},
                     {"keyValue": {"topLabel": "Revoked by", "content": revoked_by or "unknown"}},
-                    {"buttons": [{"textButton": {"text": "Open in DS Catalog", "onClick": {"openLink": {"url": link}}}}]},
+                    {"buttons": [{"textButton": {"text": "Open in Light Data Catalog", "onClick": {"openLink": {"url": link}}}}]},
                 ]
             }]
         }]
@@ -129,7 +129,7 @@ def notify_metadata_change(
                         if data_steward else []
                     ),
                     *(
-                        [{"buttons": [{"textButton": {"text": "Open in DS Catalog", "onClick": {"openLink": {"url": path}}}}]}]
+                        [{"buttons": [{"textButton": {"text": "Open in Light Data Catalog", "onClick": {"openLink": {"url": path}}}}]}]
                         if path else []
                     ),
                 ]

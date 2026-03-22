@@ -21,7 +21,6 @@ import requests as http_requests
 logger = logging.getLogger(__name__)
 
 _LINEAGE_BASE = "https://datalineage.googleapis.com/v1"
-_BQ_FQN_PREFIX = "//bigquery.googleapis.com"
 _CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
 
@@ -32,7 +31,7 @@ def _normalize_location(location: Optional[str]) -> str:
     if not location:
         return "us"
     loc = location.lower()
-    # Multi-region shorthands
+    # Multi-region shorthands accepted by the API
     if loc in ("us", "eu"):
         return loc
     # e.g. "US" → "us", "EU" → "eu", "us-central1" stays as-is
@@ -40,18 +39,22 @@ def _normalize_location(location: Optional[str]) -> str:
 
 
 def _table_fqn(project_id: str, dataset_id: str, table_id: str) -> str:
-    return f"{_BQ_FQN_PREFIX}/projects/{project_id}/datasets/{dataset_id}/tables/{table_id}"
+    """
+    Build the EntityReference fullyQualifiedName for a BigQuery table.
+    Correct format per Data Lineage REST API docs:
+      bigquery:{projectId}.{datasetId}.{tableId}
+    """
+    return f"bigquery:{project_id}.{dataset_id}.{table_id}"
 
 
-def _fqn_to_dotted(fqn: str) -> Optional[str]:
-    """Convert //bigquery.googleapis.com/projects/P/datasets/D/tables/T → P.D.T"""
-    prefix = f"{_BQ_FQN_PREFIX}/projects/"
-    if not fqn.startswith(prefix):
-        return fqn
-    parts = fqn[len(prefix):].split("/")
-    # expected: [project, "datasets", dataset, "tables", table]
-    if len(parts) == 5 and parts[1] == "datasets" and parts[3] == "tables":
-        return f"{parts[0]}.{parts[2]}.{parts[4]}"
+def _fqn_to_ref(fqn: str) -> Optional[str]:
+    """
+    Convert a Data Lineage API fullyQualifiedName to a dotted ref string.
+      bigquery:project.dataset.table  →  project.dataset.table
+    Non-BigQuery FQNs are returned as-is.
+    """
+    if fqn.startswith("bigquery:"):
+        return fqn[len("bigquery:"):]
     return fqn
 
 
@@ -129,13 +132,13 @@ def discover(
 
     # Links where this table is the target → sources are upstream
     for link in _search_links(token, parent, {"target": {"fullyQualifiedName": fqn}}):
-        ref = _fqn_to_dotted(link.get("source", {}).get("fullyQualifiedName", ""))
+        ref = _fqn_to_ref(link.get("source", {}).get("fullyQualifiedName", ""))
         if ref and ref not in upstream_refs:
             upstream_refs.append(ref)
 
     # Links where this table is the source → targets are downstream
     for link in _search_links(token, parent, {"source": {"fullyQualifiedName": fqn}}):
-        ref = _fqn_to_dotted(link.get("target", {}).get("fullyQualifiedName", ""))
+        ref = _fqn_to_ref(link.get("target", {}).get("fullyQualifiedName", ""))
         if ref and ref not in downstream_refs:
             downstream_refs.append(ref)
 

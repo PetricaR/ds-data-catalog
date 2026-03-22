@@ -24,6 +24,7 @@ import MenuIcon from '@mui/icons-material/Menu'
 import StorageIcon from '@mui/icons-material/Storage'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import CloudSyncIcon from '@mui/icons-material/CloudSync'
+import SettingsIcon from '@mui/icons-material/Settings'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
@@ -43,6 +44,7 @@ const SECTIONS: { heading?: string; items: { label: string; path: string; icon: 
     heading: 'Admin',
     items: [
       { label: 'GCP Sources', path: '/sources', icon: <CloudSyncIcon fontSize="small" /> },
+      { label: 'Setup',       path: '/setup',   icon: <SettingsIcon fontSize="small" /> },
     ],
   },
 ]
@@ -142,7 +144,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <Box sx={{ flex: 1 }} />
       <Divider sx={{ mx: 2, mb: 1.5 }} />
       <Typography variant="caption" sx={{ px: 2.5, color: '#bdc1c6', fontSize: '0.7rem' }}>
-        DS Data Catalog v1.0
+        Light Data Catalog v1.0
       </Typography>
     </Box>
   )
@@ -176,7 +178,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               variant="subtitle1"
               sx={{ color: '#1f1f1f', fontWeight: 700, display: { xs: 'none', sm: 'block' }, letterSpacing: '-0.01em' }}
             >
-              DS Catalog
+              Light Data Catalog
             </Typography>
           </Box>
 

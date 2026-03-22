@@ -71,7 +71,7 @@ export default function Login() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 5 }}>
             <SchemaIcon sx={{ color: '#ffffff', fontSize: 32 }} />
             <Typography variant="h6" sx={{ color: '#ffffff', fontWeight: 700, letterSpacing: '0.01em' }}>
-              DS Catalog
+              Light Data Catalog
             </Typography>
           </Box>
 
@@ -107,7 +107,7 @@ export default function Login() {
           {/* Mobile logo */}
           <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center', gap: 1.5, mb: 4, justifyContent: 'center' }}>
             <SchemaIcon sx={{ color: '#1a73e8', fontSize: 32 }} />
-            <Typography variant="h5" fontWeight={700}>DS Catalog</Typography>
+            <Typography variant="h5" fontWeight={700}>Light Data Catalog</Typography>
           </Box>
 
           <Typography variant="h4" fontWeight={700} gutterBottom sx={{ color: '#1f1f1f' }}>

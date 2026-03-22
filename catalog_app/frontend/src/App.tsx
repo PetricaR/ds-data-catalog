@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import Browse from './pages/Browse'
@@ -9,10 +10,13 @@ import Sources from './pages/Sources'
 import Login from './pages/Login'
 import { AuthProvider } from './contexts/AuthContext'
 
+const Setup = lazy(() => import('./pages/Setup'))
+
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
+        <Route path="/setup" element={<Suspense fallback={null}><Setup /></Suspense>} />
         <Route path="/login" element={<Login />} />
         <Route
           path="*"

@@ -7,7 +7,7 @@ const client = axios.create({
 
 // Inject JWT from localStorage if available
 client.interceptors.request.use((config) => {
-  const token = localStorage.getItem('ds_catalog_token')
+  const token = localStorage.getItem('light_data_catalog_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -19,8 +19,8 @@ client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
-      localStorage.removeItem('ds_catalog_token')
-      localStorage.removeItem('ds_catalog_user')
+      localStorage.removeItem('light_data_catalog_token')
+      localStorage.removeItem('light_data_catalog_user')
       window.location.href = '/login'
     }
     return Promise.reject(error)

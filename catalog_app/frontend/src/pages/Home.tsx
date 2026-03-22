@@ -83,7 +83,7 @@ export default function Home() {
         }}
       >
         <Typography variant="h3" fontWeight={700} gutterBottom sx={{ color: '#202124' }}>
-          DS Data Catalog
+          Light Data Catalog
         </Typography>
         <Typography variant="h6" color="text.secondary" sx={{ mb: 4, fontWeight: 400 }}>
           Discover, understand, and trust your BigQuery data assets
