@@ -74,17 +74,8 @@ check_prerequisites() {
 
 # ── Docker auth ───────────────────────────────────────────────────────────────
 
-configure_docker_auth() {
-    print_header "Configuring Docker Authentication"
-    if [ "$REGISTRY_TYPE" == "gcr" ]; then
-        gcloud auth configure-docker --quiet
-    else
-        gcloud auth configure-docker "${AR_LOCATION}-docker.pkg.dev" --quiet
-    fi
-    print_success "Docker auth configured"
-}
-
-# ── Build & push ──────────────────────────────────────────────────────────────
+# ── Build & push (via Cloud Build) ───────────────────────────────────────────
+# Builds in GCP and pushes directly to GCR — no local Docker/BuildKit needed.
 
 build_and_push() {
     local name=$1 dockerfile=$2
@@ -92,23 +83,27 @@ build_and_push() {
     local image=$(get_image_url "$name" "$tag")
     local latest=$(get_image_url "$name" "latest")
 
-    print_header "Building $name"
-    print_info "Dockerfile: $dockerfile"
+    print_header "Building $name (Cloud Build)"
     print_info "Image: $image"
 
-    docker build \
-        --platform=linux/amd64 \
-        -f "${BUILD_CONTEXT}/${dockerfile}" \
-        -t "$image" \
-        -t "$latest" \
-        "$BUILD_CONTEXT"
+    gcloud services enable cloudbuild.googleapis.com --project="$PROJECT_ID" --quiet
 
-    print_info "Pushing $image"
-    docker push "$image"
-    docker push "$latest"
+    local tmpconfig
+    tmpconfig=$(mktemp /tmp/cloudbuild-XXXXXX.yaml)
+    cat > "$tmpconfig" <<EOF
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', '${dockerfile}', '-t', '${image}', '-t', '${latest}', '.']
+images:
+  - '${image}'
+  - '${latest}'
+EOF
+    gcloud builds submit "$BUILD_CONTEXT" \
+        --project="$PROJECT_ID" \
+        --config="$tmpconfig"
+    rm -f "$tmpconfig"
 
     print_success "$name image built and pushed"
-    # Export for use in deploy step
     eval "export ${name//-/_}_IMAGE_URL=$image"
 }
 

@@ -192,18 +192,17 @@ setup_workload_identity() {
     print_success "Workload Identity configured"
 }
 
-# ── Step 5: Build & push images ───────────────────────────────────────────────
+# ── Step 5: Build & push images (via Cloud Build) ────────────────────────────
+# Uses 'gcloud builds submit' — builds in GCP, pushes directly to GCR.
+# Avoids all local Docker BuildKit / docker-container driver issues on Mac.
 build_and_push_images() {
-    print_step 5 "Building & pushing Docker images"
+    print_step 5 "Building & pushing Docker images (Cloud Build)"
 
     local TAG
     TAG=$(date +%Y%m%d-%H%M%S)
 
-    if [ "$REGISTRY_TYPE" == "gcr" ]; then
-        gcloud auth configure-docker --quiet
-    else
-        gcloud auth configure-docker "${AR_LOCATION}-docker.pkg.dev" --quiet
-    fi
+    # Enable Cloud Build API if not already enabled
+    gcloud services enable cloudbuild.googleapis.com --project="$PROJECT_ID" --quiet
 
     for name in ds-catalog-backend ds-catalog-frontend; do
         local dockerfile
@@ -213,17 +212,23 @@ build_and_push_images() {
         image=$(get_image_url "$name" "$TAG")
         latest=$(get_image_url "$name" "latest")
 
-        print_info "Building $name → $image"
-        docker build --platform=linux/amd64 \
-            -f "${BUILD_CONTEXT}/${dockerfile}" \
-            -t "$image" -t "$latest" \
-            "$BUILD_CONTEXT"
-
-        docker push "$image"
-        docker push "$latest"
+        print_info "Submitting $name to Cloud Build → $image"
+        local tmpconfig
+        tmpconfig=$(mktemp /tmp/cloudbuild-XXXXXX.yaml)
+        cat > "$tmpconfig" <<EOF
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', '${dockerfile}', '-t', '${image}', '-t', '${latest}', '.']
+images:
+  - '${image}'
+  - '${latest}'
+EOF
+        gcloud builds submit "$BUILD_CONTEXT" \
+            --project="$PROJECT_ID" \
+            --config="$tmpconfig"
+        rm -f "$tmpconfig"
         print_success "$name pushed"
 
-        # Export for deploy step
         [ "$name" == "ds-catalog-backend" ]  && export BACKEND_IMAGE="$image"
         [ "$name" == "ds-catalog-frontend" ] && export FRONTEND_IMAGE="$image"
     done
