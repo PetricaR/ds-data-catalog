@@ -164,5 +164,6 @@ def list_tables_in_dataset(dataset_id: UUID, db: Session = Depends(get_db)):
         resp = TableResponse.model_validate(t)
         resp.dataset_project_id = ds.project_id
         resp.dataset_display_name = ds.display_name or ds.dataset_id
+        resp.dataset_bq_dataset_id = ds.dataset_id
         results.append(resp)
     return results

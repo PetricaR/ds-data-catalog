@@ -130,8 +130,7 @@ def callback(code: str, request: Request, db: Session = Depends(get_db)):
         "picture": user.picture,
         "role": user.role,
     }))
-    frontend_url = str(request.base_url).rstrip("/")
-    return RedirectResponse(url=f"{frontend_url}/login?token={jwt_token}&user={user_json}")
+    return RedirectResponse(url=f"{settings.frontend_url}/login?token={jwt_token}&user={user_json}")
 
 
 @router.get("/me")

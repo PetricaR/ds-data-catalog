@@ -197,6 +197,24 @@ class SchemaChangeResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+class NotificationResponse(BaseModel):
+    id: UUID
+    entity_type: str
+    entity_id: UUID
+    entity_name: Optional[str] = None
+    field_changed: Optional[str] = None
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    changed_by: Optional[str] = None
+    changed_at: Optional[datetime] = None
+    data_steward: Optional[str] = None
+    is_notified: bool
+
+    model_config = {"from_attributes": True}
+
+
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 class CatalogStats(BaseModel):

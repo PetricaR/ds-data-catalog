@@ -38,8 +38,9 @@ def pull_column_stats(
         parts.append(
             f"ROUND(100.0 * COUNTIF(`{safe}` IS NULL) / NULLIF(COUNT(*), 0), 2) AS `{safe}__null_pct`"
         )
-        parts.append(f"CAST(MIN(CAST(`{safe}` AS STRING)) AS STRING) AS `{safe}__min`")
-        parts.append(f"CAST(MAX(CAST(`{safe}` AS STRING)) AS STRING) AS `{safe}__max`")
+        # Use SAFE_CAST to avoid errors on STRUCT/ARRAY/GEOGRAPHY column types
+        parts.append(f"CAST(MIN(SAFE_CAST(`{safe}` AS STRING)) AS STRING) AS `{safe}__min`")
+        parts.append(f"CAST(MAX(SAFE_CAST(`{safe}` AS STRING)) AS STRING) AS `{safe}__max`")
 
     sql = f"SELECT {', '.join(parts)} FROM `{project_id}.{dataset_id}.{table_id}`"
 
@@ -61,4 +62,26 @@ def pull_column_stats(
         return result
     except Exception as exc:
         logger.warning("Column stats pull failed for %s.%s.%s: %s", project_id, dataset_id, table_id, exc)
-        return {}
+        # Attempt per-column fallback so one bad column doesn't block all stats
+        result = {}
+        for col in column_names:
+            safe = col.replace("`", "")
+            col_sql = (
+                f"SELECT"
+                f" APPROX_COUNT_DISTINCT(`{safe}`) AS acd,"
+                f" ROUND(100.0 * COUNTIF(`{safe}` IS NULL) / NULLIF(COUNT(*), 0), 2) AS null_pct,"
+                f" CAST(MIN(SAFE_CAST(`{safe}` AS STRING)) AS STRING) AS min_v,"
+                f" CAST(MAX(SAFE_CAST(`{safe}` AS STRING)) AS STRING) AS max_v"
+                f" FROM `{project_id}.{dataset_id}.{table_id}`"
+            )
+            try:
+                r = next(iter(client.query(col_sql).result()))
+                result[col] = {
+                    "approx_count_distinct": r.get("acd"),
+                    "null_pct": r.get("null_pct"),
+                    "min_val": str(r.get("min_v")) if r.get("min_v") is not None else None,
+                    "max_val": str(r.get("max_v")) if r.get("max_v") is not None else None,
+                }
+            except Exception as col_exc:
+                logger.warning("Stats skipped for column %s: %s", col, col_exc)
+        return result

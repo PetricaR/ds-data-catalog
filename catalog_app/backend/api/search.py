@@ -112,6 +112,7 @@ def search(
             tq = tq.join(TableColumn, TableColumn.table_id == Table.id).filter(
                 TableColumn.name.ilike(f"%{column_name}%")
             )
+            tq = tq.distinct()
         tq = tq.order_by(
             func.ts_rank(Table.search_vector, ts_query).desc()
         )
