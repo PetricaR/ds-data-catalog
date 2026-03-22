@@ -200,7 +200,6 @@ def run_quality_scan(
                 "passed": rule_result.passed,
                 "evaluated_count": rule_result.evaluated_count,
                 "passed_count": rule_result.passed_count,
-                "failed_count": rule_result.failed_count,
                 "null_count": rule_result.null_count,
                 "pass_ratio": round(rule_result.pass_ratio * 100, 1) if rule_result.pass_ratio is not None else None,
             })

@@ -274,7 +274,6 @@ export interface DataplexQualityRule {
   passed: boolean
   evaluated_count: number
   passed_count: number
-  failed_count: number
   null_count: number
   pass_ratio: number | null
 }
