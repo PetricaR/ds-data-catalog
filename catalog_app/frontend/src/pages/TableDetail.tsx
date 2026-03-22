@@ -62,7 +62,13 @@ import ValidationWizard from '../components/ValidationWizard'
 import { tablesApi } from '../api/tables'
 import { datasetsApi } from '../api/datasets'
 import { schemaChangesApi } from '../api/schemaChanges'
-import type { ExampleQuery, ProjectUsage, SensitivityLabel, TableInsights } from '../api/types'
+import type { ExampleQuery, ProjectUsage, SensitivityLabel, TableInsights, UsageStats, PiiScanResult, DataplexQualityResult, SchemaHistoryResult } from '../api/types'
+
+// Icon aliases for new sections
+import BarChartIcon from '@mui/icons-material/BarChart'
+import PolicyIcon from '@mui/icons-material/Policy'
+import FactCheckIcon from '@mui/icons-material/FactCheck'
+import HistoryIcon from '@mui/icons-material/History'
 
 function bytes(n: number) {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`
@@ -209,6 +215,37 @@ export default function TableDetail() {
   const insightsMutation = useMutation({
     mutationFn: () => tablesApi.generateInsights(tableId!),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
+  })
+
+  // ── New Google API sections ─────────────────────────────────────────────────
+  const [usageOpen, setUsageOpen] = useState(false)
+  const [piiOpen, setPiiOpen] = useState(false)
+  const [dataplexOpen, setDataplexOpen] = useState(false)
+  const [schemaHistoryOpen, setSchemaHistoryOpen] = useState(false)
+
+  const [usageData, setUsageData] = useState<UsageStats | null>(null)
+  const [piiData, setPiiData] = useState<PiiScanResult | null>(null)
+  const [dataplexData, setDataplexData] = useState<DataplexQualityResult | null>(null)
+  const [schemaHistoryData, setSchemaHistoryData] = useState<SchemaHistoryResult | null>(null)
+
+  const usageMutation = useMutation({
+    mutationFn: () => tablesApi.getUsage(tableId!),
+    onSuccess: (data) => setUsageData(data),
+  })
+  const piiMutationScan = useMutation({
+    mutationFn: () => tablesApi.scanPii(tableId!),
+    onSuccess: (data) => {
+      setPiiData(data)
+      qc.invalidateQueries({ queryKey: ['table', tableId] })
+    },
+  })
+  const dataplexMutation = useMutation({
+    mutationFn: () => tablesApi.dataplexQuality(tableId!),
+    onSuccess: (data) => setDataplexData(data),
+  })
+  const schemaHistoryMutation = useMutation({
+    mutationFn: () => tablesApi.getSchemaHistory(tableId!),
+    onSuccess: (data) => setSchemaHistoryData(data),
   })
 
   const { data: table, isLoading } = useQuery({
@@ -1308,6 +1345,335 @@ export default function TableDetail() {
             ))}
           </Box>
         ))}
+      </Box>
+
+      {/* ── Usage Stats ── */}
+      <Box sx={{ mt: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: usageOpen ? 2 : 0 }}>
+          <BarChartIcon sx={{ color: 'text.secondary' }} />
+          <Typography variant="h6" fontWeight={600}>Usage Statistics</Typography>
+          {usageData && (
+            <Chip label={`${usageData.total_queries} queries / ${usageData.period_days}d`} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
+          )}
+          <Box sx={{ flex: 1 }} />
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={usageMutation.isPending ? <CircularProgress size={13} /> : <BarChartIcon />}
+            disabled={usageMutation.isPending}
+            onClick={() => { usageMutation.mutate(); setUsageOpen(true) }}
+          >
+            {usageMutation.isPending ? 'Loading…' : 'Fetch Usage'}
+          </Button>
+          <IconButton size="small" onClick={() => setUsageOpen((o) => !o)} sx={{ ml: 0.5 }}>
+            <ExpandMoreIcon sx={{ fontSize: 20, transform: usageOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </IconButton>
+        </Box>
+
+        {usageOpen && (
+          <>
+            {usageMutation.isError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {(usageMutation.error as any)?.response?.data?.detail ?? 'Failed to fetch usage stats.'}
+              </Alert>
+            )}
+            {!usageData && !usageMutation.isPending && (
+              <Alert severity="info" icon={<BarChartIcon />}>
+                Click <strong>Fetch Usage</strong> to query INFORMATION_SCHEMA.JOBS for who is using this table.
+              </Alert>
+            )}
+            {usageData && (
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Card variant="outlined" sx={{ flex: '0 0 200px' }}>
+                  <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                    <Typography variant="caption" color="text.secondary">Total queries (last {usageData.period_days}d)</Typography>
+                    <Typography variant="h4" fontWeight={700} color="primary">{usageData.total_queries.toLocaleString()}</Typography>
+                    {usageData.last_queried_at && (
+                      <Typography variant="caption" color="text.secondary">
+                        Last: {new Date(usageData.last_queried_at).toLocaleDateString()}
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+                <Box sx={{ flex: 1, minWidth: 280 }}>
+                  <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>TOP USERS</Typography>
+                  {usageData.top_users.length === 0 ? (
+                    <Typography variant="body2" color="text.disabled">No queries found in this period.</Typography>
+                  ) : (
+                    <TableContainer component={Paper} variant="outlined">
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>User</TableCell>
+                            <TableCell align="right">Queries</TableCell>
+                            <TableCell align="right">Avg bytes</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {usageData.top_users.map((u, i) => (
+                            <TableRow key={i} hover>
+                              <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{u.email}</TableCell>
+                              <TableCell align="right">{u.query_count}</TableCell>
+                              <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                                {u.avg_bytes > 1e9 ? `${(u.avg_bytes / 1e9).toFixed(1)} GB` : u.avg_bytes > 1e6 ? `${(u.avg_bytes / 1e6).toFixed(1)} MB` : `${u.avg_bytes} B`}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </Box>
+              </Box>
+            )}
+          </>
+        )}
+      </Box>
+
+      {/* ── DLP PII Scan ── */}
+      <Box sx={{ mt: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: piiOpen ? 2 : 0 }}>
+          <PolicyIcon sx={{ color: 'text.secondary' }} />
+          <Typography variant="h6" fontWeight={600}>PII Detection</Typography>
+          {piiData && (
+            <Chip
+              label={Object.keys(piiData.findings_by_column).length > 0 ? `${Object.keys(piiData.findings_by_column).length} PII column(s)` : 'No PII found'}
+              size="small"
+              color={Object.keys(piiData.findings_by_column).length > 0 ? 'error' : 'success'}
+              sx={{ height: 18, fontSize: '0.7rem' }}
+            />
+          )}
+          <Box sx={{ flex: 1 }} />
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            startIcon={piiMutationScan.isPending ? <CircularProgress size={13} /> : <PolicyIcon />}
+            disabled={piiMutationScan.isPending}
+            onClick={() => { piiMutationScan.mutate(); setPiiOpen(true) }}
+          >
+            {piiMutationScan.isPending ? 'Scanning…' : 'Run DLP Scan'}
+          </Button>
+          <IconButton size="small" onClick={() => setPiiOpen((o) => !o)} sx={{ ml: 0.5 }}>
+            <ExpandMoreIcon sx={{ fontSize: 20, transform: piiOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </IconButton>
+        </Box>
+
+        {piiOpen && (
+          <>
+            {piiMutationScan.isError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {(piiMutationScan.error as any)?.response?.data?.detail ?? 'DLP scan failed.'}
+              </Alert>
+            )}
+            {!piiData && !piiMutationScan.isPending && (
+              <Alert severity="info" icon={<PolicyIcon />}>
+                Click <strong>Run DLP Scan</strong> to auto-detect PII in column samples using Cloud DLP. Column flags will be updated automatically.
+              </Alert>
+            )}
+            {piiData && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Scanned {piiData.scanned_rows_limit} rows · {piiData.info_types_checked.length} info types checked · {new Date(piiData.scanned_at).toLocaleString()}
+                </Typography>
+                {Object.keys(piiData.findings_by_column).length === 0 ? (
+                  <Alert severity="success" sx={{ mt: 1 }}>No PII detected in sampled rows.</Alert>
+                ) : (
+                  <TableContainer component={Paper} variant="outlined" sx={{ mt: 1 }}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Column</TableCell>
+                          <TableCell>Detected PII types</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {Object.entries(piiData.findings_by_column).map(([col, types]) => (
+                          <TableRow key={col} hover>
+                            <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>{col}</TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                {types.map((t) => (
+                                  <Chip key={t} label={t} size="small" color="error" variant="outlined" sx={{ fontSize: '0.65rem', height: 20 }} />
+                                ))}
+                              </Box>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+              </Box>
+            )}
+          </>
+        )}
+      </Box>
+
+      {/* ── Dataplex Quality ── */}
+      <Box sx={{ mt: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: dataplexOpen ? 2 : 0 }}>
+          <FactCheckIcon sx={{ color: 'text.secondary' }} />
+          <Typography variant="h6" fontWeight={600}>Dataplex Quality</Typography>
+          {dataplexData?.data_quality_result && (
+            <Chip
+              label={`${dataplexData.data_quality_result.score ?? '?'}% · ${dataplexData.data_quality_result.passed ? 'Passed' : 'Failed'}`}
+              size="small"
+              color={dataplexData.data_quality_result.passed ? 'success' : 'error'}
+              sx={{ height: 18, fontSize: '0.7rem' }}
+            />
+          )}
+          <Box sx={{ flex: 1 }} />
+          <Button
+            size="small"
+            variant="outlined"
+            color="success"
+            startIcon={dataplexMutation.isPending ? <CircularProgress size={13} /> : <FactCheckIcon />}
+            disabled={dataplexMutation.isPending}
+            onClick={() => { dataplexMutation.mutate(); setDataplexOpen(true) }}
+          >
+            {dataplexMutation.isPending ? 'Running…' : 'Run Dataplex Scan'}
+          </Button>
+          <IconButton size="small" onClick={() => setDataplexOpen((o) => !o)} sx={{ ml: 0.5 }}>
+            <ExpandMoreIcon sx={{ fontSize: 20, transform: dataplexOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </IconButton>
+        </Box>
+
+        {dataplexOpen && (
+          <>
+            {dataplexMutation.isError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {(dataplexMutation.error as any)?.response?.data?.detail ?? 'Dataplex scan failed.'}
+              </Alert>
+            )}
+            {!dataplexData && !dataplexMutation.isPending && (
+              <Alert severity="info" icon={<FactCheckIcon />}>
+                Click <strong>Run Dataplex Scan</strong> to run a managed quality scan via Google Dataplex DataScans (may take up to 2 min).
+              </Alert>
+            )}
+            {dataplexMutation.isPending && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2 }}>
+                <CircularProgress size={20} />
+                <Typography variant="body2" color="text.secondary">Running Dataplex DataScan — polling for results…</Typography>
+              </Box>
+            )}
+            {dataplexData?.data_quality_result && Object.keys(dataplexData.data_quality_result).length > 0 && (
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Card variant="outlined" sx={{ flex: '0 0 200px' }}>
+                  <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                    <Typography variant="caption" color="text.secondary">Overall score</Typography>
+                    <Typography
+                      variant="h4" fontWeight={700}
+                      color={dataplexData.data_quality_result.passed ? 'success.main' : 'error.main'}
+                    >
+                      {dataplexData.data_quality_result.score ?? '?'}%
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {dataplexData.data_quality_result.row_count?.toLocaleString()} rows checked
+                    </Typography>
+                  </CardContent>
+                </Card>
+                {dataplexData.data_quality_result.dimensions.length > 0 && (
+                  <Box sx={{ flex: 1, minWidth: 280 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>DIMENSIONS</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {dataplexData.data_quality_result.dimensions.map((d) => (
+                        <Chip
+                          key={d.dimension}
+                          label={`${d.dimension}: ${d.score ?? '?'}%`}
+                          size="small"
+                          color={d.passed ? 'success' : 'error'}
+                          variant="outlined"
+                          sx={{ fontSize: '0.72rem' }}
+                        />
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+            )}
+          </>
+        )}
+      </Box>
+
+      {/* ── Schema History (Asset Inventory) ── */}
+      <Box sx={{ mt: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: schemaHistoryOpen ? 2 : 0 }}>
+          <HistoryIcon sx={{ color: 'text.secondary' }} />
+          <Typography variant="h6" fontWeight={600}>Schema History</Typography>
+          {schemaHistoryData && (
+            <Chip label={`${schemaHistoryData.changes.length} change(s)`} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
+          )}
+          <Box sx={{ flex: 1 }} />
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={schemaHistoryMutation.isPending ? <CircularProgress size={13} /> : <HistoryIcon />}
+            disabled={schemaHistoryMutation.isPending}
+            onClick={() => { schemaHistoryMutation.mutate(); setSchemaHistoryOpen(true) }}
+          >
+            {schemaHistoryMutation.isPending ? 'Loading…' : 'Load History'}
+          </Button>
+          <IconButton size="small" onClick={() => setSchemaHistoryOpen((o) => !o)} sx={{ ml: 0.5 }}>
+            <ExpandMoreIcon sx={{ fontSize: 20, transform: schemaHistoryOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </IconButton>
+        </Box>
+
+        {schemaHistoryOpen && (
+          <>
+            {schemaHistoryMutation.isError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {(schemaHistoryMutation.error as any)?.response?.data?.detail ?? 'Failed to load schema history.'}
+              </Alert>
+            )}
+            {!schemaHistoryData && !schemaHistoryMutation.isPending && (
+              <Alert severity="info" icon={<HistoryIcon />}>
+                Click <strong>Load History</strong> to fetch column additions, removals, and type changes via Cloud Asset Inventory (last 35 days).
+              </Alert>
+            )}
+            {schemaHistoryData && schemaHistoryData.changes.length === 0 && (
+              <Alert severity="success">No schema changes detected in the last {schemaHistoryData.period_days} days.</Alert>
+            )}
+            {schemaHistoryData && schemaHistoryData.changes.length > 0 && (
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Date</TableCell>
+                      <TableCell>Change</TableCell>
+                      <TableCell>Column</TableCell>
+                      <TableCell>Details</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {schemaHistoryData.changes.map((c, i) => (
+                      <TableRow key={i} hover>
+                        <TableCell sx={{ whiteSpace: 'nowrap', fontSize: '0.75rem', color: 'text.secondary' }}>
+                          {c.detected_at ? new Date(c.detected_at).toLocaleDateString() : '—'}
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={c.type.replace(/_/g, ' ')}
+                            size="small"
+                            color={c.type === 'COLUMN_ADDED' ? 'success' : c.type === 'COLUMN_REMOVED' ? 'error' : 'warning'}
+                            variant="outlined"
+                            sx={{ fontSize: '0.65rem', height: 20 }}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.column}</TableCell>
+                        <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                          {c.old_type && c.new_type ? `${c.old_type} → ${c.new_type}` : ''}
+                          {c.old_mode && c.new_mode ? `${c.old_mode} → ${c.new_mode}` : ''}
+                          {c.new_type && !c.old_type ? c.new_type : ''}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </>
+        )}
       </Box>
 
       <ValidationWizard

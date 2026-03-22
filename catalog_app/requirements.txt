@@ -7,6 +7,9 @@ pandas>=2.1.0
 pyarrow>=14.0.0
 google-cloud-storage>=2.14.0
 google-cloud-secret-manager>=2.16.0  # Secure API key storage
+google-cloud-dlp>=3.15.0             # Cloud DLP PII detection
+google-cloud-dataplex>=2.0.0         # Dataplex DataScans quality
+google-cloud-asset>=3.19.0           # Cloud Asset Inventory schema history
 
 # Vertex AI
 vertexai>=1.40.0

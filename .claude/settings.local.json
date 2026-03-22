@@ -47,7 +47,18 @@
       "Bash(/dev/null curl:*)",
       "WebFetch(domain:docs.cloud.google.com)",
       "WebFetch(domain:developers.google.com)",
-      "WebFetch(domain:www.googleapis.com)"
+      "WebFetch(domain:www.googleapis.com)",
+      "Read(//Users/radanpetrica/PFA/hackathons/resources/catalog-ds/ds-data-catalog/**)",
+      "Bash(find /Users/radanpetrica/PFA/hackathons/resources/catalog-ds/ds-data-catalog/catalog_app -name requirements*.txt)",
+      "Bash(xargs cat:*)",
+      "Bash(find /Users/radanpetrica/PFA/hackathons/resources/catalog-ds/ds-data-catalog -name requirements*.txt -o -name pyproject.toml -o -name Dockerfile)",
+      "Bash(/usr/local/bin/npx tsc:*)",
+      "Bash(PATH=/opt/homebrew/bin:/usr/local/bin:$PATH node_modules/.bin/tsc --noEmit)",
+      "Bash(source catalog_env/bin/activate)",
+      "Bash(catalog_env/bin/pip install:*)",
+      "Bash(catalog_env/bin/pip3 install:*)",
+      "Bash(catalog_env/bin/python -c \"from google.cloud import dlp_v2, dataplex_v1, asset_v1; print\\(''All 3 imports OK''\\)\")",
+      "Bash(curl -s \"http://localhost:8000/api/v1/tables?limit=5\")"
     ]
   }
 }

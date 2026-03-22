@@ -10,8 +10,8 @@ from ..database import get_db
 from ..dependencies.auth import get_current_user
 from ..models.catalog import Dataset, MetadataChangeLog, Table, TableColumn
 from ..schemas.catalog import ColumnUpdate, ExampleQuery, ProjectUsage, QualityCheckResult, TableCreate, TableInsights, TableResponse, TableUpdate, ValidatePayload
-from ..services import bq_preview, bq_lineage, bq_quality
-from ..services.gchat import notify_trusted, notify_revoked, notify_metadata_change
+from ..services import bq_preview, bq_lineage, bq_quality, bq_usage, dlp_scan, dataplex_quality, asset_inventory
+from ..services.gchat import notify_trusted, notify_revoked, notify_metadata_change, notify_pii_detected, notify_quality_score
 
 router = APIRouter(prefix="/tables", tags=["tables"])
 
@@ -489,6 +489,153 @@ def update_table_projects(
     db.commit()
     db.refresh(t)
     return _table_response(t, db)
+
+
+@router.get("/{table_id}/usage")
+def get_usage_stats(
+    table_id: UUID,
+    days: int = Query(default=30, ge=1, le=90),
+    db: Session = Depends(get_db),
+):
+    """
+    Query INFORMATION_SCHEMA.JOBS to surface who is querying this table
+    and how often, over the past `days` days.
+    """
+    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Parent dataset not found")
+    try:
+        return bq_usage.fetch(
+            project_id=ds.project_id,
+            dataset_id=ds.dataset_id,
+            table_id=t.table_id,
+            location=ds.bq_location,
+            secret_name=settings.bq_secret_name or None,
+            days=days,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Usage stats failed: {exc}")
+
+
+@router.post("/{table_id}/scan-pii")
+def scan_pii(table_id: UUID, db: Session = Depends(get_db)):
+    """
+    Run Cloud DLP on a sample of this table to auto-detect PII columns.
+    Updates column is_pii flags and sends a Chat notification if PII is found.
+    """
+    t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Parent dataset not found")
+
+    columns = [{"name": c.name, "data_type": c.data_type} for c in t.columns]
+    try:
+        result = dlp_scan.scan(
+            project_id=ds.project_id,
+            dataset_id=ds.dataset_id,
+            table_id=t.table_id,
+            columns=columns,
+            secret_name=settings.bq_secret_name or None,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"DLP scan failed: {exc}")
+
+    # Auto-update is_pii flags on columns
+    pii_columns = result.get("findings_by_column", {})
+    col_map = {c.name: c for c in t.columns}
+    for col_name, col in col_map.items():
+        col.is_pii = col_name in pii_columns
+    db.commit()
+
+    # Send Chat notification if PII was found
+    if pii_columns:
+        bq_path = f"{ds.project_id}.{ds.dataset_id}.{t.table_id}"
+        notify_pii_detected(
+            table_name=t.display_name or t.table_id,
+            table_bq_path=bq_path,
+            pii_columns=pii_columns,
+            frontend_url=settings.frontend_url,
+            table_id=str(t.id),
+            dataset_id=str(ds.id),
+        )
+
+    return result
+
+
+@router.post("/{table_id}/dataplex-quality")
+def dataplex_quality_scan(table_id: UUID, db: Session = Depends(get_db)):
+    """
+    Create and run a Dataplex DataScan quality job on this BQ table.
+    Polls until complete and returns structured quality results.
+    """
+    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Parent dataset not found")
+
+    try:
+        result = dataplex_quality.run_quality_scan(
+            project_id=ds.project_id,
+            dataset_id=ds.dataset_id,
+            table_id=t.table_id,
+            location=ds.bq_location,
+            secret_name=settings.bq_secret_name or None,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Dataplex quality scan failed: {exc}")
+
+    # Send Chat notification with quality score
+    dqr = result.get("data_quality_result", {})
+    if dqr:
+        bq_path = f"{ds.project_id}.{ds.dataset_id}.{t.table_id}"
+        notify_quality_score(
+            table_name=t.display_name or t.table_id,
+            table_bq_path=bq_path,
+            score=dqr.get("score"),
+            passed=dqr.get("passed", False),
+            dimensions=dqr.get("dimensions", []),
+            frontend_url=settings.frontend_url,
+            table_id=str(t.id),
+            dataset_id=str(ds.id),
+        )
+
+    return result
+
+
+@router.get("/{table_id}/schema-history")
+def get_schema_history(
+    table_id: UUID,
+    days: int = Query(default=30, ge=1, le=30),
+    db: Session = Depends(get_db),
+):
+    """
+    Fetch schema change history via Cloud Asset Inventory.
+    Returns column additions, removals, and type changes over the past `days` days.
+    """
+    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Parent dataset not found")
+
+    try:
+        return asset_inventory.fetch_schema_history(
+            project_id=ds.project_id,
+            dataset_id=ds.dataset_id,
+            table_id=t.table_id,
+            secret_name=settings.bq_secret_name or None,
+            days=days,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Schema history fetch failed: {exc}")
 
 
 @router.delete("/{table_id}", status_code=status.HTTP_204_NO_CONTENT)

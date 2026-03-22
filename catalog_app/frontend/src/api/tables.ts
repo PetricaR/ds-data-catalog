@@ -1,5 +1,19 @@
 import client from './client'
-import type { ExampleQuery, PreviewEstimate, PreviewResult, ProjectUsage, QualityCheckResult, Table, TableCreate, TableInsights, TableUpdate } from './types'
+import type {
+  DataplexQualityResult,
+  ExampleQuery,
+  PiiScanResult,
+  PreviewEstimate,
+  PreviewResult,
+  ProjectUsage,
+  QualityCheckResult,
+  SchemaHistoryResult,
+  Table,
+  TableCreate,
+  TableInsights,
+  TableUpdate,
+  UsageStats,
+} from './types'
 
 export const tablesApi = {
   list: (params?: {
@@ -56,6 +70,18 @@ export const tablesApi = {
 
   generateInsights: (tableId: string) =>
     client.post<TableInsights>(`/tables/${tableId}/insights`).then((r) => r.data),
+
+  getUsage: (tableId: string, days = 30) =>
+    client.get<UsageStats>(`/tables/${tableId}/usage`, { params: { days } }).then((r) => r.data),
+
+  scanPii: (tableId: string) =>
+    client.post<PiiScanResult>(`/tables/${tableId}/scan-pii`).then((r) => r.data),
+
+  dataplexQuality: (tableId: string) =>
+    client.post<DataplexQualityResult>(`/tables/${tableId}/dataplex-quality`).then((r) => r.data),
+
+  getSchemaHistory: (tableId: string, days = 35) =>
+    client.get<SchemaHistoryResult>(`/tables/${tableId}/schema-history`, { params: { days } }).then((r) => r.data),
 
   remove: (id: string) => client.delete(`/tables/${id}`),
 }

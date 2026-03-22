@@ -232,3 +232,84 @@ export interface CatalogStats {
   documented_tables: number
   documentation_coverage: number
 }
+
+// ── Usage Stats (INFORMATION_SCHEMA.JOBS) ─────────────────────────────────────
+
+export interface UsageTopUser {
+  email: string
+  query_count: number
+  avg_bytes: number
+}
+
+export interface UsageStats {
+  total_queries: number
+  last_queried_at: string | null
+  top_users: UsageTopUser[]
+  period_days: number
+  fetched_at: string
+}
+
+// ── DLP PII Scan ──────────────────────────────────────────────────────────────
+
+export interface PiiScanResult {
+  findings_by_column: Record<string, string[]>
+  total_findings: number
+  scanned_rows_limit: number
+  info_types_checked: string[]
+  scanned_at: string
+}
+
+// ── Dataplex Quality ──────────────────────────────────────────────────────────
+
+export interface DataplexQualityDimension {
+  dimension: string
+  passed: boolean
+  score: number | null
+}
+
+export interface DataplexQualityRule {
+  rule_name: string
+  dimension: string
+  column: string
+  passed: boolean
+  evaluated_count: number
+  passed_count: number
+  failed_count: number
+  null_count: number
+  pass_ratio: number | null
+}
+
+export interface DataplexQualityResult {
+  scan_name: string
+  job_name: string
+  state: string
+  data_quality_result: {
+    passed: boolean
+    score: number | null
+    dimensions: DataplexQualityDimension[]
+    columns: { column: string; score: number | null }[]
+    rules: DataplexQualityRule[]
+    row_count: number
+  }
+  scanned_at: string
+}
+
+// ── Schema History (Asset Inventory) ─────────────────────────────────────────
+
+export interface SchemaChange {
+  detected_at: string
+  type: 'COLUMN_ADDED' | 'COLUMN_REMOVED' | 'COLUMN_TYPE_CHANGED' | 'COLUMN_MODE_CHANGED'
+  column: string
+  old_type?: string
+  new_type?: string
+  old_mode?: string
+  new_mode?: string
+}
+
+export interface SchemaHistoryResult {
+  asset_name: string
+  snapshots: { window_start: string; deleted: boolean; schema: { name: string; type: string; mode: string }[] }[]
+  changes: SchemaChange[]
+  period_days: number
+  fetched_at: string
+}
