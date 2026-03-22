@@ -138,7 +138,14 @@ def run_quality_scan(
                 "data_scan_id": scan_id,
             }
         )
-        op.result(timeout=60)
+        try:
+            op.result(timeout=_TIMEOUT)
+        except Exception as lro_exc:
+            # LRO may still complete in the background; verify the scan exists
+            logger.warning("DataScan creation LRO timed out, verifying scan: %s", lro_exc)
+            import time as _t
+            _t.sleep(5)
+            client.get_data_scan(request={"name": scan_name})  # raises if not created
 
     # Run the scan
     run_response = client.run_data_scan(request={"name": scan_name})
