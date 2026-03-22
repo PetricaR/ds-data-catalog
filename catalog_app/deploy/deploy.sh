@@ -234,6 +234,71 @@ EOF
     done
 }
 
+# ── Secret Manager → K8s secret sync ─────────────────────────────────────────
+# Reads credentials from GCP Secret Manager and upserts the ds-catalog-secret.
+# Secret Manager naming convention: ds-catalog-<lower-kebab-name>
+#   e.g. ds-catalog-google-client-id, ds-catalog-jwt-secret, etc.
+#
+# Static infra values (DATABASE_URL, POSTGRES_PASSWORD) are kept as-is unless
+# a Secret Manager secret with that name also exists.
+sync_secrets_from_secret_manager() {
+    print_info "Syncing secrets from Secret Manager..."
+
+    # Map: K8s key → Secret Manager secret name
+    declare -A SECRET_MAP=(
+        [GOOGLE_CLIENT_ID]="GOOGLE_CLIENT_ID"
+        [GOOGLE_CLIENT_SECRET]="GOOGLE_CLIENT_SECRET"
+        [JWT_SECRET]="jwt-secret-key"
+        [SECRET_KEY]="jwt-secret-key"
+        [GEMINI_API_KEY]="gemini-api-key"
+        [GOOGLE_CHAT_WEBHOOK_URL]="ds-catalog-google-chat-webhook"
+        [BQ_SECRET_NAME]="ds-catalog-bq-secret-name"
+    )
+
+    # Start with static infra values
+    local POSTGRES_PASSWORD="catalog"
+    local DATABASE_URL="postgresql://catalog:${POSTGRES_PASSWORD}@ds-catalog-postgres:5432/ds_catalog"
+
+    local kubectl_args=(
+        "--from-literal=POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+        "--from-literal=DATABASE_URL=${DATABASE_URL}"
+    )
+
+    local missing=()
+    for k8s_key in "${!SECRET_MAP[@]}"; do
+        local sm_name="${SECRET_MAP[$k8s_key]}"
+        local value
+        value=$(gcloud secrets versions access latest \
+            --secret="$sm_name" \
+            --project="$PROJECT_ID" 2>/dev/null || echo "")
+        if [ -n "$value" ]; then
+            kubectl_args+=("--from-literal=${k8s_key}=${value}")
+            print_info "  ✓ $k8s_key (from $sm_name)"
+        else
+            missing+=("$sm_name")
+            kubectl_args+=("--from-literal=${k8s_key}=")
+            print_warning "  ✗ $k8s_key — secret '$sm_name' not found in Secret Manager, set to empty"
+        fi
+    done
+
+    if [ ${#missing[@]} -gt 0 ]; then
+        print_warning "Missing secrets (create them with):"
+        for s in "${missing[@]}"; do
+            echo "    echo -n 'VALUE' | gcloud secrets create $s --data-file=- --project=$PROJECT_ID"
+            echo "    # or if already exists:"
+            echo "    echo -n 'VALUE' | gcloud secrets versions add $s --data-file=- --project=$PROJECT_ID"
+        done
+    fi
+
+    # Upsert the k8s secret (delete+create is simplest for full replacement)
+    kubectl delete secret ds-catalog-secret -n "$NAMESPACE" --ignore-not-found
+    kubectl create secret generic ds-catalog-secret \
+        -n "$NAMESPACE" \
+        "${kubectl_args[@]}"
+
+    print_success "K8s secret upserted from Secret Manager"
+}
+
 # ── Step 6: Apply K8s manifests ───────────────────────────────────────────────
 deploy_to_kubernetes() {
     print_step 6 "Deploying to Kubernetes"
@@ -247,14 +312,8 @@ deploy_to_kubernetes() {
     print_info "Applying ConfigMap..."
     kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/configmap.yaml"
 
-    # Secret — only create if absent (never overwrite real creds with template)
-    if kubectl get secret ds-catalog-secret -n "$NAMESPACE" &>/dev/null; then
-        print_info "Secret already exists — skipping template apply"
-    else
-        kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/secret.yaml"
-        print_warning "Secret created from template. Update real values:"
-        print_warning "  kubectl edit secret ds-catalog-secret -n $NAMESPACE"
-    fi
+    # Secret — always sync from Secret Manager
+    sync_secrets_from_secret_manager
 
     # ServiceAccount
     print_info "Applying ServiceAccount..."
@@ -283,6 +342,20 @@ deploy_to_kubernetes() {
     print_info "Waiting for frontend rollout..."
     kubectl rollout status deployment/ds-catalog-frontend -n "$NAMESPACE" --timeout=5m
     print_success "Rollouts complete"
+
+    # Patch ConfigMap with the real frontend IP so OAuth redirect URIs work
+    local frontend_ip
+    frontend_ip=$(wait_for_ip "ds-catalog-frontend" "$NAMESPACE" 2>/dev/null || echo "")
+    if [ -n "$frontend_ip" ]; then
+        local frontend_host="${frontend_ip}.nip.io"
+        print_info "Patching ConfigMap with frontend URL: http://$frontend_host"
+        kubectl patch configmap ds-catalog-config -n "$NAMESPACE" -p \
+            "{\"data\":{\"FRONTEND_URL\":\"http://${frontend_host}\",\"CORS_ORIGINS\":\"[\\\"http://${frontend_host}\\\"]\"}}"
+        kubectl rollout restart deployment/ds-catalog-backend -n "$NAMESPACE"
+        print_success "ConfigMap updated — backend restarting"
+    else
+        print_warning "Could not determine frontend IP — update ConfigMap manually"
+    fi
 }
 
 # ── Step 7: Summary ───────────────────────────────────────────────────────────
@@ -301,7 +374,7 @@ print_summary() {
     if [ -n "$ip" ]; then
         echo ""
         echo -e "${CYAN}══════════════════════════════════════${NC}"
-        echo -e "${CYAN}  App URL: http://$ip${NC}"
+        echo -e "${CYAN}  App URL: http://$ip.nip.io${NC}"
         echo -e "${CYAN}══════════════════════════════════════${NC}"
         echo ""
         echo -e "${YELLOW}Update FRONTEND_URL in ConfigMap so OAuth login redirects correctly:${NC}"
