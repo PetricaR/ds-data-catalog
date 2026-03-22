@@ -1623,7 +1623,7 @@ export default function TableDetail() {
           <>
             {schemaHistoryMutation.isError && (
               <Alert severity="error" sx={{ mb: 2 }}>
-                {(schemaHistoryMutation.error as any)?.response?.data?.detail ?? 'Failed to load schema history.'}
+                {(() => { const d = (schemaHistoryMutation.error as any)?.response?.data?.detail; return typeof d === 'string' ? d : 'Failed to load schema history.' })()}
               </Alert>
             )}
             {!schemaHistoryData && !schemaHistoryMutation.isPending && (
@@ -1653,18 +1653,16 @@ export default function TableDetail() {
                         </TableCell>
                         <TableCell>
                           <Chip
-                            label={c.type.replace(/_/g, ' ')}
+                            label={(c.type ?? '').replace(/_/g, ' ')}
                             size="small"
                             color={c.type === 'COLUMN_ADDED' ? 'success' : c.type === 'COLUMN_REMOVED' ? 'error' : 'warning'}
                             variant="outlined"
                             sx={{ fontSize: '0.65rem', height: 20 }}
                           />
                         </TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.column}</TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.column ?? '—'}</TableCell>
                         <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-                          {c.old_type && c.new_type ? `${c.old_type} → ${c.new_type}` : ''}
-                          {c.old_mode && c.new_mode ? `${c.old_mode} → ${c.new_mode}` : ''}
-                          {c.new_type && !c.old_type ? c.new_type : ''}
+                          {c.old_type && c.new_type ? `${c.old_type} → ${c.new_type}` : c.new_type && !c.old_type ? c.new_type : c.old_mode && c.new_mode ? `${c.old_mode} → ${c.new_mode}` : '—'}
                         </TableCell>
                       </TableRow>
                     ))}

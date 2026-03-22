@@ -42,19 +42,23 @@ def _get_credentials(project_id: str, secret_name: Optional[str]):
     return creds
 
 
-def _extract_schema(resource_data: dict) -> list[dict]:
-    """Pull schema fields from a BQ table asset resource snapshot."""
-    # Path: resource.data -> schema -> fields
-    schema = (
-        resource_data
-        .get("resource", {})
+def _extract_schema(resource_dict: dict) -> list[dict]:
+    """Pull schema fields from a BQ table asset resource snapshot (MessageToDict output)."""
+    # MessageToDict gives camelCase keys: data -> schema -> fields
+    fields = (
+        resource_dict
         .get("data", {})
         .get("schema", {})
         .get("fields", [])
     )
     return [
-        {"name": f.get("name", ""), "type": f.get("type", ""), "mode": f.get("mode", "NULLABLE")}
-        for f in schema
+        {
+            "name": f.get("name", ""),
+            "type": f.get("type", "STRING"),
+            "mode": f.get("mode", "NULLABLE"),
+        }
+        for f in fields
+        if f.get("name")
     ]
 
 
@@ -112,7 +116,8 @@ def fetch_schema_history(
     """
     try:
         from google.cloud import asset_v1
-        from google.protobuf.timestamp_pb2 import Timestamp
+        from google.protobuf import timestamp_pb2
+        from google.protobuf.json_format import MessageToDict
     except ImportError:
         raise RuntimeError(
             "google-cloud-asset is not installed. Run: pip install google-cloud-asset "
@@ -128,9 +133,10 @@ def fetch_schema_history(
     now = datetime.now(timezone.utc)
     start = now - timedelta(days=days)
 
-    start_ts = Timestamp()
+    # Build Timestamp protos for the time window
+    start_ts = timestamp_pb2.Timestamp()
     start_ts.FromDatetime(start)
-    end_ts = Timestamp()
+    end_ts = timestamp_pb2.Timestamp()
     end_ts.FromDatetime(now)
 
     try:
@@ -149,20 +155,30 @@ def fetch_schema_history(
         logger.warning("Asset Inventory fetch failed for %s: %s", asset_name, exc)
         raise
 
+    # response.assets is a flat list of TemporalAsset objects (one per snapshot)
     snapshots = []
-    for asset_history in response.assets:
-        for temporal_asset in asset_history.asset_history:
-            asset = temporal_asset.asset
-            window = temporal_asset.window
-            window_start = window.start_time.ToDatetime(tzinfo=timezone.utc).isoformat() if window.start_time else None
-            schema = _extract_schema(
-                dict(asset.resource) if asset.resource else {}
-            )
-            snapshots.append({
-                "window_start": window_start,
-                "deleted": temporal_asset.deleted,
-                "schema": schema,
-            })
+    for temporal_asset in response.assets:
+        window = temporal_asset.window
+        window_start = None
+        if window and window.start_time:
+            try:
+                window_start = window.start_time.ToDatetime(tzinfo=timezone.utc).isoformat()
+            except Exception:
+                pass
+
+        resource_dict = {}
+        if temporal_asset.asset and temporal_asset.asset.resource:
+            try:
+                resource_dict = MessageToDict(temporal_asset.asset.resource)
+            except Exception:
+                pass
+
+        schema = _extract_schema(resource_dict)
+        snapshots.append({
+            "window_start": window_start,
+            "deleted": temporal_asset.deleted,
+            "schema": schema,
+        })
 
     # Sort snapshots chronologically
     snapshots.sort(key=lambda s: s["window_start"] or "")

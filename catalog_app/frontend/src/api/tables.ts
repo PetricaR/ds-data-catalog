@@ -80,7 +80,7 @@ export const tablesApi = {
   dataplexQuality: (tableId: string) =>
     client.post<DataplexQualityResult>(`/tables/${tableId}/dataplex-quality`).then((r) => r.data),
 
-  getSchemaHistory: (tableId: string, days = 35) =>
+  getSchemaHistory: (tableId: string, days = 30) =>
     client.get<SchemaHistoryResult>(`/tables/${tableId}/schema-history`, { params: { days } }).then((r) => r.data),
 
   remove: (id: string) => client.delete(`/tables/${id}`),
