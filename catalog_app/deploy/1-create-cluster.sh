@@ -23,7 +23,7 @@ PROJECT_ID="${GCP_PROJECT_ID:-formare-ai}"
 REGION="${GCP_REGION:-europe-west1}"
 
 # Cluster Configuration
-CLUSTER_NAME="${CLUSTER_NAME:-ds-catalog-cluster}"
+CLUSTER_NAME="${CLUSTER_NAME:-ai-agents-cluster}"
 CLUSTER_VERSION="${CLUSTER_VERSION:-latest}"  # Autopilot auto-manages version
 NETWORK="${NETWORK:-default}"
 

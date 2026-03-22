@@ -19,7 +19,7 @@ NC='\033[0m' # No Color
 # =======================================
 
 PROJECT_ID="${GCP_PROJECT_ID:-formare-ai}"
-CLUSTER_NAME="${CLUSTER_NAME:-ds-catalog-cluster}"
+CLUSTER_NAME="${CLUSTER_NAME:-ai-agents-cluster}"
 REGION="${GCP_REGION:-europe-west1}"
 
 # Service Account Configuration

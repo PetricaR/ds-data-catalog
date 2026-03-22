@@ -19,7 +19,7 @@ NC='\033[0m'
 
 PROJECT_ID="${GCP_PROJECT_ID:-formare-ai}"
 REGION="${GCP_REGION:-europe-west1}"
-CLUSTER_NAME="${CLUSTER_NAME:-ds-catalog-cluster}"
+CLUSTER_NAME="${CLUSTER_NAME:-ai-agents-cluster}"
 NAMESPACE="${K8S_NAMESPACE:-default}"
 
 # Image registry (gcr or artifact-registry)

@@ -227,21 +227,30 @@ def sync_project(
                 existing_names = set(existing_cols.keys())
                 new_names = {field.name for field in bq_tbl.schema}
 
-                # Detect and record schema changes
+                # Detect and record schema changes (skip if already unacknowledged)
+                existing_unacked = {
+                    (c.change_type, c.column_name)
+                    for c in db.query(SchemaChange).filter(
+                        SchemaChange.table_id == db_tbl.id,
+                        SchemaChange.is_acknowledged == False,  # noqa: E712
+                    ).all()
+                }
                 for col_name in sorted(new_names - existing_names):
-                    db.add(SchemaChange(
-                        table_id=db_tbl.id,
-                        change_type="column_added",
-                        column_name=col_name,
-                    ))
-                    logger.info("Schema change — column added: %s.%s.%s", ds_id, tbl_id, col_name)
+                    if ("column_added", col_name) not in existing_unacked:
+                        db.add(SchemaChange(
+                            table_id=db_tbl.id,
+                            change_type="column_added",
+                            column_name=col_name,
+                        ))
+                        logger.info("Schema change — column added: %s.%s.%s", ds_id, tbl_id, col_name)
                 for col_name in sorted(existing_names - new_names):
-                    db.add(SchemaChange(
-                        table_id=db_tbl.id,
-                        change_type="column_removed",
-                        column_name=col_name,
-                    ))
-                    logger.info("Schema change — column removed: %s.%s.%s", ds_id, tbl_id, col_name)
+                    if ("column_removed", col_name) not in existing_unacked:
+                        db.add(SchemaChange(
+                            table_id=db_tbl.id,
+                            change_type="column_removed",
+                            column_name=col_name,
+                        ))
+                        logger.info("Schema change — column removed: %s.%s.%s", ds_id, tbl_id, col_name)
 
                 # Replace columns, preserving user-edited descriptions and pk flags
                 db.query(TableColumn).filter(TableColumn.table_id == db_tbl.id).delete()

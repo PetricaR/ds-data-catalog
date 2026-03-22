@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ds-catalog-config
+data:
+  # GCP project used for BigQuery and Vertex AI
+  GCP_PROJECT_ID: "formare-ai"
+
+  # CORS: list the frontend origin(s) — typically just the LoadBalancer IP/domain
+  # When nginx proxies /api/v1, requests come from the same origin so CORS is not
+  # strictly required, but keeping it explicit is good practice.
+  CORS_ORIGINS: '["http://localhost:5173"]'
+
+  # Frontend URL (used in OAuth2 redirect after login)
+  # Update this to the actual LoadBalancer IP or domain after first deploy
+  FRONTEND_URL: "http://FRONTEND_IP_OR_DOMAIN"

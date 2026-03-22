@@ -1,0 +1,89 @@
+---
+# Persistent volume for PostgreSQL data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ds-catalog-postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard-rwo  # GKE default SSD-backed class
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ds-catalog-postgres
+  labels:
+    app: ds-catalog-postgres
+spec:
+  serviceName: ds-catalog-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ds-catalog-postgres
+  template:
+    metadata:
+      labels:
+        app: ds-catalog-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "ds_catalog"
+            - name: POSTGRES_USER
+              value: "catalog"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ds-catalog-secret
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "catalog", "-d", "ds_catalog"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "catalog", "-d", "ds_catalog"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: ds-catalog-postgres-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ds-catalog-postgres
+  labels:
+    app: ds-catalog-postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: ds-catalog-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
