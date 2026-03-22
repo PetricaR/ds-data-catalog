@@ -89,7 +89,7 @@ build_and_push() {
     gcloud services enable cloudbuild.googleapis.com --project="$PROJECT_ID" --quiet
 
     local tmpconfig
-    tmpconfig=$(mktemp /tmp/cloudbuild-XXXXXX.yaml)
+    tmpconfig=$(mktemp /tmp/cloudbuild-XXXXXX)
     cat > "$tmpconfig" <<EOF
 steps:
   - name: 'gcr.io/cloud-builders/docker'

@@ -214,7 +214,7 @@ build_and_push_images() {
 
         print_info "Submitting $name to Cloud Build → $image"
         local tmpconfig
-        tmpconfig=$(mktemp /tmp/cloudbuild-XXXXXX.yaml)
+        tmpconfig=$(mktemp /tmp/cloudbuild-XXXXXX)
         cat > "$tmpconfig" <<EOF
 steps:
   - name: 'gcr.io/cloud-builders/docker'

@@ -130,6 +130,8 @@ class TableResponse(TableBase):
     id: UUID
     row_count: Optional[int] = None
     size_bytes: Optional[int] = None
+    bq_created_at: Optional[datetime] = None
+    bq_last_modified: Optional[datetime] = None
     is_active: bool
     is_validated: bool = False
     validated_by: Optional[str] = None

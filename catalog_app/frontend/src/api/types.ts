@@ -107,6 +107,8 @@ export interface Table {
   sensitivity_label: SensitivityLabel
   row_count: number | null
   size_bytes: number | null
+  bq_created_at: string | null
+  bq_last_modified: string | null
   is_active: boolean
   is_validated: boolean
   validated_by: string | null

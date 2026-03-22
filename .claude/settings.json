@@ -9,7 +9,8 @@
       "Bash(/opt/homebrew/bin/node node_modules/.bin/vite build)",
       "Bash(curl -s http://localhost:8000/api/v1/datasets?limit=1)",
       "Bash(curl -s http://localhost:8000/api/v1/stats)",
-      "Bash(curl -s \"http://localhost:8000/api/v1/datasets\")"
+      "Bash(curl -s \"http://localhost:8000/api/v1/datasets\")",
+      "Bash(kubectl logs:*)"
     ]
   }
 }

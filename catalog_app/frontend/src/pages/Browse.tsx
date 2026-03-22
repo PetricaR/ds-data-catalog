@@ -39,78 +39,136 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline'
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import DoneAllIcon from '@mui/icons-material/DoneAll'
-import SensitivityChip from '../components/SensitivityChip'
-import TagChip from '../components/TagChip'
+import DatasetIcon from '@mui/icons-material/Dataset'
+import AccessTimeIcon from '@mui/icons-material/AccessTime'
+import EventIcon from '@mui/icons-material/Event'
+import PlaceIcon from '@mui/icons-material/Place'
+import TableRowsIcon from '@mui/icons-material/TableRows'
 import { datasetsApi } from '../api/datasets'
 import { tablesApi } from '../api/tables'
 import { bqApi } from '../api/bq'
 import { schemaChangesApi } from '../api/schemaChanges'
 import { searchApi } from '../api/search'
 import type { SyncResponse } from '../api/bq'
-import type { Dataset, SensitivityLabel } from '../api/types'
+import type { Dataset } from '../api/types'
 
-function ValidatedTablesList({ datasetId, onNavigate }: { datasetId: string; onNavigate: (tableId: string) => void }) {
+const INLINE_LIMIT = 15
+
+function fmtBytes(bytes: number | null): string | null {
+  if (bytes == null) return null
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+function TablesList({ datasetId, datasetDbId, bqLocation, onNavigate, onOpenDataset }: { datasetId: string; datasetDbId: string; bqLocation?: string | null; onNavigate: (tableId: string) => void; onOpenDataset: () => void }) {
   const { data: tables, isLoading } = useQuery({
-    queryKey: ['dataset', datasetId, 'tables'],
-    queryFn: () => tablesApi.list({ dataset_id: datasetId }),
+    queryKey: ['dataset', datasetDbId, 'tables'],
+    queryFn: () => tablesApi.list({ dataset_id: datasetDbId }),
   })
-
-  const validated = (tables ?? []).filter((t) => t.is_validated)
 
   if (isLoading) {
     return (
       <Box sx={{ px: 3, py: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
         <CircularProgress size={12} />
-        <Typography variant="caption" color="text.secondary">Loading…</Typography>
+        <Typography variant="caption" color="text.secondary">Loading tables…</Typography>
       </Box>
     )
   }
 
-  if (validated.length === 0) {
+  if (!tables?.length) {
     return (
       <Box sx={{ px: 3, py: 1.5 }}>
-        <Typography variant="caption" color="text.secondary">No validated tables in this dataset.</Typography>
+        <Typography variant="caption" color="text.secondary">No tables found.</Typography>
       </Box>
     )
   }
 
+  const visible = tables.slice(0, INLINE_LIMIT)
+  const overflow = tables.length - INLINE_LIMIT
+
   return (
-    <List dense disablePadding>
-      {validated.map((t) => (
-        <ListItemButton
-          key={t.id}
-          onClick={() => onNavigate(t.id)}
-          sx={{ pl: 4, pr: 2, py: 0.75, '&:hover': { bgcolor: '#e8f5e9' } }}
-        >
-          <ListItemIcon sx={{ minWidth: 26 }}>
-            <VerifiedIcon sx={{ fontSize: 14, color: '#2e7d32' }} />
-          </ListItemIcon>
-          <ListItemText
-            primary={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography variant="body2" fontWeight={500} sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                  {t.table_id}
-                </Typography>
-                {t.display_name && t.display_name !== t.table_id && (
-                  <Typography variant="caption" color="text.secondary">
-                    {t.display_name}
+    <>
+      <List dense disablePadding>
+        {visible.map((t) => (
+          <ListItemButton
+            key={t.id}
+            onClick={() => onNavigate(t.id)}
+            sx={{ pl: 7, pr: 2, py: 0.75, alignItems: 'flex-start', '&:hover': { bgcolor: '#f8faff' } }}
+          >
+            <ListItemIcon sx={{ minWidth: 24, mt: 0.25 }}>
+              {t.is_validated
+                ? <VerifiedIcon sx={{ fontSize: 13, color: '#137333' }} />
+                : <TableChartIcon sx={{ fontSize: 13, color: '#9aa0a6' }} />
+              }
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem', fontWeight: 500 }}>
+                    {t.table_id}
                   </Typography>
-                )}
-              </Box>
-            }
-            secondary={
-              t.validated_by ? (
-                <Typography variant="caption" color="text.disabled">
-                  Validated by {t.validated_by}
-                  {t.validated_at ? ` · ${new Date(t.validated_at).toLocaleDateString()}` : ''}
-                </Typography>
-              ) : null
-            }
-          />
-          <ChevronRightIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
-        </ListItemButton>
-      ))}
-    </List>
+                  {t.columns.length > 0 && (
+                    <Chip label={`${t.columns.length} cols`} size="small" variant="outlined"
+                      sx={{ height: 16, fontSize: '0.65rem', borderRadius: '4px' }} />
+                  )}
+                  {bqLocation && (
+                    <Chip label={bqLocation} size="small"
+                      sx={{ height: 16, fontSize: '0.65rem', borderRadius: '4px', bgcolor: '#e8f0fe', color: '#1a73e8', border: 'none' }} />
+                  )}
+                </Box>
+              }
+              secondary={
+                <Box sx={{ display: 'flex', gap: 2, mt: 0.3, flexWrap: 'wrap' }}>
+                  {t.row_count != null && (
+                    <Typography variant="caption" color="text.disabled">
+                      {t.row_count.toLocaleString()} rows
+                    </Typography>
+                  )}
+                  {fmtBytes(t.size_bytes) && (
+                    <Typography variant="caption" color="text.disabled">
+                      {fmtBytes(t.size_bytes)}
+                    </Typography>
+                  )}
+                  {t.bq_created_at && (
+                    <Typography variant="caption" color="text.disabled">
+                      Created {new Date(t.bq_created_at).toLocaleDateString()}
+                    </Typography>
+                  )}
+                  {t.bq_last_modified && (
+                    <Typography variant="caption" color="text.disabled">
+                      Modified {new Date(t.bq_last_modified).toLocaleDateString()}
+                    </Typography>
+                  )}
+                </Box>
+              }
+            />
+            <ChevronRightIcon sx={{ fontSize: 14, color: '#dadce0', mt: 0.5, flexShrink: 0 }} />
+          </ListItemButton>
+        ))}
+      </List>
+      {overflow > 0 && (
+        <Box
+          sx={{
+            pl: 7, pr: 2, py: 1, display: 'flex', alignItems: 'center', gap: 1,
+            borderTop: '1px solid', borderColor: 'divider',
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            +{overflow} more table{overflow !== 1 ? 's' : ''}
+          </Typography>
+          <Button
+            size="small"
+            endIcon={<OpenInNewIcon sx={{ fontSize: '13px !important' }} />}
+            onClick={onOpenDataset}
+            sx={{ fontSize: '0.75rem', ml: 0.5 }}
+          >
+            View all in dataset page
+          </Button>
+        </Box>
+      )}
+    </>
   )
 }
 
@@ -310,7 +368,6 @@ export default function Browse() {
         return (
           <Accordion
             key={projectId}
-            defaultExpanded
             disableGutters
             elevation={0}
             sx={{ border: '1px solid', borderColor: 'divider', mb: 2, borderRadius: '10px !important', '&:before': { display: 'none' } }}
@@ -351,132 +408,65 @@ export default function Browse() {
                   {/* Dataset row */}
                   <Box
                     sx={{
-                      pl: 4,
-                      pr: 2.5,
-                      pt: 1.5,
-                      pb: expandedValidated.has(ds.id) ? 1 : 1.5,
-                      borderLeft: ds.is_validated ? '3px solid #2e7d32' : '3px solid transparent',
-                      '&:hover': { bgcolor: '#fafbff' },
-                      transition: 'background 0.15s',
+                      pl: 5.5, pr: 2, py: 1.25,
+                      display: 'flex', alignItems: 'center', gap: 1,
+                      borderLeft: ds.is_validated ? '3px solid #137333' : '3px solid transparent',
+                      '&:hover': { bgcolor: '#f8faff' },
+                      transition: 'background 0.12s',
                       cursor: 'pointer',
                     }}
-                    onClick={() => navigate(`/datasets/${ds.id}`)}
+                    onClick={(e) => toggleValidated(ds.id, e)}
                   >
-                    {/* Line 1: icon + name + validated chip + spacer + actions */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <StorageIcon sx={{ color: '#1a73e8', fontSize: 18, flexShrink: 0 }} />
-                      <Typography variant="subtitle2" fontWeight={600} sx={{ lineHeight: 1.3 }}>
-                        {ds.display_name || ds.dataset_id}
-                      </Typography>
-                      {ds.is_validated && (
-                        <Tooltip title={`Validated${ds.validated_by ? ` by ${ds.validated_by}` : ''}${ds.validated_at ? ` on ${new Date(ds.validated_at).toLocaleDateString()}` : ''}`}>
-                          <Chip
-                            icon={<VerifiedIcon sx={{ fontSize: '12px !important' }} />}
-                            label="Validated"
-                            size="small"
-                            color="success"
-                            variant="outlined"
-                            sx={{ fontSize: '0.6rem', height: 18, cursor: 'pointer' }}
-                          />
-                        </Tooltip>
-                      )}
-                      <Box sx={{ flex: 1 }} />
-                      {(ds.table_count ?? 0) > 0 && (
-                        <Tooltip title={expandedValidated.has(ds.id) ? 'Hide validated tables' : 'Show validated tables'}>
-                          <Button
-                            size="small"
-                            variant={expandedValidated.has(ds.id) ? 'outlined' : 'text'}
-                            color={expandedValidated.has(ds.id) ? 'success' : 'inherit'}
-                            startIcon={<VerifiedIcon sx={{ fontSize: '13px !important' }} />}
-                            endIcon={
-                              <ExpandMoreIcon
-                                sx={{
-                                  fontSize: '14px !important',
-                                  transition: 'transform 0.2s',
-                                  transform: expandedValidated.has(ds.id) ? 'rotate(180deg)' : 'none',
-                                }}
-                              />
-                            }
-                            onClick={(e) => toggleValidated(ds.id, e)}
-                            sx={{
-                              fontSize: '0.7rem',
-                              textTransform: 'none',
-                              minWidth: 0,
-                              px: 1,
-                              py: 0.25,
-                              height: 24,
-                              borderRadius: 1.5,
-                              color: expandedValidated.has(ds.id) ? 'success.main' : 'text.secondary',
-                            }}
-                          >
-                            Validated tables
-                          </Button>
-                        </Tooltip>
-                      )}
-                      <Tooltip title="Open dataset">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/datasets/${ds.id}`) }}
-                          sx={{ color: 'text.disabled', '&:hover': { color: '#1a73e8' } }}
-                        >
-                          <OpenInNewIcon sx={{ fontSize: 15 }} />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-
-                    {/* Line 2: monospace ID + chips */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.5, pl: 3.25, flexWrap: 'wrap' }}>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.disabled', mr: 0.5 }}>
-                        {ds.project_id}.{ds.dataset_id}
-                      </Typography>
-                      <SensitivityChip label={ds.sensitivity_label as SensitivityLabel} />
+                    <TableChartIcon sx={{ color: '#9aa0a6', fontSize: 15, flexShrink: 0 }} />
+                    <Typography variant="body2" fontWeight={600} noWrap sx={{ flex: 1, minWidth: 0 }}>
+                      {ds.display_name || ds.dataset_id}
+                    </Typography>
+                    <Chip
+                      label={`${ds.table_count ?? 0} tables`}
+                      size="small"
+                      sx={{ fontSize: '0.7rem', height: 18, bgcolor: '#f1f3f4', color: '#5f6368', flexShrink: 0 }}
+                    />
+                    {ds.bq_location && (
                       <Chip
-                        icon={<TableChartIcon sx={{ fontSize: '11px !important' }} />}
-                        label={`${ds.table_count ?? 0} table${(ds.table_count ?? 0) !== 1 ? 's' : ''}`}
+                        label={ds.bq_location}
                         size="small"
-                        sx={{ fontSize: '0.62rem', height: 18 }}
+                        sx={{ fontSize: '0.7rem', height: 18, bgcolor: '#e8f0fe', color: '#1a73e8', border: 'none', flexShrink: 0 }}
                       />
-                      {ds.tags.slice(0, 4).map((t) => (
-                        <TagChip key={t} tag={t} />
-                      ))}
-                    </Box>
-
-                    {/* Line 3: description */}
-                    {ds.description && (
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        noWrap
-                        sx={{ mt: 0.5, pl: 3.25, fontSize: '0.8rem' }}
-                      >
-                        {ds.description}
+                    )}
+                    {ds.bq_last_modified && (
+                      <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>
+                        Modified {new Date(ds.bq_last_modified).toLocaleDateString()}
                       </Typography>
                     )}
+                    {ds.is_validated && (
+                      <VerifiedIcon sx={{ fontSize: 14, color: '#137333', flexShrink: 0 }} />
+                    )}
+                    <Tooltip title="Open dataset">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/datasets/${ds.id}`) }}
+                        sx={{ color: 'text.disabled', '&:hover': { color: '#1a73e8' }, flexShrink: 0 }}
+                      >
+                        <OpenInNewIcon sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    </Tooltip>
+                    <ExpandMoreIcon sx={{
+                      fontSize: 16, color: '#9aa0a6', flexShrink: 0,
+                      transition: 'transform 0.2s',
+                      transform: expandedValidated.has(ds.id) ? 'rotate(180deg)' : 'none',
+                    }} />
                   </Box>
 
-                  {/* Validated tables panel */}
+                  {/* Tables list */}
                   <Collapse in={expandedValidated.has(ds.id)} unmountOnExit>
-                    <Box
-                      sx={{
-                        bgcolor: '#f6faf6',
-                        borderTop: '1px solid',
-                        borderColor: '#c8e6c9',
-                        borderLeft: '3px solid #2e7d32',
-                        ml: 0,
-                      }}
-                    >
-                      <Box sx={{ px: 2.5, py: 0.75, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <VerifiedIcon sx={{ fontSize: 13, color: '#2e7d32' }} />
-                        <Typography variant="caption" fontWeight={600} sx={{ color: '#2e7d32' }}>
-                          Validated tables
-                        </Typography>
-                      </Box>
-                      <Divider sx={{ borderColor: '#c8e6c9' }} />
-                      <ValidatedTablesList
-                        datasetId={ds.id}
-                        onNavigate={(tableId) => navigate(`/datasets/${ds.id}/tables/${tableId}`)}
-                      />
-                    </Box>
+                    <Divider />
+                    <TablesList
+                      datasetId={ds.dataset_id}
+                      datasetDbId={ds.id}
+                      bqLocation={ds.bq_location}
+                      onNavigate={(tableId) => navigate(`/datasets/${ds.id}/tables/${tableId}`)}
+                      onOpenDataset={() => navigate(`/datasets/${ds.id}`)}
+                    />
                   </Collapse>
                 </Box>
               ))}
