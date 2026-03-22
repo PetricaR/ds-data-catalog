@@ -62,11 +62,11 @@ export default function SearchResults() {
     setParams(next)
   }
 
-  const handleResultClick = (r: { entity_type: string; id: string; dataset_id: string }) => {
+  const handleResultClick = (r: { entity_type: string; id: string; dataset_uuid: string | null; dataset_id: string }) => {
     if (r.entity_type === 'dataset') {
       navigate(`/datasets/${r.id}`)
     } else {
-      navigate(`/datasets/${r.dataset_id}/tables/${r.id}`)
+      navigate(`/datasets/${r.dataset_uuid ?? r.dataset_id}/tables/${r.id}`)
     }
   }
 

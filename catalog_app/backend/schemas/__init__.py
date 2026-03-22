@@ -4,9 +4,11 @@ from .catalog import (  # noqa: F401
     DatasetCreate,
     DatasetResponse,
     DatasetUpdate,
+    ProjectUsage,
     SearchResponse,
     SearchResult,
     TableCreate,
+    TableInsights,
     TableResponse,
     TableUpdate,
 )

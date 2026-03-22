@@ -1,5 +1,5 @@
 import client from './client'
-import type { Dataset, DatasetCreate, DatasetUpdate, Table } from './types'
+import type { Dataset, DatasetCreate, DatasetUpdate, ProjectUsage, Table } from './types'
 
 export const datasetsApi = {
   list: (params?: {
@@ -27,4 +27,7 @@ export const datasetsApi = {
 
   listTables: (id: string) =>
     client.get<Table[]>(`/datasets/${id}/tables`).then((r) => r.data),
+
+  updateProjects: (id: string, projects: ProjectUsage[]) =>
+    client.put<Dataset>(`/datasets/${id}/projects`, projects).then((r) => r.data),
 }

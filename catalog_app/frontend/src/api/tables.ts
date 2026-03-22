@@ -1,5 +1,5 @@
 import client from './client'
-import type { ExampleQuery, PreviewEstimate, PreviewResult, QualityCheckResult, Table, TableCreate, TableUpdate } from './types'
+import type { ExampleQuery, PreviewEstimate, PreviewResult, ProjectUsage, QualityCheckResult, Table, TableCreate, TableInsights, TableUpdate } from './types'
 
 export const tablesApi = {
   list: (params?: {
@@ -45,6 +45,12 @@ export const tablesApi = {
 
   pullStats: (tableId: string) =>
     client.post<{ updated_columns: number; pulled_at: string }>(`/tables/${tableId}/pull-stats`).then((r) => r.data),
+
+  updateProjects: (tableId: string, projects: ProjectUsage[]) =>
+    client.put<Table>(`/tables/${tableId}/projects`, projects).then((r) => r.data),
+
+  generateInsights: (tableId: string) =>
+    client.post<TableInsights>(`/tables/${tableId}/insights`).then((r) => r.data),
 
   remove: (id: string) => client.delete(`/tables/${id}`),
 }

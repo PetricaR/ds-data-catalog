@@ -32,6 +32,14 @@ class ColumnResponse(ColumnBase):
     model_config = {"from_attributes": True}
 
 
+# ── DS Project Usage ───────────────────────────────────────────────────────────
+
+class ProjectUsage(BaseModel):
+    project_name: str
+    jira_id: Optional[str] = None
+    repo_url: Optional[str] = None
+
+
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
 class DatasetBase(BaseModel):
@@ -65,6 +73,9 @@ class DatasetResponse(DatasetBase):
     is_validated: bool = False
     validated_by: Optional[str] = None
     validated_at: Optional[datetime] = None
+    bq_created_at: Optional[datetime] = None
+    bq_last_modified: Optional[datetime] = None
+    used_in_projects: list[ProjectUsage] = []
     created_at: datetime
     updated_at: datetime
     table_count: int = 0
@@ -109,6 +120,12 @@ class ValidatePayload(BaseModel):
     validated_columns: list[str] = []
 
 
+class TableInsights(BaseModel):
+    questions: list[str] = []
+    observations: list[str] = []
+    use_cases: list[str] = []
+
+
 class TableResponse(TableBase):
     id: UUID
     row_count: Optional[int] = None
@@ -128,6 +145,9 @@ class TableResponse(TableBase):
     upstream_refs: list[str] = []
     downstream_refs: list[str] = []
     quality_score: Optional[float] = None
+    used_in_projects: list[ProjectUsage] = []
+    insights: Optional[TableInsights] = None
+    insights_generated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -140,7 +160,8 @@ class SearchResult(BaseModel):
     name: str
     description: Optional[str] = None
     project_id: str
-    dataset_id: str
+    dataset_id: str          # BQ dataset string ID
+    dataset_uuid: Optional[UUID] = None  # dataset row UUID (needed for table navigation)
     table_id: Optional[str] = None
     tags: list[str] = []
     sensitivity_label: str

@@ -17,6 +17,7 @@ export interface Dataset {
   is_validated: boolean
   validated_by: string | null
   validated_at: string | null
+  used_in_projects: ProjectUsage[]
   created_at: string
   updated_at: string
   table_count: number
@@ -64,6 +65,12 @@ export interface ExampleQuery {
   sql: string
 }
 
+export interface ProjectUsage {
+  project_name: string
+  jira_id?: string | null
+  repo_url?: string | null
+}
+
 export interface PreviewEstimate {
   query: string
   estimated_bytes: number
@@ -102,6 +109,15 @@ export interface Table {
   upstream_refs: string[]
   downstream_refs: string[]
   quality_score: number | null
+  used_in_projects: ProjectUsage[]
+  insights: TableInsights | null
+  insights_generated_at: string | null
+}
+
+export interface TableInsights {
+  questions: string[]
+  observations: string[]
+  use_cases: string[]
 }
 
 export interface TableCreate {
@@ -129,7 +145,8 @@ export interface SearchResult {
   name: string
   description: string | null
   project_id: string
-  dataset_id: string
+  dataset_id: string       // BQ dataset string ID
+  dataset_uuid: string | null  // dataset row UUID (use this for navigation)
   table_id: string | null
   tags: string[]
   sensitivity_label: SensitivityLabel

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from google.cloud import bigquery
 from .bq_preview import _get_query_credentials
+from .bq_safety import assert_read_only
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ def run(project_id: str, dataset_id: str, table_id: str, columns: list[dict], se
         f"FROM `{project_id}.{dataset_id}.{table_id}`"
     )
 
+    assert_read_only(query)
     result = client.query(query).result()
     row = next(iter(result))
     total_rows = row["total_rows"]

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -14,6 +14,7 @@ import Button from '@mui/material/Button'
 import Tooltip from '@mui/material/Tooltip'
 import InputAdornment from '@mui/material/InputAdornment'
 import TextField from '@mui/material/TextField'
+import IconButton from '@mui/material/IconButton'
 import TableChartIcon from '@mui/icons-material/TableChart'
 import EditNoteIcon from '@mui/icons-material/EditNote'
 import PlaceIcon from '@mui/icons-material/Place'
@@ -22,19 +23,36 @@ import PersonIcon from '@mui/icons-material/Person'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import UpdateIcon from '@mui/icons-material/Update'
 import SearchIcon from '@mui/icons-material/Search'
+import FolderSpecialIcon from '@mui/icons-material/FolderSpecial'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import AddIcon from '@mui/icons-material/Add'
+import DeleteIcon from '@mui/icons-material/Delete'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import { datasetsApi } from '../api/datasets'
-import type { SensitivityLabel } from '../api/types'
+import type { ProjectUsage, SensitivityLabel } from '../api/types'
 
 export default function DatasetDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const qc = useQueryClient()
+  const emptyProject = (): ProjectUsage => ({ project_name: '', jira_id: '', repo_url: '' })
   const [searchQuery, setSearchQuery] = useState('')
+  const [editingProjects, setEditingProjects] = useState(false)
+  const [projectsDraft, setProjectsDraft] = useState<ProjectUsage[]>([emptyProject()])
+
   const { data: dataset, isLoading: dsLoading } = useQuery({
     queryKey: ['dataset', id],
     queryFn: () => datasetsApi.get(id!),
     enabled: !!id,
+  })
+
+  const projectsMutation = useMutation({
+    mutationFn: (projects: ProjectUsage[]) => datasetsApi.updateProjects(id!, projects),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dataset', id] })
+      setEditingProjects(false)
+    },
   })
 
   const { data: tables, isLoading: tablesLoading } = useQuery({
@@ -150,6 +168,120 @@ export default function DatasetDetail() {
           }}
           sx={{ minWidth: 240, '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: '0.85rem' } }}
         />
+      </Box>
+
+      {/* Used in DS Projects */}
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <FolderSpecialIcon sx={{ color: 'text.secondary' }} />
+          <Typography variant="h6" fontWeight={600}>Used in DS Projects</Typography>
+          <Chip label={(dataset.used_in_projects ?? []).length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
+          <Box sx={{ flex: 1 }} />
+          {!editingProjects && (
+            <Button
+              size="small" variant="outlined" startIcon={<EditNoteIcon />}
+              onClick={() => {
+                setProjectsDraft(
+                  dataset.used_in_projects?.length ? [...dataset.used_in_projects] : [emptyProject()]
+                )
+                setEditingProjects(true)
+              }}
+            >
+              Edit
+            </Button>
+          )}
+        </Box>
+
+        {editingProjects ? (
+          <Box>
+            {projectsDraft.map((p, i) => (
+              <Card key={i} variant="outlined" sx={{ mb: 1.5, p: 1.5 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
+                  <IconButton
+                    size="small"
+                    onClick={() => setProjectsDraft(d => d.filter((_, idx) => idx !== i))}
+                    sx={{ color: 'text.disabled' }}
+                  >
+                    <DeleteIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <TextField
+                    size="small" label="Project name *" fullWidth required
+                    value={p.project_name}
+                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, project_name: e.target.value } : x))}
+                  />
+                  <TextField
+                    size="small" label="JIRA IIB" fullWidth
+                    placeholder="IIB-1234"
+                    value={p.jira_id ?? ''}
+                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, jira_id: e.target.value } : x))}
+                  />
+                  <TextField
+                    size="small" label="Repo URL" fullWidth
+                    placeholder="https://github.com/org/repo"
+                    value={p.repo_url ?? ''}
+                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, repo_url: e.target.value } : x))}
+                  />
+                </Box>
+              </Card>
+            ))}
+            <Button
+              size="small" startIcon={<AddIcon />}
+              onClick={() => setProjectsDraft(d => [...d, emptyProject()])}
+              sx={{ mb: 2 }}
+            >
+              Add project
+            </Button>
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+              <Button size="small" onClick={() => setEditingProjects(false)}>Cancel</Button>
+              <Button
+                size="small" variant="contained"
+                disabled={projectsMutation.isPending || projectsDraft.some(p => !p.project_name.trim())}
+                onClick={() => projectsMutation.mutate(projectsDraft.filter(p => p.project_name.trim()))}
+              >
+                Save
+              </Button>
+            </Box>
+          </Box>
+        ) : (dataset.used_in_projects ?? []).length === 0 ? (
+          <Alert severity="info" icon={<FolderSpecialIcon />}>
+            No DS projects linked yet. Click <strong>Edit</strong> to add projects that use this dataset.
+          </Alert>
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            {(dataset.used_in_projects ?? []).map((p, i) => (
+              <Card key={i} variant="outlined" sx={{ px: 2, py: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                  <FolderSpecialIcon sx={{ fontSize: 18, color: 'primary.main', mt: 0.25 }} />
+                  <Box sx={{ flex: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <Typography variant="subtitle2" fontWeight={600}>{p.project_name}</Typography>
+                      {p.jira_id && (
+                        <Chip label={p.jira_id} size="small" sx={{ fontSize: '0.65rem', height: 20, bgcolor: '#e8f0fe', color: '#1a73e8', fontFamily: 'monospace' }} />
+                      )}
+                      {p.repo_url && (
+                        <Tooltip title={p.repo_url}>
+                          <Chip
+                            icon={<OpenInNewIcon sx={{ fontSize: '12px !important' }} />}
+                            label="Repo"
+                            size="small"
+                            clickable
+                            component="a"
+                            href={p.repo_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ fontSize: '0.65rem', height: 20 }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Box>
+                  </Box>
+                </Box>
+              </Card>
+            ))}
+          </Box>
+        )}
       </Box>
 
       {tablesLoading ? (

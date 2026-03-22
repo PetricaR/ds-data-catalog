@@ -9,7 +9,7 @@ from ..config import settings
 from ..database import get_db
 from ..dependencies.auth import get_current_user
 from ..models.catalog import Dataset, MetadataChangeLog, Table
-from ..schemas.catalog import DatasetCreate, DatasetResponse, DatasetUpdate
+from ..schemas.catalog import DatasetCreate, DatasetResponse, DatasetUpdate, ProjectUsage
 from ..services.gchat import notify_metadata_change
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -154,6 +154,22 @@ def validate_dataset(dataset_id: UUID, validated_by: str = "anonymous", db: Sess
     ds.is_validated = not ds.is_validated
     ds.validated_by = validated_by if ds.is_validated else None
     ds.validated_at = datetime.now(timezone.utc) if ds.is_validated else None
+    db.commit()
+    db.refresh(ds)
+    return _dataset_response(ds, db)
+
+
+@router.put("/{dataset_id}/projects", response_model=DatasetResponse)
+def update_dataset_projects(
+    dataset_id: UUID,
+    payload: list[ProjectUsage],
+    db: Session = Depends(get_db),
+):
+    """Replace the list of DS projects that use this dataset."""
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.is_active == True).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    ds.used_in_projects = [p.model_dump() for p in payload]
     db.commit()
     db.refresh(ds)
     return _dataset_response(ds, db)

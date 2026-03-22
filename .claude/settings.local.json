@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chub search:*)",
+      "Bash(pip3 show:*)",
+      "Bash(python3 -m context_hub --help)",
+      "Bash(chub --version)",
+      "Bash(CHUB=/Users/radanpetrica/PFA/hackathons/gemini-live-agent-challange/multimodal-shopping-ai-assistant/agent_env/bin/chub)",
+      "Bash($CHUB search:*)",
+      "Bash($CHUB get:*)",
+      "Bash(npm install:*)",
+      "Bash(/opt/homebrew/bin/npm install:*)",
+      "Read(//opt/homebrew/opt/**)",
+      "Read(//usr/local/**)",
+      "Bash(PATH=\"/opt/homebrew/Cellar/node/25.4.0/bin:$PATH\" npm install -g @aisuite/chub)",
+      "Bash(PATH=\"/opt/homebrew/Cellar/node/25.4.0/bin:$PATH\" npm install -g @aisuite/chub --prefix ~/.npm-global)",
+      "Bash(~/.npm-global/bin/chub --version)",
+      "Bash(CHUB_NPM=~/.npm-global/bin/chub PATH=\"/opt/homebrew/Cellar/node/25.4.0/bin:$PATH\" $CHUB_NPM --version 2)",
+      "Bash(1 PATH=\"/opt/homebrew/Cellar/node/25.4.0/bin:$PATH\" $CHUB_NPM search gemini)",
+      "Bash(PATH=\"/opt/homebrew/Cellar/node/25.4.0/bin:$PATH\" ~/.npm-global/bin/chub get gemini/genai --lang py)",
+      "Bash(catalog_env/bin/python3 -c \"from catalog_app.backend.services.insights import generate_insights, MODEL; print\\(''OK, model:'', MODEL\\)\")",
+      "Bash(PATH=\"/opt/homebrew/Cellar/node/25.4.0/bin:$PATH\" ~/.npm-global/bin/chub annotate gemini/genai \"Used for table insights in DS Data Catalog. Key patterns: use gemini-2.5-flash, response_schema=Pydantic for structured output, thinking_budget=0 for latency, vertexai=True with project+location for GCP auth.\")"
+    ]
+  }
+}

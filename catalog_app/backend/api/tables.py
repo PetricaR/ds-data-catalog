@@ -9,7 +9,7 @@ from ..config import settings
 from ..database import get_db
 from ..dependencies.auth import get_current_user
 from ..models.catalog import Dataset, MetadataChangeLog, Table, TableColumn
-from ..schemas.catalog import ColumnUpdate, ExampleQuery, QualityCheckResult, TableCreate, TableResponse, TableUpdate, ValidatePayload
+from ..schemas.catalog import ColumnUpdate, ExampleQuery, ProjectUsage, QualityCheckResult, TableCreate, TableInsights, TableResponse, TableUpdate, ValidatePayload
 from ..services import bq_preview, bq_quality
 from ..services.gchat import notify_trusted, notify_revoked, notify_metadata_change
 
@@ -217,6 +217,9 @@ def validate_table(
             validated_columns=list(t.validated_columns or []),
             frontend_url=settings.frontend_url,
             table_id=str(t.id),
+            project_id=ds.project_id if ds else None,
+            dataset_name=(ds.display_name or ds.dataset_id) if ds else None,
+            dataset_id=str(ds.id) if ds else None,
         )
     else:
         revoked_by = (current_user or {}).get("email") or payload.validated_by or prev_validated_by or "unknown"
@@ -226,6 +229,9 @@ def validate_table(
             revoked_by=revoked_by,
             frontend_url=settings.frontend_url,
             table_id=str(t.id),
+            project_id=ds.project_id if ds else None,
+            dataset_name=(ds.display_name or ds.dataset_id) if ds else None,
+            dataset_id=str(ds.id) if ds else None,
         )
     return _table_response(t, db)
 
@@ -313,15 +319,15 @@ def update_queries(table_id: UUID, payload: list[ExampleQuery], db: Session = De
 
 @router.patch("/{table_id}/columns/{column_id}/pii")
 def toggle_pii(
-    table_id: str,
-    column_id: str,
+    table_id: UUID,
+    column_id: UUID,
     is_pii: bool = Body(..., embed=True),
     db: Session = Depends(get_db),
 ):
     """Toggle PII flag for a specific column."""
     col = db.query(TableColumn).filter(
-        TableColumn.id == UUID(column_id),
-        TableColumn.table_id == UUID(table_id),
+        TableColumn.id == column_id,
+        TableColumn.table_id == table_id,
     ).first()
     if not col:
         raise HTTPException(status_code=404, detail="Column not found")
@@ -332,13 +338,13 @@ def toggle_pii(
 
 @router.put("/{table_id}/lineage")
 def update_lineage(
-    table_id: str,
+    table_id: UUID,
     upstream_refs: list[str] = Body(default=[]),
     downstream_refs: list[str] = Body(default=[]),
     db: Session = Depends(get_db),
 ):
     """Update upstream and downstream lineage references for a table."""
-    t = db.query(Table).filter(Table.id == UUID(table_id)).first()
+    t = db.query(Table).filter(Table.id == table_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     t.upstream_refs = upstream_refs
@@ -348,11 +354,11 @@ def update_lineage(
 
 
 @router.post("/{table_id}/pull-stats")
-def pull_stats(table_id: str, db: Session = Depends(get_db)):
+def pull_stats(table_id: UUID, db: Session = Depends(get_db)):
     """Trigger column statistics pull from BigQuery."""
     from ..services.bq_stats import pull_column_stats
 
-    t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == UUID(table_id)).first()
+    t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
@@ -376,6 +382,74 @@ def pull_stats(table_id: str, db: Session = Depends(get_db)):
 
     db.commit()
     return {"updated_columns": updated, "pulled_at": now.isoformat()}
+
+
+@router.post("/{table_id}/insights", response_model=TableInsights)
+def generate_insights(
+    table_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Generate AI insights for the table using Vertex AI Gemini and cache them."""
+    from ..services.insights import generate_insights as _generate
+    t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Parent dataset not found")
+
+    bq_path = f"{ds.project_id}.{ds.dataset_id}.{t.table_id}"
+    columns = [
+        {
+            "name": c.name,
+            "data_type": c.data_type,
+            "description": c.description,
+            "is_pii": c.is_pii,
+            "null_pct": c.null_pct,
+            "approx_count_distinct": c.approx_count_distinct,
+            "min_val": c.min_val,
+            "max_val": c.max_val,
+        }
+        for c in sorted(t.columns, key=lambda c: c.position)
+    ]
+
+    try:
+        result = _generate(
+            project_id=ds.project_id,
+            table_name=t.display_name or t.table_id,
+            table_bq_path=bq_path,
+            description=t.description,
+            sensitivity_label=t.sensitivity_label,
+            tags=list(t.tags or []),
+            row_count=t.row_count,
+            size_bytes=t.size_bytes,
+            columns=columns,
+            dataset_description=ds.description,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    t.insights = result
+    t.insights_generated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(t)
+    return TableInsights(**t.insights)
+
+
+@router.put("/{table_id}/projects", response_model=TableResponse)
+def update_table_projects(
+    table_id: UUID,
+    payload: list[ProjectUsage],
+    db: Session = Depends(get_db),
+):
+    """Replace the list of DS projects that use this table."""
+    t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    t.used_in_projects = [p.model_dump() for p in payload]
+    db.commit()
+    db.refresh(t)
+    return _table_response(t, db)
 
 
 @router.delete("/{table_id}", status_code=status.HTTP_204_NO_CONTENT)

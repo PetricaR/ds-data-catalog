@@ -44,13 +44,18 @@ import DoneAllIcon from '@mui/icons-material/DoneAll'
 import SecurityIcon from '@mui/icons-material/Security'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import FolderSpecialIcon from '@mui/icons-material/FolderSpecial'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined'
+import QuestionMarkIcon from '@mui/icons-material/QuestionMark'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import ValidationWizard from '../components/ValidationWizard'
 import { tablesApi } from '../api/tables'
 import { datasetsApi } from '../api/datasets'
 import { schemaChangesApi } from '../api/schemaChanges'
-import type { ExampleQuery, SensitivityLabel } from '../api/types'
+import type { ExampleQuery, ProjectUsage, SensitivityLabel, TableInsights } from '../api/types'
 
 function bytes(n: number) {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`
@@ -77,6 +82,9 @@ export default function TableDetail() {
   const [colDescDraft, setColDescDraft] = useState('')
   const [editingLineage, setEditingLineage] = useState(false)
   const [lineageDraft, setLineageDraft] = useState({ upstream: [''], downstream: [''] })
+  const emptyProject = (): ProjectUsage => ({ project_name: '', jira_id: '', repo_url: '' })
+  const [editingProjects, setEditingProjects] = useState(false)
+  const [projectsDraft, setProjectsDraft] = useState<ProjectUsage[]>([emptyProject()])
 
   const toggleExpand = (i: number) =>
     setExpandedQueries((prev) => {
@@ -168,6 +176,19 @@ export default function TableDetail() {
     },
   })
 
+  const projectsMutation = useMutation({
+    mutationFn: (projects: ProjectUsage[]) => tablesApi.updateProjects(tableId!, projects),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['table', tableId] })
+      setEditingProjects(false)
+    },
+  })
+
+  const insightsMutation = useMutation({
+    mutationFn: () => tablesApi.generateInsights(tableId!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
+  })
+
   const { data: table, isLoading } = useQuery({
     queryKey: ['table', tableId],
     queryFn: () => tablesApi.get(tableId!),
@@ -181,6 +202,9 @@ export default function TableDetail() {
         upstream: table.upstream_refs?.length ? table.upstream_refs : [''],
         downstream: table.downstream_refs?.length ? table.downstream_refs : [''],
       })
+      setProjectsDraft(
+        table.used_in_projects?.length ? table.used_in_projects : [emptyProject()]
+      )
     }
   }, [table]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -907,6 +931,273 @@ export default function TableDetail() {
                 ))
               )}
             </Box>
+          </Box>
+        )}
+      </Box>
+
+      {/* Used in DS Projects */}
+      <Box sx={{ mt: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <FolderSpecialIcon sx={{ color: 'text.secondary' }} />
+          <Typography variant="h6" fontWeight={600}>Used in DS Projects</Typography>
+          <Chip label={(table.used_in_projects ?? []).length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
+          <Box sx={{ flex: 1 }} />
+          {!editingProjects && (
+            <Button
+              size="small" variant="outlined" startIcon={<EditNoteIcon />}
+              onClick={() => {
+                setProjectsDraft(
+                  table.used_in_projects?.length ? [...table.used_in_projects] : [emptyProject()]
+                )
+                setEditingProjects(true)
+              }}
+            >
+              Edit
+            </Button>
+          )}
+        </Box>
+
+        {editingProjects ? (
+          <Box>
+            {projectsDraft.map((p, i) => (
+              <Card key={i} variant="outlined" sx={{ mb: 1.5, p: 1.5 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
+                  <IconButton
+                    size="small"
+                    onClick={() => setProjectsDraft(d => d.filter((_, idx) => idx !== i))}
+                    sx={{ color: 'text.disabled' }}
+                  >
+                    <DeleteIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <TextField
+                    size="small" label="Project name *" fullWidth required
+                    value={p.project_name}
+                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, project_name: e.target.value } : x))}
+                  />
+                  <TextField
+                    size="small" label="JIRA IIB" fullWidth
+                    placeholder="IIB-1234"
+                    value={p.jira_id ?? ''}
+                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, jira_id: e.target.value } : x))}
+                  />
+                  <TextField
+                    size="small" label="Repo URL" fullWidth
+                    placeholder="https://github.com/org/repo"
+                    value={p.repo_url ?? ''}
+                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, repo_url: e.target.value } : x))}
+                  />
+                </Box>
+              </Card>
+            ))}
+            <Button
+              size="small" startIcon={<AddIcon />}
+              onClick={() => setProjectsDraft(d => [...d, emptyProject()])}
+              sx={{ mb: 2 }}
+            >
+              Add project
+            </Button>
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+              <Button size="small" onClick={() => setEditingProjects(false)}>Cancel</Button>
+              <Button
+                size="small" variant="contained"
+                disabled={projectsMutation.isPending || projectsDraft.some(p => !p.project_name.trim())}
+                onClick={() => projectsMutation.mutate(projectsDraft.filter(p => p.project_name.trim()))}
+              >
+                Save
+              </Button>
+            </Box>
+          </Box>
+        ) : (table.used_in_projects ?? []).length === 0 ? (
+          <Alert severity="info" icon={<FolderSpecialIcon />}>
+            No DS projects linked yet. Click <strong>Edit</strong> to add projects that use this table.
+          </Alert>
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            {(table.used_in_projects ?? []).map((p, i) => (
+              <Card key={i} variant="outlined" sx={{ px: 2, py: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                  <FolderSpecialIcon sx={{ fontSize: 18, color: 'primary.main', mt: 0.25 }} />
+                  <Box sx={{ flex: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <Typography variant="subtitle2" fontWeight={600}>{p.project_name}</Typography>
+                      {p.jira_id && (
+                        <Chip label={p.jira_id} size="small" sx={{ fontSize: '0.65rem', height: 20, bgcolor: '#e8f0fe', color: '#1a73e8', fontFamily: 'monospace' }} />
+                      )}
+                      {p.repo_url && (
+                        <Tooltip title={p.repo_url}>
+                          <Chip
+                            icon={<OpenInNewIcon sx={{ fontSize: '12px !important' }} />}
+                            label="Repo"
+                            size="small"
+                            clickable
+                            component="a"
+                            href={p.repo_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ fontSize: '0.65rem', height: 20 }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Box>
+                  </Box>
+                </Box>
+              </Card>
+            ))}
+          </Box>
+        )}
+      </Box>
+
+      {/* Insights */}
+      <Box sx={{ mt: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <AutoAwesomeIcon sx={{ color: '#9334e6' }} />
+          <Typography variant="h6" fontWeight={600}>Insights</Typography>
+          {table.insights_generated_at && (
+            <Typography variant="caption" color="text.disabled" sx={{ ml: 0.5 }}>
+              Generated {new Date(table.insights_generated_at).toLocaleDateString()}
+            </Typography>
+          )}
+          <Box sx={{ flex: 1 }} />
+          <Button
+            size="small"
+            variant={table.insights ? 'outlined' : 'contained'}
+            startIcon={insightsMutation.isPending
+              ? <CircularProgress size={14} color="inherit" />
+              : <AutoAwesomeIcon sx={{ fontSize: '15px !important' }} />}
+            onClick={() => insightsMutation.mutate()}
+            disabled={insightsMutation.isPending}
+            sx={table.insights ? {} : { background: 'linear-gradient(90deg,#9334e6,#1a73e8)', color: '#fff', border: 'none', '&:hover': { opacity: 0.9, border: 'none' } }}
+          >
+            {insightsMutation.isPending ? 'Generating…' : table.insights ? 'Regenerate' : 'Generate Insights'}
+          </Button>
+        </Box>
+
+        {insightsMutation.isError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {(insightsMutation.error as any)?.response?.data?.detail ?? 'Failed to generate insights. Check GCP credentials.'}
+          </Alert>
+        )}
+
+        {!table.insights ? (
+          <Box
+            sx={{
+              border: '1px dashed', borderColor: 'divider', borderRadius: 2,
+              p: 4, textAlign: 'center',
+              background: 'linear-gradient(135deg, #faf5ff 0%, #eff6ff 100%)',
+            }}
+          >
+            <AutoAwesomeIcon sx={{ fontSize: 40, color: '#9334e6', mb: 1.5, opacity: 0.7 }} />
+            <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+              Insights have not yet been generated
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 520, mx: 'auto' }}>
+              Generate insights for free to uncover key patterns in your data. Discover recommendations such as{' '}
+              <em>"What are the top selling products by region?"</em>,{' '}
+              <em>"How has revenue changed over time?"</em>, or{' '}
+              <em>"Which customers are at risk of churn?"</em>
+            </Typography>
+            <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 2 }}>
+              Insights are generated based on profile data, table and column descriptions.
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={insightsMutation.isPending
+                ? <CircularProgress size={14} color="inherit" />
+                : <AutoAwesomeIcon />}
+              onClick={() => insightsMutation.mutate()}
+              disabled={insightsMutation.isPending}
+              sx={{ background: 'linear-gradient(90deg,#9334e6,#1a73e8)', '&:hover': { opacity: 0.9 } }}
+            >
+              {insightsMutation.isPending ? 'Generating…' : 'Generate Insights'}
+            </Button>
+          </Box>
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {/* Questions */}
+            {table.insights.questions.length > 0 && (
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1 }}>
+                  <QuestionMarkIcon sx={{ fontSize: 16, color: '#1a73e8' }} />
+                  <Typography variant="subtitle2" fontWeight={600} color="primary">
+                    Analysis Questions
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                  {table.insights.questions.map((q, i) => (
+                    <Box
+                      key={i}
+                      sx={{
+                        display: 'flex', alignItems: 'flex-start', gap: 1.5,
+                        px: 2, py: 1.25,
+                        bgcolor: '#f0f4ff', borderRadius: 1.5,
+                        border: '1px solid #c7d7fc',
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ fontStyle: 'italic', color: '#1a3a6b' }}>
+                        "{q}"
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
+            )}
+
+            {/* Observations */}
+            {table.insights.observations.length > 0 && (
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1 }}>
+                  <LightbulbOutlinedIcon sx={{ fontSize: 16, color: '#e37400' }} />
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ color: '#e37400' }}>
+                    Observations
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                  {table.insights.observations.map((obs, i) => (
+                    <Box
+                      key={i}
+                      sx={{
+                        display: 'flex', alignItems: 'flex-start', gap: 1.5,
+                        px: 2, py: 1.25,
+                        bgcolor: '#fff8e1', borderRadius: 1.5,
+                        border: '1px solid #ffe082',
+                      }}
+                    >
+                      <LightbulbOutlinedIcon sx={{ fontSize: 15, color: '#e37400', mt: 0.2, flexShrink: 0 }} />
+                      <Typography variant="body2" color="text.secondary">{obs}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
+            )}
+
+            {/* Use cases */}
+            {table.insights.use_cases.length > 0 && (
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1 }}>
+                  <AutoAwesomeIcon sx={{ fontSize: 16, color: '#9334e6' }} />
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ color: '#9334e6' }}>
+                    DS / ML Use Cases
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {table.insights.use_cases.map((uc, i) => (
+                    <Chip
+                      key={i}
+                      label={uc}
+                      size="small"
+                      sx={{
+                        bgcolor: '#f3e8ff', color: '#6b21a8',
+                        border: '1px solid #d8b4fe',
+                        fontSize: '0.75rem', height: 'auto',
+                        '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 },
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            )}
           </Box>
         )}
       </Box>

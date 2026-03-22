@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     frontend_url: str = "http://localhost:5173"
     google_chat_webhook_url: str = ""  # Google Chat space webhook URL
+    gemini_api_key: str = ""           # Gemini API key (leave empty to use Vertex AI / ADC)
     # JWT
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"

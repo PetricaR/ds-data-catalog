@@ -53,6 +53,10 @@ def init_db():
             "ALTER TABLE tables ADD COLUMN IF NOT EXISTS upstream_refs JSONB NOT NULL DEFAULT '[]'",
             "ALTER TABLE tables ADD COLUMN IF NOT EXISTS downstream_refs JSONB NOT NULL DEFAULT '[]'",
             "ALTER TABLE tables ADD COLUMN IF NOT EXISTS quality_score FLOAT",
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS used_in_projects JSONB NOT NULL DEFAULT '[]'",
+            "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS used_in_projects JSONB NOT NULL DEFAULT '[]'",
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS insights JSONB",
+            "ALTER TABLE tables ADD COLUMN IF NOT EXISTS insights_generated_at TIMESTAMPTZ",
             # ── New tables ─────────────────────────────────────────────────
             """CREATE TABLE IF NOT EXISTS users (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

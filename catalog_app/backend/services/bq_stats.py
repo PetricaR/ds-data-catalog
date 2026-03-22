@@ -1,6 +1,8 @@
 """Pull column-level statistics from BigQuery."""
 import logging
 
+from .bq_safety import assert_read_only
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,6 +45,7 @@ def pull_column_stats(
         parts.append(f"CAST(MAX(SAFE_CAST(`{safe}` AS STRING)) AS STRING) AS `{safe}__max`")
 
     sql = f"SELECT {', '.join(parts)} FROM `{project_id}.{dataset_id}.{table_id}`"
+    assert_read_only(sql)
 
     try:
         row = next(iter(client.query(sql).result()))
@@ -75,6 +78,7 @@ def pull_column_stats(
                 f" FROM `{project_id}.{dataset_id}.{table_id}`"
             )
             try:
+                assert_read_only(col_sql)
                 r = next(iter(client.query(col_sql).result()))
                 result[col] = {
                     "approx_count_distinct": r.get("acd"),

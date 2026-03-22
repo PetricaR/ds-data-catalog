@@ -10,6 +10,7 @@ import logging
 
 from google.cloud import bigquery
 from .bq_sync import _get_credentials
+from .bq_safety import assert_read_only
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ def estimate(project_id: str, dataset_id: str, table_id: str, secret_name: str) 
     client = bigquery.Client(project=project_id, credentials=credentials)
 
     query = _sample_query(project_id, dataset_id, table_id)
+    assert_read_only(query)
     job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
     job = client.query(query, job_config=job_config)
 
@@ -69,6 +71,7 @@ def run(project_id: str, dataset_id: str, table_id: str, secret_name: str) -> di
     client = bigquery.Client(project=project_id, credentials=credentials)
 
     query = _sample_query(project_id, dataset_id, table_id)
+    assert_read_only(query)
     job_config = bigquery.QueryJobConfig(use_query_cache=True)
     result = client.query(query, job_config=job_config).result()
 

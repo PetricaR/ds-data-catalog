@@ -125,6 +125,7 @@ def search(
                     description=t.description,
                     project_id=ds.project_id,
                     dataset_id=ds.dataset_id,
+                    dataset_uuid=ds.id,
                     table_id=t.table_id,
                     tags=t.tags or [],
                     sensitivity_label=t.sensitivity_label,
