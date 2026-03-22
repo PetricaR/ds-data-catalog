@@ -42,8 +42,8 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline'
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline'
 import DoneAllIcon from '@mui/icons-material/DoneAll'
 import SecurityIcon from '@mui/icons-material/Security'
-import BarChartIcon from '@mui/icons-material/BarChart'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import CloudSyncIcon from '@mui/icons-material/CloudSync'
 import FolderSpecialIcon from '@mui/icons-material/FolderSpecial'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
@@ -94,6 +94,11 @@ export default function TableDetail() {
   const [projectsDraft, setProjectsDraft] = useState<ProjectUsage[]>([emptyProject()])
   const [editingDesc, setEditingDesc] = useState(false)
   const [descDraft, setDescDraft] = useState('')
+  const [schemaOpen, setSchemaOpen] = useState(true)
+  const [queriesOpen, setQueriesOpen] = useState(true)
+  const [lineageOpen, setLineageOpen] = useState(true)
+  const [projectsOpen, setProjectsOpen] = useState(true)
+  const [insightsOpen, setInsightsOpen] = useState(true)
 
   const toggleExpand = (i: number) =>
     setExpandedQueries((prev) => {
@@ -171,11 +176,6 @@ export default function TableDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
   })
 
-  const pullStatsMutation = useMutation({
-    mutationFn: () => tablesApi.pullStats(tableId!),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
-  })
-
   const lineageMutation = useMutation({
     mutationFn: (refs: { upstream: string[]; downstream: string[] }) =>
       tablesApi.updateLineage(tableId!, refs.upstream, refs.downstream),
@@ -183,6 +183,11 @@ export default function TableDetail() {
       qc.invalidateQueries({ queryKey: ['table', tableId] })
       setEditingLineage(false)
     },
+  })
+
+  const discoverLineageMutation = useMutation({
+    mutationFn: () => tablesApi.discoverLineage(tableId!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
   })
 
   const projectsMutation = useMutation({
@@ -490,20 +495,13 @@ export default function TableDetail() {
           Schema ({table.columns.length} columns)
         </Typography>
         <Box sx={{ flex: 1 }} />
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={pullStatsMutation.isPending ? <CircularProgress size={12} /> : <BarChartIcon />}
-          onClick={() => pullStatsMutation.mutate()}
-          disabled={pullStatsMutation.isPending}
-          sx={{ fontSize: '0.72rem', textTransform: 'none' }}
-        >
-          {pullStatsMutation.isPending ? 'Pulling…' : 'Pull stats'}
-        </Button>
+        <IconButton size="small" onClick={() => setSchemaOpen((o) => !o)}>
+          <ExpandMoreIcon sx={{ fontSize: 20, transform: schemaOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+        </IconButton>
       </Box>
 
       {/* Schema table + Metadata side by side — same height */}
-      <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'stretch', mb: 2 }}>
+      {schemaOpen && <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'stretch', mb: 2 }}>
         <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, minWidth: 0, alignSelf: 'stretch' }}>
           <Table size="small">
             <TableHead>
@@ -662,134 +660,135 @@ export default function TableDetail() {
             </Box>
           </CardContent>
         </Card>
-      </Box>
+      </Box>}
 
-      {/* Preview button + section */}
-      <Box>
-        <Box sx={{ mt: 1.5 }}>
-            <Button
-              size="small"
-              variant={previewOpen ? 'contained' : 'outlined'}
-              startIcon={estimateLoading ? <CircularProgress size={14} /> : <PreviewIcon />}
-              onClick={() => { setPreviewOpen((o) => { if (o) runPreviewMutation.reset(); return !o }) }}
-              color={previewOpen ? 'primary' : 'inherit'}
-            >
-              {previewOpen ? 'Hide Preview' : 'Preview Data'}
-            </Button>
-          </Box>
+      {/* Data Preview */}
+      <Box sx={{ mt: 3 }}>
+        {/* Section header row */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <PreviewIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+          <Typography variant="h6" fontWeight={600}>Data Preview</Typography>
+          <Box sx={{ flex: 1 }} />
+          <IconButton size="small" onClick={() => { setPreviewOpen((o) => { if (o) runPreviewMutation.reset(); return !o }) }}>
+            <ExpandMoreIcon sx={{ fontSize: 20, transform: previewOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </IconButton>
+        </Box>
 
-          {/* Data Preview */}
-          {previewOpen && (
-            <Box sx={{ mt: 2 }}>
-              {estimateLoading && <Skeleton variant="rounded" height={120} />}
-              {estimateError && (
-                <Alert severity="error">
-                  {(estimateError as any)?.response?.data?.detail ?? 'Failed to load estimate.'}
-                </Alert>
-              )}
-              {estimate && !runPreviewMutation.data && (
-                <Card variant="outlined" sx={{ mb: 2 }}>
-                  <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Query to run</Typography>
-                    <Box
-                      component="pre"
-                      sx={{
-                        m: 0, p: 1.5, bgcolor: '#f8f9fa', borderRadius: 1,
-                        fontFamily: 'monospace', fontSize: '0.8rem',
-                        border: '1px solid', borderColor: 'divider',
-                        overflowX: 'auto', whiteSpace: 'pre-wrap',
-                      }}
+        {previewOpen && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {estimateLoading && <Skeleton variant="rounded" height={120} />}
+            {estimateError && (
+              <Alert severity="error">
+                {(estimateError as any)?.response?.data?.detail ?? 'Failed to load estimate.'}
+              </Alert>
+            )}
+
+            {estimate && !runPreviewMutation.data && (
+              <Card variant="outlined">
+                <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.75 }}>Query to run</Typography>
+                  <Box
+                    component="pre"
+                    sx={{
+                      m: 0, p: 1.5, bgcolor: '#f8f9fa', borderRadius: 1,
+                      fontFamily: 'monospace', fontSize: '0.8rem',
+                      border: '1px solid', borderColor: 'divider',
+                      overflowX: 'auto', whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {estimate.query}
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1.5 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<SaveIcon />}
+                      onClick={() => saveFromPreview(estimate.query)}
                     >
-                      {estimate.query}
+                      Save query
+                    </Button>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                      <Typography variant="body2" color="text.secondary">
+                        Estimated: <strong>{estimate.estimated_mb} MB</strong>
+                        {estimate.estimated_cost_usd > 0
+                          ? ` (~$${estimate.estimated_cost_usd.toFixed(4)})`
+                          : ' (< $0.0001)'}
+                      </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1.5 }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<SaveIcon />}
-                        onClick={() => saveFromPreview(estimate.query)}
-                      >
-                        Save query
-                      </Button>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                        <Typography variant="body2" color="text.secondary">
-                          Estimated: <strong>{estimate.estimated_mb} MB</strong>
-                          {estimate.estimated_cost_usd > 0
-                            ? ` (~$${estimate.estimated_cost_usd.toFixed(4)})`
-                            : ' (< $0.0001)'}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ flex: 1 }} />
-                      <Button
-                        variant="contained"
-                        size="small"
-                        startIcon={runPreviewMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <PlayArrowIcon />}
-                        onClick={() => runPreviewMutation.mutate()}
-                        disabled={runPreviewMutation.isPending}
-                      >
-                        {runPreviewMutation.isPending ? 'Running…' : 'Run Query'}
-                      </Button>
-                    </Box>
-                    {runPreviewMutation.isError && (
-                      <Alert severity="error" sx={{ mt: 1 }}>
-                        {(runPreviewMutation.error as any)?.response?.data?.detail ?? 'Query failed.'}
-                      </Alert>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-
-              {runPreviewMutation.data && (
-                <Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                    <Typography variant="subtitle2" fontWeight={600}>
-                      Results — {runPreviewMutation.data.rows.length} rows
-                    </Typography>
                     <Box sx={{ flex: 1 }} />
-                    <IconButton size="small" onClick={() => { if (previewScrollRef.current) previewScrollRef.current.scrollLeft -= 300 }}>
-                      <ChevronLeftIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" onClick={() => { if (previewScrollRef.current) previewScrollRef.current.scrollLeft += 300 }}>
-                      <ChevronRightIcon fontSize="small" />
-                    </IconButton>
-                    <Button size="small" variant="text" onClick={() => runPreviewMutation.reset()}>
-                      Re-run
+                    <Button
+                      variant="contained"
+                      size="small"
+                      startIcon={runPreviewMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <PlayArrowIcon />}
+                      onClick={() => runPreviewMutation.mutate()}
+                      disabled={runPreviewMutation.isPending}
+                    >
+                      {runPreviewMutation.isPending ? 'Running…' : 'Run Query'}
                     </Button>
                   </Box>
-                  <Paper variant="outlined" sx={{ borderRadius: 1 }}>
-                    <Box
-                      ref={previewScrollRef}
-                      sx={{ maxHeight: 400, overflowX: 'auto', overflowY: 'auto' }}
-                    >
-                      <Table size="small" sx={{ minWidth: 'max-content', tableLayout: 'auto' }}>
-                        <TableHead>
-                          <TableRow>
-                            {runPreviewMutation.data.columns.map((col) => (
-                              <TableCell key={col} sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.75rem', bgcolor: '#f8f9fa', whiteSpace: 'nowrap' }}>
-                                {col}
+                  {runPreviewMutation.isError && (
+                    <Alert severity="error" sx={{ mt: 1 }}>
+                      {(runPreviewMutation.error as any)?.response?.data?.detail ?? 'Query failed.'}
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {runPreviewMutation.data && (
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                  <Typography variant="subtitle2" fontWeight={600}>
+                    Results — {runPreviewMutation.data.rows.length} rows
+                  </Typography>
+                  <Box sx={{ flex: 1 }} />
+                  <IconButton size="small" onClick={() => { if (previewScrollRef.current) previewScrollRef.current.scrollLeft -= 300 }}>
+                    <ChevronLeftIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton size="small" onClick={() => { if (previewScrollRef.current) previewScrollRef.current.scrollLeft += 300 }}>
+                    <ChevronRightIcon fontSize="small" />
+                  </IconButton>
+                  <Button size="small" variant="text" onClick={() => runPreviewMutation.reset()}>
+                    Re-run
+                  </Button>
+                </Box>
+                <Paper variant="outlined" sx={{ borderRadius: 2 }}>
+                  <Box
+                    ref={previewScrollRef}
+                    sx={{ maxHeight: 400, overflowX: 'auto', overflowY: 'auto' }}
+                  >
+                    <Table size="small" sx={{ minWidth: 'max-content', tableLayout: 'auto' }}>
+                      <TableHead>
+                        <TableRow>
+                          {runPreviewMutation.data.columns.map((col) => (
+                            <TableCell
+                              key={col}
+                              sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.75rem', bgcolor: '#f8f9fa', whiteSpace: 'nowrap', py: 1.25 }}
+                            >
+                              {col}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {runPreviewMutation.data.rows.map((row, i) => (
+                          <TableRow key={i} hover>
+                            {runPreviewMutation.data!.columns.map((col) => (
+                              <TableCell key={col} sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap', minWidth: 120, py: 1 }}>
+                                {row[col] ?? <em style={{ color: '#aaa' }}>null</em>}
                               </TableCell>
                             ))}
                           </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {runPreviewMutation.data.rows.map((row, i) => (
-                            <TableRow key={i} hover>
-                              {runPreviewMutation.data!.columns.map((col) => (
-                                <TableCell key={col} sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap', minWidth: 120 }}>
-                                  {row[col] ?? <em style={{ color: '#aaa' }}>null</em>}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </Box>
-                  </Paper>
-                </Box>
-              )}
-            </Box>
-          )}
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Box>
+                </Paper>
+              </Box>
+            )}
+          </Box>
+        )}
       </Box>
 
       {/* Example Queries */}
@@ -804,9 +803,12 @@ export default function TableDetail() {
               Add Query
             </Button>
           )}
+          <IconButton size="small" onClick={() => setQueriesOpen((o) => !o)} sx={{ ml: 0.5 }}>
+            <ExpandMoreIcon sx={{ fontSize: 20, transform: queriesOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </IconButton>
         </Box>
 
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        {queriesOpen && <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {/* Saved queries list */}
           {displayQueries.map((q, i) => (
             editingIndex === i ? (
@@ -939,204 +941,7 @@ export default function TableDetail() {
               No example queries yet. Click <strong>Add Query</strong> to add a useful SQL snippet.
             </Alert>
           )}
-        </Box>
-      </Box>
-
-      {/* Data Lineage */}
-      <Box sx={{ mt: 4 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <AccountTreeIcon sx={{ color: 'text.secondary' }} />
-          <Typography variant="h6" fontWeight={600}>Data Lineage</Typography>
-          <Box sx={{ flex: 1 }} />
-          {!editingLineage && (
-            <Button size="small" variant="outlined" startIcon={<EditNoteIcon />} onClick={() => setEditingLineage(true)}>
-              Edit
-            </Button>
-          )}
-        </Box>
-
-        {editingLineage ? (
-          <Box>
-            <TextField
-              fullWidth
-              multiline
-              minRows={2}
-              label="Upstream datasets (one per line)"
-              placeholder="project.dataset.table"
-              value={lineageDraft.upstream.join('\n')}
-              onChange={(e) => setLineageDraft(d => ({ ...d, upstream: e.target.value.split('\n') }))}
-              sx={{ mb: 2 }}
-              size="small"
-            />
-            <TextField
-              fullWidth
-              multiline
-              minRows={2}
-              label="Downstream datasets (one per line)"
-              placeholder="project.dataset.table"
-              value={lineageDraft.downstream.join('\n')}
-              onChange={(e) => setLineageDraft(d => ({ ...d, downstream: e.target.value.split('\n') }))}
-              sx={{ mb: 2 }}
-              size="small"
-            />
-            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-              <Button size="small" onClick={() => setEditingLineage(false)}>Cancel</Button>
-              <Button
-                size="small" variant="contained"
-                onClick={() => {
-                  lineageMutation.mutate({
-                    upstream: lineageDraft.upstream.filter(s => s.trim()),
-                    downstream: lineageDraft.downstream.filter(s => s.trim()),
-                  })
-                }}
-                disabled={lineageMutation.isPending}
-              >
-                Save
-              </Button>
-            </Box>
-          </Box>
-        ) : (
-          <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-            <Box sx={{ flex: 1, minWidth: 200 }}>
-              <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>
-                UPSTREAM (inputs)
-              </Typography>
-              {(table.upstream_refs ?? []).length === 0 ? (
-                <Typography variant="body2" color="text.disabled">None defined</Typography>
-              ) : (
-                (table.upstream_refs ?? []).map((ref) => (
-                  <Chip key={ref} label={ref} size="small" sx={{ fontFamily: 'monospace', mr: 0.5, mb: 0.5, fontSize: '0.72rem' }} />
-                ))
-              )}
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 200 }}>
-              <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>
-                DOWNSTREAM (consumers)
-              </Typography>
-              {(table.downstream_refs ?? []).length === 0 ? (
-                <Typography variant="body2" color="text.disabled">None defined</Typography>
-              ) : (
-                (table.downstream_refs ?? []).map((ref) => (
-                  <Chip key={ref} label={ref} size="small" sx={{ fontFamily: 'monospace', mr: 0.5, mb: 0.5, fontSize: '0.72rem' }} />
-                ))
-              )}
-            </Box>
-          </Box>
-        )}
-      </Box>
-
-      {/* Used in DS Projects */}
-      <Box sx={{ mt: 4 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <FolderSpecialIcon sx={{ color: 'text.secondary' }} />
-          <Typography variant="h6" fontWeight={600}>Used in DS Projects</Typography>
-          <Chip label={(table.used_in_projects ?? []).length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
-          <Box sx={{ flex: 1 }} />
-          {!editingProjects && (
-            <Button
-              size="small" variant="outlined" startIcon={<EditNoteIcon />}
-              onClick={() => {
-                setProjectsDraft(
-                  table.used_in_projects?.length ? [...table.used_in_projects] : [emptyProject()]
-                )
-                setEditingProjects(true)
-              }}
-            >
-              Edit
-            </Button>
-          )}
-        </Box>
-
-        {editingProjects ? (
-          <Box>
-            {projectsDraft.map((p, i) => (
-              <Card key={i} variant="outlined" sx={{ mb: 1.5, p: 1.5 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
-                  <IconButton
-                    size="small"
-                    onClick={() => setProjectsDraft(d => d.filter((_, idx) => idx !== i))}
-                    sx={{ color: 'text.disabled' }}
-                  >
-                    <DeleteIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <TextField
-                    size="small" label="Project name *" fullWidth required
-                    value={p.project_name}
-                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, project_name: e.target.value } : x))}
-                  />
-                  <TextField
-                    size="small" label="JIRA IIB" fullWidth
-                    placeholder="IIB-1234"
-                    value={p.jira_id ?? ''}
-                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, jira_id: e.target.value } : x))}
-                  />
-                  <TextField
-                    size="small" label="Repo URL" fullWidth
-                    placeholder="https://github.com/org/repo"
-                    value={p.repo_url ?? ''}
-                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, repo_url: e.target.value } : x))}
-                  />
-                </Box>
-              </Card>
-            ))}
-            <Button
-              size="small" startIcon={<AddIcon />}
-              onClick={() => setProjectsDraft(d => [...d, emptyProject()])}
-              sx={{ mb: 2 }}
-            >
-              Add project
-            </Button>
-            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-              <Button size="small" onClick={() => setEditingProjects(false)}>Cancel</Button>
-              <Button
-                size="small" variant="contained"
-                disabled={projectsMutation.isPending || projectsDraft.some(p => !p.project_name.trim())}
-                onClick={() => projectsMutation.mutate(projectsDraft.filter(p => p.project_name.trim()))}
-              >
-                Save
-              </Button>
-            </Box>
-          </Box>
-        ) : (table.used_in_projects ?? []).length === 0 ? (
-          <Alert severity="info" icon={<FolderSpecialIcon />}>
-            No DS projects linked yet. Click <strong>Edit</strong> to add projects that use this table.
-          </Alert>
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {(table.used_in_projects ?? []).map((p, i) => (
-              <Card key={i} variant="outlined" sx={{ px: 2, py: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                  <FolderSpecialIcon sx={{ fontSize: 18, color: 'primary.main', mt: 0.25 }} />
-                  <Box sx={{ flex: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                      <Typography variant="subtitle2" fontWeight={600}>{p.project_name}</Typography>
-                      {p.jira_id && (
-                        <Chip label={p.jira_id} size="small" sx={{ fontSize: '0.65rem', height: 20, bgcolor: '#e8f0fe', color: '#1a73e8', fontFamily: 'monospace' }} />
-                      )}
-                      {p.repo_url && (
-                        <Tooltip title={p.repo_url}>
-                          <Chip
-                            icon={<OpenInNewIcon sx={{ fontSize: '12px !important' }} />}
-                            label="Repo"
-                            size="small"
-                            clickable
-                            component="a"
-                            href={p.repo_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            sx={{ fontSize: '0.65rem', height: 20 }}
-                          />
-                        </Tooltip>
-                      )}
-                    </Box>
-                  </Box>
-                </Box>
-              </Card>
-            ))}
-          </Box>
-        )}
+        </Box>}
       </Box>
 
       {/* Insights */}
@@ -1162,15 +967,18 @@ export default function TableDetail() {
           >
             {insightsMutation.isPending ? 'Generating…' : table.insights ? 'Regenerate' : 'Generate Insights'}
           </Button>
+          <IconButton size="small" onClick={() => setInsightsOpen((o) => !o)} sx={{ ml: 0.5 }}>
+            <ExpandMoreIcon sx={{ fontSize: 20, transform: insightsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </IconButton>
         </Box>
 
-        {insightsMutation.isError && (
+        {insightsOpen && insightsMutation.isError && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {(insightsMutation.error as any)?.response?.data?.detail ?? 'Failed to generate insights. Check GCP credentials.'}
           </Alert>
         )}
 
-        {!table.insights ? (
+        {insightsOpen && (!table.insights ? (
           <Box
             sx={{
               border: '1px dashed', borderColor: 'divider', borderRadius: 2,
@@ -1182,26 +990,12 @@ export default function TableDetail() {
             <Typography variant="subtitle1" fontWeight={600} gutterBottom>
               Insights have not yet been generated
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 520, mx: 'auto' }}>
-              Generate insights for free to uncover key patterns in your data. Discover recommendations such as{' '}
-              <em>"What are the top selling products by region?"</em>,{' '}
-              <em>"How has revenue changed over time?"</em>, or{' '}
-              <em>"Which customers are at risk of churn?"</em>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1, maxWidth: 520, mx: 'auto' }}>
+              Generate insights to uncover key patterns — e.g. top selling products, revenue trends, or churn risk.
             </Typography>
-            <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 2 }}>
-              Insights are generated based on profile data, table and column descriptions.
+            <Typography variant="caption" color="text.disabled">
+              Based on profile data, table and column descriptions.
             </Typography>
-            <Button
-              variant="contained"
-              startIcon={insightsMutation.isPending
-                ? <CircularProgress size={14} color="inherit" />
-                : <AutoAwesomeIcon />}
-              onClick={() => insightsMutation.mutate()}
-              disabled={insightsMutation.isPending}
-              sx={{ background: 'linear-gradient(90deg,#9334e6,#1a73e8)', '&:hover': { opacity: 0.9 } }}
-            >
-              {insightsMutation.isPending ? 'Generating…' : 'Generate Insights'}
-            </Button>
           </Box>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -1289,7 +1083,231 @@ export default function TableDetail() {
               </Box>
             )}
           </Box>
-        )}
+        ))}
+      </Box>
+
+      {/* Data Lineage */}
+      <Box sx={{ mt: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <AccountTreeIcon sx={{ color: 'text.secondary' }} />
+          <Typography variant="h6" fontWeight={600}>Data Lineage</Typography>
+          <Box sx={{ flex: 1 }} />
+          {discoverLineageMutation.isError && (
+            <Typography variant="caption" color="error.main" sx={{ mr: 1 }}>
+              {(discoverLineageMutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Discovery failed'}
+            </Typography>
+          )}
+          {!editingLineage && (
+            <Tooltip title="Auto-discover lineage from Google Cloud Data Lineage API" arrow>
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={discoverLineageMutation.isPending ? <CircularProgress size={13} /> : <CloudSyncIcon />}
+                  onClick={() => discoverLineageMutation.mutate()}
+                  disabled={discoverLineageMutation.isPending}
+                  sx={{ mr: 0.75 }}
+                >
+                  {discoverLineageMutation.isPending ? 'Discovering…' : 'Discover from GCP'}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+          {!editingLineage && (
+            <Button size="small" variant="outlined" startIcon={<EditNoteIcon />} onClick={() => setEditingLineage(true)}>
+              Edit
+            </Button>
+          )}
+          <IconButton size="small" onClick={() => setLineageOpen((o) => !o)} sx={{ ml: 0.5 }}>
+            <ExpandMoreIcon sx={{ fontSize: 20, transform: lineageOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </IconButton>
+        </Box>
+
+        {lineageOpen && (editingLineage ? (
+          <Box>
+            <TextField
+              fullWidth
+              multiline
+              minRows={2}
+              label="Upstream datasets (one per line)"
+              placeholder="project.dataset.table"
+              value={lineageDraft.upstream.join('\n')}
+              onChange={(e) => setLineageDraft(d => ({ ...d, upstream: e.target.value.split('\n') }))}
+              sx={{ mb: 2 }}
+              size="small"
+            />
+            <TextField
+              fullWidth
+              multiline
+              minRows={2}
+              label="Downstream datasets (one per line)"
+              placeholder="project.dataset.table"
+              value={lineageDraft.downstream.join('\n')}
+              onChange={(e) => setLineageDraft(d => ({ ...d, downstream: e.target.value.split('\n') }))}
+              sx={{ mb: 2 }}
+              size="small"
+            />
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+              <Button size="small" onClick={() => setEditingLineage(false)}>Cancel</Button>
+              <Button
+                size="small" variant="contained"
+                onClick={() => {
+                  lineageMutation.mutate({
+                    upstream: lineageDraft.upstream.filter(s => s.trim()),
+                    downstream: lineageDraft.downstream.filter(s => s.trim()),
+                  })
+                }}
+                disabled={lineageMutation.isPending}
+              >
+                Save
+              </Button>
+            </Box>
+          </Box>
+        ) : (
+          <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+            <Box sx={{ flex: 1, minWidth: 200 }}>
+              <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>
+                UPSTREAM (inputs)
+              </Typography>
+              {(table.upstream_refs ?? []).length === 0 ? (
+                <Typography variant="body2" color="text.disabled">None defined</Typography>
+              ) : (
+                (table.upstream_refs ?? []).map((ref) => (
+                  <Chip key={ref} label={ref} size="small" sx={{ fontFamily: 'monospace', mr: 0.5, mb: 0.5, fontSize: '0.72rem' }} />
+                ))
+              )}
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 200 }}>
+              <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>
+                DOWNSTREAM (consumers)
+              </Typography>
+              {(table.downstream_refs ?? []).length === 0 ? (
+                <Typography variant="body2" color="text.disabled">None defined</Typography>
+              ) : (
+                (table.downstream_refs ?? []).map((ref) => (
+                  <Chip key={ref} label={ref} size="small" sx={{ fontFamily: 'monospace', mr: 0.5, mb: 0.5, fontSize: '0.72rem' }} />
+                ))
+              )}
+            </Box>
+          </Box>
+        ))}
+      </Box>
+
+      {/* Used in DS Projects */}
+      <Box sx={{ mt: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <FolderSpecialIcon sx={{ color: 'text.secondary' }} />
+          <Typography variant="h6" fontWeight={600}>Used in DS Projects</Typography>
+          <Chip label={(table.used_in_projects ?? []).length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
+          <Box sx={{ flex: 1 }} />
+          {!editingProjects && (
+            <Button
+              size="small" variant="outlined" startIcon={<EditNoteIcon />}
+              onClick={() => {
+                setProjectsDraft(
+                  table.used_in_projects?.length ? [...table.used_in_projects] : [emptyProject()]
+                )
+                setEditingProjects(true)
+              }}
+            >
+              Edit
+            </Button>
+          )}
+          <IconButton size="small" onClick={() => setProjectsOpen((o) => !o)} sx={{ ml: 0.5 }}>
+            <ExpandMoreIcon sx={{ fontSize: 20, transform: projectsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </IconButton>
+        </Box>
+
+        {projectsOpen && (editingProjects ? (
+          <Box>
+            {projectsDraft.map((p, i) => (
+              <Card key={i} variant="outlined" sx={{ mb: 1.5, p: 1.5 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
+                  <IconButton
+                    size="small"
+                    onClick={() => setProjectsDraft(d => d.filter((_, idx) => idx !== i))}
+                    sx={{ color: 'text.disabled' }}
+                  >
+                    <DeleteIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <TextField
+                    size="small" label="Project name *" fullWidth required
+                    value={p.project_name}
+                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, project_name: e.target.value } : x))}
+                  />
+                  <TextField
+                    size="small" label="JIRA ID" fullWidth
+                    placeholder="IIB-1234"
+                    value={p.jira_id ?? ''}
+                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, jira_id: e.target.value } : x))}
+                  />
+                  <TextField
+                    size="small" label="Repo URL" fullWidth
+                    placeholder="https://github.com/org/repo"
+                    value={p.repo_url ?? ''}
+                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, repo_url: e.target.value } : x))}
+                  />
+                </Box>
+              </Card>
+            ))}
+            <Button
+              size="small" startIcon={<AddIcon />}
+              onClick={() => setProjectsDraft(d => [...d, emptyProject()])}
+              sx={{ mb: 2 }}
+            >
+              Add project
+            </Button>
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+              <Button size="small" onClick={() => setEditingProjects(false)}>Cancel</Button>
+              <Button
+                size="small" variant="contained"
+                disabled={projectsMutation.isPending || projectsDraft.some(p => !p.project_name.trim())}
+                onClick={() => projectsMutation.mutate(projectsDraft.filter(p => p.project_name.trim()))}
+              >
+                Save
+              </Button>
+            </Box>
+          </Box>
+        ) : (table.used_in_projects ?? []).length === 0 ? (
+          <Alert severity="info" icon={<FolderSpecialIcon />}>
+            No DS projects linked yet. Click <strong>Edit</strong> to add projects that use this table.
+          </Alert>
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            {(table.used_in_projects ?? []).map((p, i) => (
+              <Card key={i} variant="outlined" sx={{ px: 2, py: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                  <FolderSpecialIcon sx={{ fontSize: 18, color: 'primary.main', mt: 0.25 }} />
+                  <Box sx={{ flex: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <Typography variant="subtitle2" fontWeight={600}>{p.project_name}</Typography>
+                      {p.jira_id && (
+                        <Chip label={p.jira_id} size="small" sx={{ fontSize: '0.65rem', height: 20, bgcolor: '#e8f0fe', color: '#1a73e8', fontFamily: 'monospace' }} />
+                      )}
+                      {p.repo_url && (
+                        <Tooltip title={p.repo_url}>
+                          <Chip
+                            icon={<OpenInNewIcon sx={{ fontSize: '12px !important' }} />}
+                            label="Repo"
+                            size="small"
+                            clickable
+                            component="a"
+                            href={p.repo_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ fontSize: '0.65rem', height: 20 }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Box>
+                  </Box>
+                </Box>
+              </Card>
+            ))}
+          </Box>
+        ))}
       </Box>
 
       <ValidationWizard

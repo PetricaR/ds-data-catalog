@@ -43,6 +43,11 @@ export const tablesApi = {
   updateLineage: (tableId: string, upstream_refs: string[], downstream_refs: string[]) =>
     client.put(`/tables/${tableId}/lineage`, { upstream_refs, downstream_refs }).then((r) => r.data),
 
+  discoverLineage: (tableId: string) =>
+    client.get<{ upstream_refs: string[]; downstream_refs: string[]; discovered_upstream: string[]; discovered_downstream: string[] }>(
+      `/tables/${tableId}/lineage/discover`
+    ).then((r) => r.data),
+
   pullStats: (tableId: string) =>
     client.post<{ updated_columns: number; pulled_at: string }>(`/tables/${tableId}/pull-stats`).then((r) => r.data),
 

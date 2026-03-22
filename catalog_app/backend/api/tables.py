@@ -10,7 +10,7 @@ from ..database import get_db
 from ..dependencies.auth import get_current_user
 from ..models.catalog import Dataset, MetadataChangeLog, Table, TableColumn
 from ..schemas.catalog import ColumnUpdate, ExampleQuery, ProjectUsage, QualityCheckResult, TableCreate, TableInsights, TableResponse, TableUpdate, ValidatePayload
-from ..services import bq_preview, bq_quality
+from ..services import bq_preview, bq_lineage, bq_quality
 from ..services.gchat import notify_trusted, notify_revoked, notify_metadata_change
 
 router = APIRouter(prefix="/tables", tags=["tables"])
@@ -334,6 +334,45 @@ def toggle_pii(
     col.is_pii = is_pii
     db.commit()
     return {"id": str(col.id), "is_pii": col.is_pii}
+
+
+@router.get("/{table_id}/lineage/discover")
+def discover_lineage(table_id: UUID, db: Session = Depends(get_db)):
+    """
+    Query the Google Cloud Data Lineage API to auto-discover upstream/downstream
+    tables for this BQ table, then persist the result.
+    """
+    t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    try:
+        result = bq_lineage.discover(
+            project_id=ds.project_id,
+            dataset_id=ds.dataset_id,
+            table_id=t.table_id,
+            location=ds.bq_location,
+            secret_name=settings.bq_secret_name or None,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Cloud Data Lineage API error: {exc}")
+
+    # Persist discovered refs (merge with existing manual entries)
+    existing_up = set(t.upstream_refs or [])
+    existing_down = set(t.downstream_refs or [])
+    t.upstream_refs = sorted(existing_up | set(result["upstream_refs"]))
+    t.downstream_refs = sorted(existing_down | set(result["downstream_refs"]))
+    db.commit()
+
+    return {
+        "upstream_refs": t.upstream_refs,
+        "downstream_refs": t.downstream_refs,
+        "discovered_upstream": result["upstream_refs"],
+        "discovered_downstream": result["downstream_refs"],
+    }
 
 
 @router.put("/{table_id}/lineage")

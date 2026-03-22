@@ -96,71 +96,77 @@ function TablesList({ datasetId, datasetDbId, bqLocation, onNavigate, onOpenData
           <ListItemButton
             key={t.id}
             onClick={() => onNavigate(t.id)}
-            sx={{ pl: 9, pr: 2, py: 1, alignItems: 'center', '&:hover': { bgcolor: '#f8faff' } }}
+            sx={{ pl: 9, pr: 2, py: 1, alignItems: 'flex-start', '&:hover': { bgcolor: '#f8faff' } }}
           >
-            <ListItemIcon sx={{ minWidth: 28 }}>
+            <ListItemIcon sx={{ minWidth: 28, mt: '3px' }}>
               {t.is_validated
                 ? <VerifiedUserIcon sx={{ fontSize: 15, color: '#137333' }} />
                 : <GridOnIcon sx={{ fontSize: 15, color: '#9aa0a6' }} />
               }
             </ListItemIcon>
 
-            {/* Table name + meta pills on same row */}
-            <Box sx={{ flex: 1, minWidth: 0, mr: 2, display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.82rem', fontWeight: 600, color: '#202124', flexShrink: 0 }}>
+            {/* Table name (row 1) + meta pills (row 2) */}
+            <Box sx={{ flex: 1, minWidth: 0, mr: 1 }}>
+              {/* Row 1: table name */}
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.82rem', fontWeight: 600, color: '#202124' }}>
                 {t.table_id}
               </Typography>
-              {t.row_count != null && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
-                  <NumbersIcon sx={{ fontSize: 11, color: '#5f6368' }} />
-                  <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
-                    {t.row_count.toLocaleString()} rows
-                  </Typography>
-                </Box>
-              )}
-              {(t.columns?.length ?? 0) > 0 && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
-                  <ViewWeekIcon sx={{ fontSize: 11, color: '#5f6368' }} />
-                  <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
-                    {t.columns.length} cols
-                  </Typography>
-                </Box>
-              )}
-              {fmtBytes(t.size_bytes) && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
-                  <SdStorageIcon sx={{ fontSize: 11, color: '#5f6368' }} />
-                  <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
-                    {fmtBytes(t.size_bytes)}
-                  </Typography>
-                </Box>
-              )}
-              {bqLocation && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#e8f0fe' }}>
-                  <LanguageIcon sx={{ fontSize: 11, color: '#1a73e8' }} />
-                  <Typography sx={{ fontSize: '0.68rem', color: '#1a73e8', fontWeight: 500, lineHeight: 1 }}>
-                    {bqLocation}
-                  </Typography>
-                </Box>
-              )}
-              {t.bq_created_at && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#fce8e6' }}>
-                  <CalendarTodayIcon sx={{ fontSize: 11, color: '#c5221f' }} />
-                  <Typography sx={{ fontSize: '0.68rem', color: '#c5221f', fontWeight: 500, lineHeight: 1 }}>
-                    Created {new Date(t.bq_created_at).toLocaleDateString()}
-                  </Typography>
-                </Box>
-              )}
-              {t.bq_last_modified && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#e6f4ea' }}>
-                  <UpdateIcon sx={{ fontSize: 11, color: '#137333' }} />
-                  <Typography sx={{ fontSize: '0.68rem', color: '#137333', fontWeight: 500, lineHeight: 1 }}>
-                    Modified {new Date(t.bq_last_modified).toLocaleDateString()}
-                  </Typography>
+              {/* Row 2: pills — only rendered when at least one exists */}
+              {(t.row_count != null || (t.columns?.length ?? 0) > 0 || fmtBytes(t.size_bytes) || bqLocation || t.bq_created_at || t.bq_last_modified) && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+                  {t.row_count != null && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
+                      <NumbersIcon sx={{ fontSize: 11, color: '#5f6368' }} />
+                      <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
+                        {t.row_count.toLocaleString()} rows
+                      </Typography>
+                    </Box>
+                  )}
+                  {(t.columns?.length ?? 0) > 0 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
+                      <ViewWeekIcon sx={{ fontSize: 11, color: '#5f6368' }} />
+                      <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
+                        {t.columns.length} cols
+                      </Typography>
+                    </Box>
+                  )}
+                  {fmtBytes(t.size_bytes) && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
+                      <SdStorageIcon sx={{ fontSize: 11, color: '#5f6368' }} />
+                      <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
+                        {fmtBytes(t.size_bytes)}
+                      </Typography>
+                    </Box>
+                  )}
+                  {bqLocation && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#e8f0fe' }}>
+                      <LanguageIcon sx={{ fontSize: 11, color: '#1a73e8' }} />
+                      <Typography sx={{ fontSize: '0.68rem', color: '#1a73e8', fontWeight: 500, lineHeight: 1 }}>
+                        {bqLocation}
+                      </Typography>
+                    </Box>
+                  )}
+                  {t.bq_created_at && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#fce8e6' }}>
+                      <CalendarTodayIcon sx={{ fontSize: 11, color: '#c5221f' }} />
+                      <Typography sx={{ fontSize: '0.68rem', color: '#c5221f', fontWeight: 500, lineHeight: 1 }}>
+                        {new Date(t.bq_created_at).toLocaleDateString()}
+                      </Typography>
+                    </Box>
+                  )}
+                  {t.bq_last_modified && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#e6f4ea' }}>
+                      <UpdateIcon sx={{ fontSize: 11, color: '#137333' }} />
+                      <Typography sx={{ fontSize: '0.68rem', color: '#137333', fontWeight: 500, lineHeight: 1 }}>
+                        {new Date(t.bq_last_modified).toLocaleDateString()}
+                      </Typography>
+                    </Box>
+                  )}
                 </Box>
               )}
             </Box>
 
-            <ChevronRightIcon sx={{ fontSize: 14, color: '#dadce0', flexShrink: 0 }} />
+            <ChevronRightIcon sx={{ fontSize: 14, color: '#dadce0', flexShrink: 0, mt: '3px' }} />
           </ListItemButton>
         ))}
       </List>
