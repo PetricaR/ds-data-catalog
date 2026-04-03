@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DS Data Catalog — Documentation</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --sidebar-bg: #161b22;
+    --surface: #1c2128;
+    --surface2: #22272e;
+    --border: #30363d;
+    --accent: #2ea043;
+    --accent2: #1f6feb;
+    --accent3: #d29922;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --code-bg: #161b22;
+    --danger: #f85149;
+    --radius: 8px;
+    --sidebar-w: 260px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  nav {
+    width: var(--sidebar-w);
+    min-height: 100vh;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    position: fixed;
+    top: 0; left: 0;
+    overflow-y: auto;
+    padding: 0 0 40px;
+    z-index: 100;
+  }
+  .nav-logo {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .nav-logo .logo-icon {
+    width: 32px; height: 32px; background: linear-gradient(135deg,#2ea043,#1f6feb);
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .nav-logo .logo-text { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
+  .nav-logo .logo-sub { font-size: 11px; color: var(--muted); }
+  .nav-section { padding: 16px 12px 4px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  nav a {
+    display: block; padding: 6px 20px; font-size: 13px; color: var(--muted);
+    text-decoration: none; border-left: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  nav a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(46,160,67,0.08); }
+
+  /* Main */
+  main { margin-left: var(--sidebar-w); flex: 1; padding: 48px 64px; max-width: calc(var(--sidebar-w) + 900px); }
+  section { padding-top: 24px; margin-bottom: 64px; scroll-margin-top: 24px; }
+
+  h1 { font-size: 2.2rem; font-weight: 800; line-height: 1.2; margin-bottom: 12px; }
+  h1 span { background: linear-gradient(90deg,#2ea043,#1f6feb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  h2 { font-size: 1.4rem; font-weight: 700; margin: 40px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 28px 0 12px; color: var(--text); }
+  h4 { font-size: 0.9rem; font-weight: 600; margin: 20px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  p { color: var(--muted); margin-bottom: 12px; }
+  strong { color: var(--text); }
+  ul, ol { padding-left: 24px; color: var(--muted); margin-bottom: 12px; }
+  li { margin-bottom: 4px; }
+  li strong { color: var(--text); }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, rgba(46,160,67,0.08), rgba(31,111,235,0.08));
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 40px 48px; margin-bottom: 48px;
+  }
+  .hero-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 500;
+    border: 1px solid;
+  }
+  .badge-green  { color: #3fb950; border-color: rgba(63,185,80,0.3);  background: rgba(63,185,80,0.1); }
+  .badge-blue   { color: #58a6ff; border-color: rgba(88,166,255,0.3); background: rgba(88,166,255,0.1); }
+  .badge-yellow { color: #d29922; border-color: rgba(210,153,34,0.3); background: rgba(210,153,34,0.1); }
+  .badge-gray   { color: var(--muted); border-color: var(--border); background: var(--surface); }
+
+  /* Code */
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px 24px; overflow-x: auto; margin: 16px 0; position: relative;
+  }
+  code { font-family: 'SF Mono','Fira Code','Cascadia Code',monospace; font-size: 13px; color: #e6edf3; }
+  p code, li code, td code {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    padding: 2px 6px; font-size: 12.5px; color: #79c0ff;
+  }
+  .lang-tag {
+    position: absolute; top: 10px; right: 14px;
+    font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em;
+  }
+
+  /* Syntax coloring */
+  .kw  { color: #ff7b72; }
+  .str { color: #a5d6ff; }
+  .cm  { color: #8b949e; }
+  .fn  { color: #d2a8ff; }
+  .var { color: #79c0ff; }
+  .num { color: #f2cc60; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; margin: 16px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: var(--surface2); color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  tbody td { padding: 9px 14px; border-bottom: 1px solid rgba(48,54,61,0.5); color: var(--muted); vertical-align: top; }
+  tbody tr:hover td { background: rgba(255,255,255,0.02); }
+  tbody td:first-child { color: var(--text); font-weight: 500; }
+
+  /* Method badges */
+  .method { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700; font-family: monospace; margin-right: 4px; }
+  .get    { background: rgba(63,185,80,0.15);  color: #3fb950; }
+  .post   { background: rgba(88,166,255,0.15); color: #58a6ff; }
+  .put    { background: rgba(210,153,34,0.15); color: #d29922; }
+  .patch  { background: rgba(188,140,255,0.15);color: #bc8cff; }
+  .delete { background: rgba(248,81,73,0.15);  color: #f85149; }
+
+  /* Cards grid */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin: 20px 0; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px; transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--accent2); }
+  .card-icon { font-size: 22px; margin-bottom: 10px; }
+  .card h3 { margin: 0 0 6px; font-size: 0.9rem; }
+  .card p  { margin: 0; font-size: 12.5px; }
+
+  /* Steps */
+  .steps { counter-reset: step; margin: 20px 0; }
+  .step  { display: flex; gap: 16px; margin-bottom: 28px; }
+  .step-num {
+    counter-increment: step;
+    width: 28px; height: 28px; min-width: 28px;
+    background: var(--accent2); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; margin-top: 2px;
+  }
+  .step-body h3 { margin-top: 0; margin-bottom: 8px; }
+
+  /* Callout */
+  .callout {
+    border-left: 3px solid; border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 14px 18px; margin: 20px 0; font-size: 13.5px;
+  }
+  .callout p { margin: 0; }
+  .callout-info    { border-color: var(--accent2); background: rgba(31,111,235,0.08); }
+  .callout-warn    { border-color: var(--accent3); background: rgba(210,153,34,0.08); }
+  .callout-success { border-color: var(--accent);  background: rgba(46,160,67,0.08); }
+  .callout strong  { color: var(--text); }
+
+  /* Arch diagram */
+  .arch {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 28px; font-family: monospace; font-size: 12.5px; color: #8b949e;
+    line-height: 1.8; margin: 20px 0; overflow-x: auto;
+  }
+  .arch .hl { color: #58a6ff; }
+  .arch .gr { color: #3fb950; }
+  .arch .ye { color: #d29922; }
+  .arch .pu { color: #bc8cff; }
+
+  /* IAM table colors */
+  .role-tag { font-size: 11px; color: #79c0ff; background: rgba(121,192,255,0.1); border: 1px solid rgba(121,192,255,0.2); border-radius: 4px; padding: 1px 6px; }
+
+  /* Score bar */
+  .score-bar { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+  .score-fill { height: 6px; border-radius: 3px; background: linear-gradient(90deg,#2ea043,#1f6feb); }
+  .score-label { font-size: 11px; color: var(--muted); min-width: 160px; }
+  .score-pts { font-size: 11px; color: var(--accent); font-weight: 600; min-width: 36px; text-align: right; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    nav { display: none; }
+    main { margin-left: 0; padding: 24px; }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+  .tag-inline { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); margin: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ───────────────────────────────────────────────── -->
+<nav id="sidebar">
+  <div class="nav-logo">
+    <div class="logo-icon">📋</div>
+    <div>
+      <div class="logo-text">DS Data Catalog</div>
+      <div class="logo-sub">Documentation</div>
+    </div>
+  </div>
+
+  <div class="nav-section">Getting Started</div>
+  <a href="#overview">Overview</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#features">Features</a>
+  <a href="#prerequisites">Prerequisites</a>
+
+  <div class="nav-section">Local Development</div>
+  <a href="#local-backend">Backend Setup</a>
+  <a href="#local-frontend">Frontend Setup</a>
+
+  <div class="nav-section">Production (GKE)</div>
+  <a href="#gcp-setup">Step 1 — GCP Setup</a>
+  <a href="#oauth">Step 2 — OAuth2</a>
+  <a href="#secrets">Step 3 — Secrets</a>
+  <a href="#cluster">Step 4 — GKE Cluster</a>
+  <a href="#workload-identity">Step 5 — Workload Identity</a>
+  <a href="#deploy">Step 6 — Deploy</a>
+  <a href="#post-deploy">Step 7 — Post-Deploy</a>
+
+  <div class="nav-section">Reference</div>
+  <a href="#config">Configuration</a>
+  <a href="#api">API Reference</a>
+  <a href="#quality-score">Quality Score</a>
+  <a href="#iam">IAM Roles</a>
+
+  <div class="nav-section">Integrations</div>
+  <a href="#bigquery">BigQuery Sync</a>
+  <a href="#ai">AI Insights</a>
+  <a href="#dlp">PII Detection</a>
+  <a href="#dataplex">Quality Scans</a>
+  <a href="#lineage">Data Lineage</a>
+  <a href="#schema-history">Schema History</a>
+  <a href="#usage">Usage Stats</a>
+  <a href="#gchat">Google Chat</a>
+
+  <div class="nav-section">Operations</div>
+  <a href="#ops">Useful Commands</a>
+  <a href="#troubleshoot">Troubleshooting</a>
+  <a href="#adapt">Adapting for Your Org</a>
+</nav>
+
+<!-- ── Main ─────────────────────────────────────────────────── -->
+<main>
+
+<!-- HERO -->
+<div class="hero">
+  <h1><span>DS Data Catalog</span></h1>
+  <p style="font-size:1.05rem;margin-top:8px;">A self-hosted data catalog for Google Cloud / BigQuery teams. Discover, document, govern, and monitor your data assets — with AI-powered insights, PII detection, quality scans, and lineage.</p>
+  <div class="hero-badges">
+    <span class="badge badge-blue">FastAPI + React 18</span>
+    <span class="badge badge-green">BigQuery Native</span>
+    <span class="badge badge-yellow">Vertex AI Gemini</span>
+    <span class="badge badge-blue">GKE Autopilot</span>
+    <span class="badge badge-gray">Google OAuth2</span>
+    <span class="badge badge-gray">Cloud DLP</span>
+    <span class="badge badge-gray">Dataplex</span>
+    <span class="badge badge-gray">Asset Inventory</span>
+  </div>
+</div>
+
+<!-- OVERVIEW -->
+<section id="overview">
+  <h2>Overview</h2>
+  <p>DS Data Catalog is a <strong>FastAPI + React</strong> application that runs on GKE Autopilot. It connects to your BigQuery projects, syncs table and column metadata, and gives your team a searchable, documented, trusted view of your data assets — entirely within your own GCP project.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Layer</th><th>Technology</th></tr></thead>
+      <tbody>
+        <tr><td>Frontend</td><td>React 18, TypeScript, MUI v5, Vite</td></tr>
+        <tr><td>Backend</td><td>Python 3.12, FastAPI, SQLAlchemy 2, Alembic</td></tr>
+        <tr><td>Database</td><td>PostgreSQL 16 (in-cluster StatefulSet)</td></tr>
+        <tr><td>Auth</td><td>Google OAuth2 + JWT (HS256, 7-day tokens)</td></tr>
+        <tr><td>AI</td><td>Vertex AI Gemini (Workload Identity) or Gemini API key</td></tr>
+        <tr><td>Data</td><td>Google BigQuery, Cloud Data Lineage API</td></tr>
+        <tr><td>PII</td><td>Cloud DLP (async BigQuery inspection)</td></tr>
+        <tr><td>Quality</td><td>Dataplex DataScans</td></tr>
+        <tr><td>History</td><td>Cloud Asset Inventory</td></tr>
+        <tr><td>Notifications</td><td>Google Chat Cards v2</td></tr>
+        <tr><td>Infrastructure</td><td>GKE Autopilot, GCR, Cloud Build, Secret Manager</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section id="architecture">
+  <h2>Architecture</h2>
+  <p>All traffic flows through a single LoadBalancer IP. The frontend nginx container proxies <code>/api/v1/</code> to the backend — no separate backend ingress is needed.</p>
+
+  <div class="arch">
+<span class="hl">Browser</span>
+  │
+  ▼
+<span class="gr">LoadBalancer</span>  (port 80)  ← <span class="ye">104.155.73.77</span>
+  │
+  ▼
+<span class="hl">ds-catalog-frontend</span>  (nginx / React SPA)
+  ├── /              → serves index.html  (React Router)
+  ├── /api/v1/*      → <span class="pu">proxied</span> to ds-catalog-backend:8000
+  └── /static/*      → cached 1 year
+  │
+  ▼
+<span class="hl">ds-catalog-backend</span>  (FastAPI / uvicorn, 2 replicas + HPA)
+  ├── /api/v1/auth/*         Google OAuth2 flow + JWT
+  ├── /api/v1/tables/*       Table CRUD, preview, lineage, insights, scans
+  ├── /api/v1/datasets/*     Dataset CRUD
+  ├── /api/v1/bq/*           BigQuery sync + sources
+  ├── /api/v1/search         Full-text search
+  ├── /api/v1/notifications  In-app notification feed
+  └── /health                Liveness / readiness probe
+  │
+  ├──► <span class="gr">ds-catalog-postgres:5432</span>   (PostgreSQL StatefulSet + PVC)
+  ├──► <span class="ye">BigQuery API</span>               (Workload Identity)
+  ├──► <span class="ye">Vertex AI / Gemini</span>         (Workload Identity or API key)
+  ├──► <span class="ye">Cloud DLP</span>                  (Workload Identity)
+  ├──► <span class="ye">Dataplex</span>                   (Workload Identity)
+  ├──► <span class="ye">Cloud Asset Inventory</span>      (Workload Identity)
+  ├──► <span class="ye">Cloud Data Lineage</span>         (Workload Identity)
+  ├──► <span class="ye">Secret Manager</span>             (Workload Identity)
+  └──► <span class="pu">Google Chat Webhook</span>        (HTTPS POST)
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <h2>Features</h2>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-icon">🔍</div>
+      <h3>Data Discovery</h3>
+      <p>Browse all BigQuery datasets and tables in a tree view. Full-text search across names, descriptions, columns, and tags. Filter by sensitivity, owner, dataset.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📝</div>
+      <h3>Table Documentation</h3>
+      <p>Inline-editable table and column descriptions. Sensitivity labels, custom tags, owner assignment, and example SQL queries per table.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">✅</div>
+      <h3>Trust Certification</h3>
+      <p>Validate and certify tables and specific columns. Dedicated Trusted Data page. Google Chat notifications on trust changes.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔄</div>
+      <h3>Schema Change Detection</h3>
+      <p>Automatic detection of columns added or removed on every BQ sync. Visual diff alerts with acknowledge-and-dismiss workflow.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">👁️</div>
+      <h3>Data Preview</h3>
+      <p>TABLESAMPLE query with cost estimate before execution. Run inline and save to example queries.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🤖</div>
+      <h3>AI Insights</h3>
+      <p>Gemini-generated analysis questions, observations, and ML use cases based on schema and stats. Regeneratable on demand.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔗</div>
+      <h3>Data Lineage</h3>
+      <p>Manual upstream/downstream table references. Auto-discovery via Cloud Data Lineage API. Merges both sources.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🛡️</div>
+      <h3>PII Detection</h3>
+      <p>Cloud DLP async inspection of BigQuery tables. Auto-flags columns containing PII. Per-column is_pii toggle.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <h3>Quality Scans</h3>
+      <p>Dataplex DataScans for managed quality checks. Per-table scores and dimension breakdowns (completeness, validity, etc.).</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📈</div>
+      <h3>Usage Statistics</h3>
+      <p>Query frequency and top users from BigQuery INFORMATION_SCHEMA.JOBS. Last-queried timestamp per table.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🕐</div>
+      <h3>Schema History</h3>
+      <p>Column additions, removals, and type changes via Cloud Asset Inventory. Up to 30 days lookback.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔔</div>
+      <h3>Notifications</h3>
+      <p>In-app notification feed. Google Chat Cards v2 webhooks for trust events, metadata changes, PII findings, and quality scores.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔄</div>
+      <h3>Multi-Source Sync</h3>
+      <p>Register multiple GCP projects as sync sources. Per-source service account key via Secret Manager or Workload Identity.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🎫</div>
+      <h3>DS Project Tracking</h3>
+      <p>Link tables to JIRA tickets and GitHub repos. Track which internal projects depend on which tables.</p>
+    </div>
+  </div>
+</section>
+
+<!-- PREREQUISITES -->
+<section id="prerequisites">
+  <h2>Prerequisites</h2>
+  <h3>Local Development</h3>
+  <ul>
+    <li>Python 3.12+</li>
+    <li>Node.js 20+</li>
+    <li>PostgreSQL 16 (local or Docker)</li>
+    <li><code>gcloud</code> CLI authenticated (<code>gcloud auth application-default login</code>)</li>
+  </ul>
+
+  <h3>Production (GKE)</h3>
+  <ul>
+    <li>GCP project with billing enabled</li>
+    <li><code>gcloud</code> CLI authenticated with <strong>Owner or Editor</strong> role</li>
+    <li><code>kubectl</code></li>
+    <li><code>gke-gcloud-auth-plugin</code> (<code>gcloud components install gke-gcloud-auth-plugin</code>)</li>
+    <li><code>docker</code> — only needed if <em>not</em> using Cloud Build (Cloud Build is the default)</li>
+  </ul>
+</section>
+
+<hr class="divider"/>
+
+<!-- LOCAL: BACKEND -->
+<section id="local-backend">
+  <h2>Backend Setup (Local)</h2>
+  <div class="steps">
+
+    <div class="step">
+      <div class="step-num"></div>
+      <div class="step-body">
+        <h3>Create virtual environment &amp; install dependencies</h3>
+        <pre><code><span class="cm"># From repo root</span>
+cd catalog_app
+python3 -m venv catalog_env
+source catalog_env/bin/activate
+
+pip install -r requirements.txt</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"></div>
+      <div class="step-body">
+        <h3>Create local database</h3>
+        <pre><code>createdb ds_catalog
+psql ds_catalog -c <span class="str">"CREATE USER catalog WITH PASSWORD 'catalog';"</span>
+psql ds_catalog -c <span class="str">"GRANT ALL PRIVILEGES ON DATABASE ds_catalog TO catalog;"</span></code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"></div>
+      <div class="step-body">
+        <h3>Create <code>.env</code> file</h3>
+        <pre><code><span class="cm"># catalog_app/.env</span>
+DATABASE_URL=postgresql://catalog:catalog@localhost:5432/ds_catalog
+GCP_PROJECT_ID=your-project-id
+GOOGLE_CLIENT_ID=your-oauth-client-id
+GOOGLE_CLIENT_SECRET=your-oauth-client-secret
+FRONTEND_URL=http://localhost:5173
+JWT_SECRET=local-dev-secret
+SECRET_KEY=local-dev-secret
+CORS_ORIGINS=["http://localhost:5173"]</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"></div>
+      <div class="step-body">
+        <h3>Run the backend</h3>
+        <pre><code>uvicorn backend.main:app --reload --port 8000</code></pre>
+        <p>The server auto-creates all database tables via SQLAlchemy on startup. API is available at <code>http://localhost:8000</code>. Interactive docs at <code>http://localhost:8000/docs</code>.</p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- LOCAL: FRONTEND -->
+<section id="local-frontend">
+  <h2>Frontend Setup (Local)</h2>
+  <div class="steps">
+
+    <div class="step">
+      <div class="step-num"></div>
+      <div class="step-body">
+        <h3>Install dependencies</h3>
+        <pre><code>cd catalog_app/frontend
+npm install</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num"></div>
+      <div class="step-body">
+        <h3>Start dev server</h3>
+        <pre><code>npm run dev</code></pre>
+        <p>Vite starts at <code>http://localhost:5173</code>. API calls to <code>/api/v1/*</code> are proxied to <code>http://localhost:8000</code> via the Vite proxy already configured in <code>vite.config.ts</code>. No <code>.env.local</code> needed.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="callout callout-warn">
+    <p><strong>Stale HMR cache:</strong> If UI changes don't appear after code edits, kill the dev server, run <code>rm -rf node_modules/.vite</code>, and restart with <code>npm run dev</code>.</p>
+  </div>
+</section>
+
+<hr class="divider"/>
+
+<!-- PROD: GCP SETUP -->
+<section id="gcp-setup">
+  <h2>Step 1 — GCP Project Setup</h2>
+  <pre><code><span class="cm"># Authenticate</span>
+gcloud auth login
+gcloud auth application-default login
+
+<span class="cm"># Set your project</span>
+<span class="kw">export</span> <span class="var">GCP_PROJECT_ID</span>=your-project-id
+gcloud config set project $GCP_PROJECT_ID
+
+<span class="cm"># Enable required APIs (deploy.sh does this automatically)</span>
+gcloud services enable \
+  container.googleapis.com \
+  compute.googleapis.com \
+  aiplatform.googleapis.com \
+  bigquery.googleapis.com \
+  bigquerystorage.googleapis.com \
+  secretmanager.googleapis.com \
+  dlp.googleapis.com \
+  dataplex.googleapis.com \
+  cloudasset.googleapis.com \
+  datalineage.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  iam.googleapis.com \
+  cloudbuild.googleapis.com \
+  logging.googleapis.com \
+  monitoring.googleapis.com</code></pre>
+</section>
+
+<!-- PROD: OAUTH -->
+<section id="oauth">
+  <h2>Step 2 — Google OAuth2 Client</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num"></div>
+      <div class="step-body">
+        <h3>Create OAuth2 credentials</h3>
+        <p>Go to <strong>Google Cloud Console → APIs &amp; Services → Credentials → Create Credentials → OAuth 2.0 Client ID</strong></p>
+        <ul>
+          <li>Application type: <strong>Web application</strong></li>
+          <li>Name: <code>DS Data Catalog</code></li>
+          <li>Leave redirect URIs <strong>empty</strong> for now — you will add them after deploy (Step 7)</li>
+        </ul>
+        <p>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> — you'll need them in Step 3.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROD: SECRETS -->
+<section id="secrets">
+  <h2>Step 3 — Secret Manager Secrets</h2>
+  <p>The deploy script reads all secrets from Secret Manager automatically. Create them once:</p>
+  <pre><code><span class="var">PROJECT_ID</span>=your-project-id
+
+<span class="cm"># Google OAuth2</span>
+echo -n <span class="str">"your-google-client-id"</span> | \
+  gcloud secrets create GOOGLE_CLIENT_ID --data-file=- --project=$PROJECT_ID
+
+echo -n <span class="str">"your-google-client-secret"</span> | \
+  gcloud secrets create GOOGLE_CLIENT_SECRET --data-file=- --project=$PROJECT_ID
+
+<span class="cm"># JWT signing secret (strong random string)</span>
+echo -n <span class="str">"$(openssl rand -hex 32)"</span> | \
+  gcloud secrets create jwt-secret-key --data-file=- --project=$PROJECT_ID
+
+<span class="cm"># Gemini API key (optional — uses Vertex AI via Workload Identity if empty)</span>
+echo -n <span class="str">"your-gemini-api-key"</span> | \
+  gcloud secrets create gemini-api-key --data-file=- --project=$PROJECT_ID
+
+<span class="cm"># Google Chat webhook (optional)</span>
+echo -n <span class="str">"https://chat.googleapis.com/v1/spaces/SPACE_ID/messages?key=..."</span> | \
+  gcloud secrets create ds-catalog-google-chat-webhook --data-file=- --project=$PROJECT_ID</code></pre>
+
+  <h3>Secret naming convention</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>K8s env var</th><th>Secret Manager name</th><th>Required</th></tr></thead>
+      <tbody>
+        <tr><td><code>GOOGLE_CLIENT_ID</code></td><td><code>GOOGLE_CLIENT_ID</code></td><td>Yes</td></tr>
+        <tr><td><code>GOOGLE_CLIENT_SECRET</code></td><td><code>GOOGLE_CLIENT_SECRET</code></td><td>Yes</td></tr>
+        <tr><td><code>JWT_SECRET</code></td><td><code>jwt-secret-key</code></td><td>Yes</td></tr>
+        <tr><td><code>SECRET_KEY</code></td><td><code>jwt-secret-key</code></td><td>Yes (same value)</td></tr>
+        <tr><td><code>GEMINI_API_KEY</code></td><td><code>gemini-api-key</code></td><td>Optional</td></tr>
+        <tr><td><code>GOOGLE_CHAT_WEBHOOK_URL</code></td><td><code>ds-catalog-google-chat-webhook</code></td><td>Optional</td></tr>
+        <tr><td><code>BQ_SECRET_NAME</code></td><td><code>ds-catalog-bq-secret-name</code></td><td>Optional</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout callout-info">
+    <p><strong>Note:</strong> If a secret is not found, the corresponding env var is set to empty — the feature is disabled gracefully, not a crash. Missing <code>GOOGLE_CHAT_WEBHOOK_URL</code> just disables notifications.</p>
+  </div>
+</section>
+
+<!-- PROD: CLUSTER -->
+<section id="cluster">
+  <h2>Step 4 — GKE Cluster</h2>
+  <p>The deploy script creates the cluster automatically. To run standalone:</p>
+  <pre><code>cd catalog_app/deploy
+
+GCP_PROJECT_ID=your-project-id \
+GCP_REGION=europe-west1 \
+CLUSTER_NAME=ds-catalog-cluster \
+  ./1-create-cluster.sh</code></pre>
+  <p>Creates a <strong>GKE Autopilot</strong> cluster on the <code>regular</code> release channel. Autopilot manages node pools automatically — no node sizing needed. Cluster creation takes 5–10 minutes.</p>
+</section>
+
+<!-- PROD: WORKLOAD IDENTITY -->
+<section id="workload-identity">
+  <h2>Step 5 — Workload Identity</h2>
+  <p>Workload Identity lets backend pods access GCP APIs without storing service account keys anywhere in the cluster.</p>
+  <pre><code>GCP_PROJECT_ID=your-project-id \
+GCP_REGION=europe-west1 \
+  ./2-setup-workload-identity.sh</code></pre>
+
+  <p>This script:</p>
+  <ol>
+    <li>Creates GCP service account <code>ds-catalog-sa@&lt;project&gt;.iam.gserviceaccount.com</code></li>
+    <li>Grants it the IAM roles listed below</li>
+    <li>Binds it to the Kubernetes service account <code>ds-catalog-sa</code> in namespace <code>default</code></li>
+  </ol>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>IAM Role</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>roles/aiplatform.user</code></td><td>Vertex AI / Gemini inference</td></tr>
+        <tr><td><code>roles/bigquery.jobUser</code></td><td>Run BigQuery jobs (queries, scans)</td></tr>
+        <tr><td><code>roles/bigquery.dataViewer</code></td><td>Read table data for preview</td></tr>
+        <tr><td><code>roles/bigquery.metadataViewer</code></td><td>Read schema from INFORMATION_SCHEMA</td></tr>
+        <tr><td><code>roles/secretmanager.secretAccessor</code></td><td>Read secrets at runtime</td></tr>
+        <tr><td><code>roles/logging.logWriter</code></td><td>Write Cloud Logging entries</td></tr>
+        <tr><td><code>roles/monitoring.metricWriter</code></td><td>Write Cloud Monitoring metrics</td></tr>
+        <tr><td><code>roles/dlp.jobsEditor</code></td><td>Create and read Cloud DLP jobs</td></tr>
+        <tr><td><code>roles/dataplex.editor</code></td><td>Create and run Dataplex DataScans</td></tr>
+        <tr><td><code>roles/cloudasset.viewer</code></td><td>Read Asset Inventory history</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- PROD: DEPLOY -->
+<section id="deploy">
+  <h2>Step 6 — Deploy the Application</h2>
+  <pre><code>cd catalog_app/deploy
+
+<span class="cm"># Full deploy (handles everything)</span>
+GCP_PROJECT_ID=your-project-id \
+GCP_REGION=europe-west1 \
+CLUSTER_NAME=ds-catalog-cluster \
+  ./deploy.sh
+
+<span class="cm"># If cluster already exists, skip creation</span>
+GCP_PROJECT_ID=your-project-id \
+GCP_REGION=europe-west1 \
+CLUSTER_NAME=ds-catalog-cluster \
+SKIP_CLUSTER=1 \
+  ./deploy.sh</code></pre>
+
+  <p>The script will:</p>
+  <ol>
+    <li>Check prerequisites (<code>gcloud</code>, <code>docker</code>, <code>kubectl</code>)</li>
+    <li>Enable GCP APIs</li>
+    <li>Create or reuse the GKE cluster</li>
+    <li>Set up Workload Identity</li>
+    <li>Build backend and frontend images via <strong>Cloud Build</strong> (no local Docker needed)</li>
+    <li>Apply Kubernetes manifests: PostgreSQL StatefulSet, ConfigMap, Secrets, ServiceAccount, Deployments, Services, HPA</li>
+    <li>Pull all secrets from Secret Manager and create the K8s secret</li>
+    <li>Wait for rollouts to complete</li>
+    <li>Auto-patch the ConfigMap with the real LoadBalancer IP</li>
+    <li>Print the app URL</li>
+  </ol>
+
+  <h3>Re-deploying after code changes</h3>
+  <p>Build both images and do a rolling update:</p>
+  <pre><code><span class="cm"># Build new images via Cloud Build</span>
+gcloud builds submit catalog_app/ --project=your-project \
+  --config=&lt;(cat &lt;&lt;'EOF'
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.backend',  '-t', 'gcr.io/PROJECT/ds-catalog-backend:latest',  '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.frontend', '-t', 'gcr.io/PROJECT/ds-catalog-frontend:latest', '.']
+images:
+  - 'gcr.io/PROJECT/ds-catalog-backend:latest'
+  - 'gcr.io/PROJECT/ds-catalog-frontend:latest'
+EOF
+)
+
+<span class="cm"># Rolling restart — picks up :latest tag</span>
+kubectl rollout restart deployment/ds-catalog-backend  -n default
+kubectl rollout restart deployment/ds-catalog-frontend -n default
+kubectl rollout status  deployment/ds-catalog-backend  -n default --timeout=5m
+kubectl rollout status  deployment/ds-catalog-frontend -n default --timeout=5m</code></pre>
+</section>
+
+<!-- PROD: POST-DEPLOY -->
+<section id="post-deploy">
+  <h2>Step 7 — Post-Deploy OAuth Registration</h2>
+  <p>After deploy, the script prints the app URL (e.g. <code>http://34.90.12.55.nip.io</code>). Go back to <strong>Google Cloud Console → APIs &amp; Services → Credentials → your OAuth client</strong> and add:</p>
+
+  <ul>
+    <li><strong>Authorised JavaScript origins:</strong> <code>http://34.90.12.55.nip.io</code></li>
+    <li><strong>Authorised redirect URIs:</strong> <code>http://34.90.12.55.nip.io/api/v1/auth/callback</code></li>
+  </ul>
+
+  <h3>Custom domain</h3>
+  <pre><code><span class="cm"># Point your DNS A record to the LoadBalancer IP, then:</span>
+kubectl patch configmap ds-catalog-config -n default -p \
+  <span class="str">'{"data":{"FRONTEND_URL":"https://catalog.yourcompany.com","CORS_ORIGINS":"[\"https://catalog.yourcompany.com\"]"}}'</span>
+
+kubectl rollout restart deployment/ds-catalog-backend -n default</code></pre>
+</section>
+
+<hr class="divider"/>
+
+<!-- CONFIG -->
+<section id="config">
+  <h2>Configuration Reference</h2>
+
+  <h3>ConfigMap (<code>deploy/configmap.yaml</code>)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>GCP_PROJECT_ID</code></td><td>—</td><td>GCP project for BigQuery, Vertex AI, and DLP</td></tr>
+        <tr><td><code>FRONTEND_URL</code></td><td><code>http://FRONTEND_IP_OR_DOMAIN</code></td><td>Public URL of the frontend — used as OAuth2 redirect base</td></tr>
+        <tr><td><code>CORS_ORIGINS</code></td><td><code>["http://localhost:5173"]</code></td><td>JSON array of allowed CORS origins</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Secrets (<code>deploy/secret.yaml</code> / Secret Manager)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Variable</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>DATABASE_URL</code></td><td>PostgreSQL connection string</td></tr>
+        <tr><td><code>POSTGRES_PASSWORD</code></td><td>Password for the in-cluster PostgreSQL</td></tr>
+        <tr><td><code>GOOGLE_CLIENT_ID</code></td><td>Google OAuth2 client ID</td></tr>
+        <tr><td><code>GOOGLE_CLIENT_SECRET</code></td><td>Google OAuth2 client secret</td></tr>
+        <tr><td><code>JWT_SECRET</code></td><td>Signs JWT tokens (HS256)</td></tr>
+        <tr><td><code>SECRET_KEY</code></td><td>Application secret key (same value as JWT_SECRET is fine)</td></tr>
+        <tr><td><code>GEMINI_API_KEY</code></td><td>Optional — leave empty to use Vertex AI via Workload Identity</td></tr>
+        <tr><td><code>GOOGLE_CHAT_WEBHOOK_URL</code></td><td>Optional — Google Chat webhook for notifications</td></tr>
+        <tr><td><code>BQ_SECRET_NAME</code></td><td>Optional — Secret Manager name for a BQ service account key</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Backend defaults (<code>backend/config.py</code>)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Variable</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>JWT_ALGORITHM</code></td><td><code>HS256</code></td></tr>
+        <tr><td><code>JWT_EXPIRE_MINUTES</code></td><td><code>10080</code> (7 days)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- API REFERENCE -->
+<section id="api">
+  <h2>API Reference</h2>
+  <p>All endpoints are under <code>/api/v1/</code>. The frontend nginx proxies them — no direct backend port is exposed externally. Interactive docs at <code>/docs</code> (Swagger UI).</p>
+
+  <h3>Authentication</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method get">GET</span></td><td><code>/auth/login</code></td><td>None</td><td>Redirect to Google OAuth2 consent screen</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/auth/callback</code></td><td>None</td><td>OAuth2 callback — exchanges code for JWT, redirects to frontend</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/auth/me</code></td><td>JWT</td><td>Return current user info</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Tables</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method get">GET</span></td><td><code>/tables</code></td><td>List tables. Filters: <code>dataset_id</code>, <code>sensitivity_label</code>, <code>tags</code>, <code>owner</code>, <code>skip</code>, <code>limit</code></td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/tables</code></td><td>Register a new table</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/tables/{id}</code></td><td>Get table with all columns</td></tr>
+        <tr><td><span class="method put">PUT</span></td><td><code>/tables/{id}</code></td><td>Update table metadata (description, sensitivity, owner, tags)</td></tr>
+        <tr><td><span class="method delete">DELETE</span></td><td><code>/tables/{id}</code></td><td>Soft-delete a table</td></tr>
+        <tr><td><span class="method patch">PATCH</span></td><td><code>/tables/{id}/validate</code></td><td>Toggle trust certification — mark as validated or revoke</td></tr>
+        <tr><td><span class="method patch">PATCH</span></td><td><code>/tables/{id}/columns</code></td><td>Batch-update column descriptions and primary key flags</td></tr>
+        <tr><td><span class="method patch">PATCH</span></td><td><code>/tables/{id}/columns/{col_id}/pii</code></td><td>Toggle PII flag on a specific column</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/tables/{id}/preview</code></td><td>Dry-run: returns TABLESAMPLE SQL + byte/cost estimate</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/tables/{id}/preview/run</code></td><td>Execute preview query and return rows</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/tables/{id}/quality-check</code></td><td>Pull column stats (null%, distinct count, min/max) from BigQuery</td></tr>
+        <tr><td><span class="method patch">PATCH</span></td><td><code>/tables/{id}/queries</code></td><td>Replace example queries list</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/tables/{id}/insights</code></td><td>Generate AI insights via Vertex AI Gemini</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/tables/{id}/lineage/discover</code></td><td>Auto-discover lineage from Cloud Data Lineage API</td></tr>
+        <tr><td><span class="method put">PUT</span></td><td><code>/tables/{id}/lineage</code></td><td>Update upstream/downstream table references</td></tr>
+        <tr><td><span class="method put">PUT</span></td><td><code>/tables/{id}/projects</code></td><td>Update DS projects linked to this table</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/tables/{id}/usage</code></td><td>Usage stats from INFORMATION_SCHEMA.JOBS. Query param: <code>days</code> (1–30, default 30)</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/tables/{id}/scan-pii</code></td><td>Run Cloud DLP async inspection. Auto-updates column <code>is_pii</code> flags</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/tables/{id}/dataplex-quality</code></td><td>Create/reuse Dataplex DataScan and run quality check</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/tables/{id}/schema-history</code></td><td>Schema change history from Asset Inventory. Query param: <code>days</code> (1–30, default 30)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Datasets</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method get">GET</span></td><td><code>/datasets</code></td><td>List all datasets</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/datasets</code></td><td>Create a dataset</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/datasets/{id}</code></td><td>Get dataset details</td></tr>
+        <tr><td><span class="method put">PUT</span></td><td><code>/datasets/{id}</code></td><td>Update dataset metadata</td></tr>
+        <tr><td><span class="method delete">DELETE</span></td><td><code>/datasets/{id}</code></td><td>Soft-delete dataset</td></tr>
+        <tr><td><span class="method patch">PATCH</span></td><td><code>/datasets/{id}/validate</code></td><td>Toggle dataset validation</td></tr>
+        <tr><td><span class="method put">PUT</span></td><td><code>/datasets/{id}/projects</code></td><td>Update DS projects list</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/datasets/{id}/tables</code></td><td>List all tables in this dataset</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>BigQuery Sources &amp; Sync</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method get">GET</span></td><td><code>/bq/sources</code></td><td>List registered GCP project sources</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/bq/sources</code></td><td>Add a GCP project as sync source</td></tr>
+        <tr><td><span class="method patch">PATCH</span></td><td><code>/bq/sources/{id}</code></td><td>Update source (name, secret, active state)</td></tr>
+        <tr><td><span class="method delete">DELETE</span></td><td><code>/bq/sources/{id}</code></td><td>Remove a source</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/bq/sync</code></td><td>Sync a single GCP project by project ID</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/bq/sync/all</code></td><td>Sync all active sources</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/bq/sync/source/{id}</code></td><td>Sync a specific source by source ID</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Search</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method get">GET</span></td><td><code>/search</code></td><td>Full-text search across datasets and tables. Param: <code>q</code></td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/search/columns</code></td><td>Find columns by name pattern. Param: <code>q</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Other</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method get">GET</span></td><td><code>/notifications</code></td><td>In-app notification feed (unread count + list)</td></tr>
+        <tr><td><span class="method patch">PATCH</span></td><td><code>/notifications/{id}/read</code></td><td>Mark notification as read</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/stats</code></td><td>Homepage stats: table count, validated count, pending changes</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/tags</code></td><td>List all distinct tags in use</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/health</code></td><td>Liveness probe — returns <code>{"status":"ok"}</code></td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/setup</code></td><td>Check if initial setup (first user) is needed</td></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/schema-changes</code></td><td>List pending schema change alerts across all tables</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- QUALITY SCORE -->
+<section id="quality-score">
+  <h2>Quality Score</h2>
+  <p>Each table gets an automatic quality score (0–100) computed from documentation completeness. It updates every time a table is edited.</p>
+
+  <div style="margin:20px 0;">
+    <div class="score-bar"><span class="score-label">Table has description</span><div class="score-fill" style="width:180px"></div><span class="score-pts">+30 pts</span></div>
+    <div class="score-bar"><span class="score-label">Column description coverage</span><div class="score-fill" style="width:180px"></div><span class="score-pts">+30 pts</span></div>
+    <div class="score-bar"><span class="score-label">Table is validated/trusted</span><div class="score-fill" style="width:120px"></div><span class="score-pts">+20 pts</span></div>
+    <div class="score-bar"><span class="score-label">Has at least one tag</span><div class="score-fill" style="width:60px"></div><span class="score-pts">+10 pts</span></div>
+    <div class="score-bar"><span class="score-label">Has example queries</span><div class="score-fill" style="width:60px"></div><span class="score-pts">+10 pts</span></div>
+  </div>
+  <p>Column description coverage is proportional — a table with 5 of 10 columns documented gets 15 pts instead of 30.</p>
+</section>
+
+<!-- IAM -->
+<section id="iam">
+  <h2>IAM Roles</h2>
+  <p>All GCP API access uses <strong>Workload Identity</strong> — no service account keys are stored in the cluster. The backend pods authenticate as <code>ds-catalog-sa@&lt;project&gt;.iam.gserviceaccount.com</code>.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Role</th><th>API Used</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><code>roles/aiplatform.user</code></td><td>Vertex AI</td><td>Gemini AI insights generation</td></tr>
+        <tr><td><code>roles/bigquery.jobUser</code></td><td>BigQuery</td><td>Run queries (preview, quality check, usage stats)</td></tr>
+        <tr><td><code>roles/bigquery.dataViewer</code></td><td>BigQuery</td><td>Read table data for preview</td></tr>
+        <tr><td><code>roles/bigquery.metadataViewer</code></td><td>BigQuery</td><td>INFORMATION_SCHEMA access for stats and sync</td></tr>
+        <tr><td><code>roles/secretmanager.secretAccessor</code></td><td>Secret Manager</td><td>Read BQ service account key at runtime</td></tr>
+        <tr><td><code>roles/dlp.jobsEditor</code></td><td>Cloud DLP</td><td>Create inspection jobs and list findings</td></tr>
+        <tr><td><code>roles/dataplex.editor</code></td><td>Dataplex</td><td>Create DataScans, trigger runs, read results</td></tr>
+        <tr><td><code>roles/cloudasset.viewer</code></td><td>Cloud Asset Inventory</td><td>Read schema history (batch_get_assets_history)</td></tr>
+        <tr><td><code>roles/logging.logWriter</code></td><td>Cloud Logging</td><td>Write structured logs</td></tr>
+        <tr><td><code>roles/monitoring.metricWriter</code></td><td>Cloud Monitoring</td><td>Emit metrics</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="divider"/>
+
+<!-- BIGQUERY SYNC -->
+<section id="bigquery">
+  <h2>BigQuery Sync</h2>
+  <p>The sync engine reads all datasets and tables from a GCP project and upserts them into the catalog database.</p>
+
+  <h3>What gets synced</h3>
+  <ul>
+    <li>Datasets (ID, description, labels)</li>
+    <li>Tables (ID, description, row count, size, partition info)</li>
+    <li>Columns (name, type, description from BigQuery schema)</li>
+    <li>Schema changes — if columns were added or removed since the last sync, a schema change alert is created</li>
+  </ul>
+
+  <h3>Authentication</h3>
+  <p>Sync uses one of two methods per source:</p>
+  <ul>
+    <li><strong>Workload Identity</strong> (default) — the pod's GCP SA is used. Works for the same project as the cluster.</li>
+    <li><strong>Service account key</strong> — store the JSON key in Secret Manager, set <code>BQ_SECRET_NAME</code> to the secret's name. Required for cross-project sources.</li>
+  </ul>
+
+  <h3>Trigger</h3>
+  <pre><code><span class="cm"># Sync all registered sources</span>
+curl -X POST http://104.155.73.77/api/v1/bq/sync/all \
+  -H <span class="str">"Authorization: Bearer &lt;jwt&gt;"</span>
+
+<span class="cm"># Sync a specific project</span>
+curl -X POST http://104.155.73.77/api/v1/bq/sync \
+  -H <span class="str">"Authorization: Bearer &lt;jwt&gt;"</span> \
+  -d <span class="str">'{"project_id":"my-project"}'</span></code></pre>
+</section>
+
+<!-- AI INSIGHTS -->
+<section id="ai">
+  <h2>AI Insights</h2>
+  <p>Gemini generates three types of insight for each table — triggered on demand from the table detail page.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Insight type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Analysis questions</strong></td><td>Questions a data scientist would ask when first exploring this table</td></tr>
+        <tr><td><strong>Observations</strong></td><td>Notable patterns, risks, or characteristics based on schema and stats</td></tr>
+        <tr><td><strong>ML use cases</strong></td><td>Potential machine learning applications this data could support</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Gemini authentication</h3>
+  <p>Two options (auto-detected):</p>
+  <ol>
+    <li><strong>Vertex AI via Workload Identity</strong> — default. No key needed. Set <code>GCP_PROJECT_ID</code> in ConfigMap.</li>
+    <li><strong>Gemini API key</strong> — set <code>GEMINI_API_KEY</code> in secrets. Useful for local development or when Vertex AI isn't enabled.</li>
+  </ol>
+</section>
+
+<!-- DLP -->
+<section id="dlp">
+  <h2>PII Detection (Cloud DLP)</h2>
+  <p>Runs an asynchronous Cloud DLP inspection job against the BigQuery table and auto-flags columns that contain PII.</p>
+
+  <h3>How it works</h3>
+  <ol>
+    <li>Backend calls <code>dlp.create_dlp_job()</code> with the BigQuery table reference</li>
+    <li>Polls the job until status is <code>DONE</code> (typically 30–120 seconds)</li>
+    <li>Calls <code>dlp.list_findings()</code> to get per-column PII results</li>
+    <li>Automatically sets <code>is_pii = True</code> on columns that had findings</li>
+    <li>Sends a Google Chat notification with the PII summary</li>
+  </ol>
+
+  <h3>Info types detected</h3>
+  <p>The DLP job uses Google's built-in info types. Common findings include: <span class="tag-inline">EMAIL_ADDRESS</span> <span class="tag-inline">PHONE_NUMBER</span> <span class="tag-inline">PERSON_NAME</span> <span class="tag-inline">CREDIT_CARD_NUMBER</span> <span class="tag-inline">US_SOCIAL_SECURITY_NUMBER</span> <span class="tag-inline">IP_ADDRESS</span> <span class="tag-inline">IBAN_CODE</span></p>
+
+  <div class="callout callout-warn">
+    <p><strong>Cost:</strong> DLP charges per GB inspected. For large tables, the scan can be expensive. Use the sensitivity label and column filters in DLP to limit scope if needed.</p>
+  </div>
+</section>
+
+<!-- DATAPLEX -->
+<section id="dataplex">
+  <h2>Quality Scans (Dataplex DataScans)</h2>
+  <p>Creates a managed Dataplex DataScan for the table and runs it on demand. Results include a per-dimension quality score.</p>
+
+  <h3>How it works</h3>
+  <ol>
+    <li>Backend calls <code>dataplex.create_data_scan()</code> — idempotent (reuses an existing scan if one exists for that table)</li>
+    <li>Triggers a scan run via <code>run_data_scan()</code></li>
+    <li>Polls the scan job until state is <code>SUCCEEDED</code></li>
+    <li>Returns per-rule and per-dimension results</li>
+    <li>Sends a Google Chat notification with the overall score</li>
+  </ol>
+
+  <h3>Default quality rule</h3>
+  <pre><code><span class="cm"># Table-level completeness check</span>
+rule: TableConditionExpectation
+sql_expression: <span class="str">"COUNT(*) > 0"</span>
+dimension: COMPLETENESS</code></pre>
+
+  <p>Additional per-column rules (null checks, uniqueness) can be added by extending <code>backend/services/dataplex_quality.py</code>.</p>
+</section>
+
+<!-- LINEAGE -->
+<section id="lineage">
+  <h2>Data Lineage</h2>
+  <p>Lineage is tracked in two ways that are merged into a single view:</p>
+
+  <h3>Manual lineage</h3>
+  <p>Any user can add upstream or downstream table references in <code>project.dataset.table</code> format via the table detail page. Stored in the catalog database.</p>
+
+  <h3>Auto-discovery (Cloud Data Lineage API)</h3>
+  <p>Clicking <strong>Auto-discover</strong> calls the Cloud Data Lineage API to find tables that this table reads from or writes to, based on BigQuery job history. Results are merged with manually entered references — no duplicates.</p>
+
+  <div class="callout callout-info">
+    <p><strong>Requirement:</strong> The Cloud Data Lineage API must be enabled in your project, and BigQuery jobs must have been running for at least 24 hours before lineage data is available.</p>
+  </div>
+</section>
+
+<!-- SCHEMA HISTORY -->
+<section id="schema-history">
+  <h2>Schema History (Cloud Asset Inventory)</h2>
+  <p>Fetches the history of BigQuery table asset snapshots from Cloud Asset Inventory and diffs consecutive snapshots to identify column-level changes.</p>
+
+  <h3>Change types detected</h3>
+  <ul>
+    <li><strong>COLUMN_ADDED</strong> — a column present in snapshot N+1 but not in snapshot N</li>
+    <li><strong>COLUMN_REMOVED</strong> — a column present in snapshot N but missing in snapshot N+1</li>
+    <li><strong>TYPE_CHANGED</strong> — same column name, different BigQuery type</li>
+  </ul>
+
+  <h3>Limits</h3>
+  <ul>
+    <li>Maximum lookback: <strong>30 days</strong> (Cloud Asset Inventory retains data for 35 days; the API boundary is ~30 days from now)</li>
+    <li>Asset Inventory snapshots are created on every BigQuery schema change, not on a fixed schedule</li>
+  </ul>
+
+  <pre><code><span class="cm"># Fetch last 30 days of schema changes</span>
+GET /api/v1/tables/{id}/schema-history?days=30</code></pre>
+</section>
+
+<!-- USAGE STATS -->
+<section id="usage">
+  <h2>Usage Statistics</h2>
+  <p>Queries <code>INFORMATION_SCHEMA.JOBS</code> in the <code>region-LOCATION</code> dataset to find how often a table is queried and by whom.</p>
+
+  <h3>Response</h3>
+  <pre><code>{
+  <span class="str">"total_queries"</span>: 142,
+  <span class="str">"last_queried_at"</span>: <span class="str">"2026-03-21T14:32:00Z"</span>,
+  <span class="str">"top_users"</span>: [
+    { <span class="str">"user"</span>: <span class="str">"alice@company.com"</span>, <span class="str">"query_count"</span>: 89 },
+    { <span class="str">"user"</span>: <span class="str">"bob@company.com"</span>,   <span class="str">"query_count"</span>: 34 }
+  ],
+  <span class="str">"period_days"</span>: 30
+}</code></pre>
+
+  <div class="callout callout-info">
+    <p><strong>Note:</strong> <code>INFORMATION_SCHEMA.JOBS</code> only includes jobs run in the same GCP project as <code>GCP_PROJECT_ID</code>. Cross-project query history requires querying each project's INFORMATION_SCHEMA separately.</p>
+  </div>
+</section>
+
+<!-- GCHAT -->
+<section id="gchat">
+  <h2>Google Chat Notifications</h2>
+  <p>When <code>GOOGLE_CHAT_WEBHOOK_URL</code> is set, the backend sends Cards v2 notifications to your Google Chat space on key events.</p>
+
+  <h3>Notification events</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Event</th><th>Function</th><th>Triggered by</th></tr></thead>
+      <tbody>
+        <tr><td>Table trusted</td><td><code>notify_trusted()</code></td><td><code>PATCH /tables/{id}/validate</code> (→ trusted)</td></tr>
+        <tr><td>Trust revoked</td><td><code>notify_revoked()</code></td><td><code>PATCH /tables/{id}/validate</code> (→ revoked)</td></tr>
+        <tr><td>Metadata changed</td><td><code>notify_metadata_change()</code></td><td><code>PUT /tables/{id}</code> — description, sensitivity, owner, or tags changed</td></tr>
+        <tr><td>PII detected</td><td><code>notify_pii_detected()</code></td><td><code>POST /tables/{id}/scan-pii</code> — DLP scan found PII</td></tr>
+        <tr><td>Quality score</td><td><code>notify_quality_score()</code></td><td><code>POST /tables/{id}/dataplex-quality</code> — after scan completes</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Webhook setup</h3>
+  <pre><code><span class="cm"># In Google Chat: open a Space → Apps → Webhooks → Add webhook</span>
+<span class="cm"># Copy the webhook URL and store it in Secret Manager:</span>
+
+echo -n <span class="str">"https://chat.googleapis.com/v1/spaces/SPACE/messages?key=KEY&amp;token=TOKEN"</span> | \
+  gcloud secrets create ds-catalog-google-chat-webhook \
+    --data-file=- --project=your-project</code></pre>
+</section>
+
+<hr class="divider"/>
+
+<!-- OPS -->
+<section id="ops">
+  <h2>Useful Commands</h2>
+
+  <h3>Cluster status</h3>
+  <pre><code><span class="cm"># All pods</span>
+kubectl get pods -n default
+
+<span class="cm"># Backend logs (last 50 lines, follow)</span>
+kubectl logs -l app=ds-catalog-backend -n default --tail=50 -f
+
+<span class="cm"># Frontend logs</span>
+kubectl logs -l app=ds-catalog-frontend -n default --tail=50
+
+<span class="cm"># PostgreSQL logs</span>
+kubectl logs -l app=ds-catalog-postgres -n default --tail=50</code></pre>
+
+  <h3>Connect to database</h3>
+  <pre><code>kubectl exec -it statefulset/ds-catalog-postgres -n default -- \
+  psql -U catalog -d ds_catalog</code></pre>
+
+  <h3>Re-sync secrets from Secret Manager</h3>
+  <pre><code><span class="cm"># Re-read all secrets from Secret Manager → update K8s secret → restart backend</span>
+kubectl delete secret ds-catalog-secret -n default --ignore-not-found
+
+kubectl create secret generic ds-catalog-secret -n default \
+  --from-literal=GOOGLE_CLIENT_ID="$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_ID)" \
+  --from-literal=GOOGLE_CLIENT_SECRET="$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_SECRET)" \
+  --from-literal=JWT_SECRET="$(gcloud secrets versions access latest --secret=jwt-secret-key)" \
+  --from-literal=SECRET_KEY="$(gcloud secrets versions access latest --secret=jwt-secret-key)" \
+  --from-literal=GEMINI_API_KEY="$(gcloud secrets versions access latest --secret=gemini-api-key 2>/dev/null || echo '')" \
+  --from-literal=GOOGLE_CHAT_WEBHOOK_URL="$(gcloud secrets versions access latest --secret=ds-catalog-google-chat-webhook 2>/dev/null || echo '')"
+
+kubectl rollout restart deployment/ds-catalog-backend -n default</code></pre>
+
+  <h3>Scale</h3>
+  <pre><code><span class="cm"># Manual scale</span>
+kubectl scale deployment/ds-catalog-backend -n default --replicas=3
+
+<span class="cm"># Check HPA</span>
+kubectl get hpa -n default</code></pre>
+
+  <h3>Get external IP</h3>
+  <pre><code>kubectl get svc ds-catalog-frontend -n default \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}'</code></pre>
+
+  <h3>Update ConfigMap</h3>
+  <pre><code>kubectl patch configmap ds-catalog-config -n default \
+  -p <span class="str">'{"data":{"FRONTEND_URL":"https://catalog.yourcompany.com"}}'</span>
+
+kubectl rollout restart deployment/ds-catalog-backend -n default</code></pre>
+</section>
+
+<!-- TROUBLESHOOT -->
+<section id="troubleshoot">
+  <h2>Troubleshooting</h2>
+
+  <h3>Login redirects to wrong URL</h3>
+  <p>The OAuth2 redirect URI in the Google Console must exactly match <code>FRONTEND_URL + /api/v1/auth/callback</code>. Check ConfigMap:</p>
+  <pre><code>kubectl get configmap ds-catalog-config -n default -o yaml | grep FRONTEND</code></pre>
+
+  <h3>PII / Dataplex / Asset Inventory import errors</h3>
+  <p>Verify all three packages are installed in the backend image:</p>
+  <pre><code>kubectl exec -it deployment/ds-catalog-backend -n default -- \
+  python -c "from google.cloud import dlp_v2, dataplex_v1, asset_v1; print('OK')"</code></pre>
+
+  <h3>DLP scan fails with "BQ table not found"</h3>
+  <p>The DLP job runs in the GCP project set in <code>GCP_PROJECT_ID</code>. The BigQuery table must be in the same project, or the DLP SA must have <code>bigquery.dataViewer</code> on the source project.</p>
+
+  <h3>Schema history — "Requested time must be later than..."</h3>
+  <p>This means the <code>days</code> parameter exceeds the Asset Inventory retention window (~30 days from now). The API enforces a minimum start time of ~35 days ago. The default is 30 days — do not set <code>days &gt; 30</code>.</p>
+
+  <h3>Dataplex scan — "NonNullExpectation requires non-empty column name"</h3>
+  <p>Column-level DQ rules require a <code>column</code> field. Use <code>TableConditionExpectation</code> for table-level rules (no column required). Already fixed in current version.</p>
+
+  <h3>Frontend shows blank screen</h3>
+  <ol>
+    <li>Check browser console for JavaScript errors</li>
+    <li>Check that the API is reachable: <code>curl http://&lt;ip&gt;/api/v1/health</code></li>
+    <li>Clear Vite cache (local dev): <code>rm -rf node_modules/.vite &amp;&amp; npm run dev</code></li>
+    <li>If an API call returns a FastAPI 422 with <code>detail</code> as an array, the frontend error renderer must handle non-string detail — check error display components</li>
+  </ol>
+
+  <h3>Backend pod in CrashLoopBackOff</h3>
+  <pre><code>kubectl logs deployment/ds-catalog-backend -n default --previous</code></pre>
+  <p>Common causes: missing required environment variable, database not ready, PostgreSQL password mismatch.</p>
+</section>
+
+<!-- ADAPT -->
+<section id="adapt">
+  <h2>Adapting for Your Organization</h2>
+
+  <h3>Rename from "DS Data Catalog"</h3>
+  <p>Update the following files:</p>
+  <ul>
+    <li><code>catalog_app/frontend/src/</code> — search for <code>DS Data Catalog</code> in page titles and the nav header</li>
+    <li><code>catalog_app/deploy/deploy.sh</code> — <code>APP_NAME</code> variable and cluster name defaults</li>
+    <li><code>catalog_app/deploy/configmap.yaml</code> — ConfigMap name and labels</li>
+    <li>K8s deployment/service YAML files — label selectors and resource names</li>
+  </ul>
+
+  <h3>Add a new GCP project as a BigQuery source</h3>
+  <ol>
+    <li>Go to <strong>Sources</strong> in the app → <strong>Add Source</strong></li>
+    <li>Enter the GCP project ID</li>
+    <li>If using a service account key: store the JSON key in Secret Manager, enter the secret name</li>
+    <li>Click <strong>Sync Now</strong></li>
+  </ol>
+
+  <h3>Restrict access by Google Workspace domain</h3>
+  <p>The backend accepts any Google OAuth2 user by default. To restrict to your org domain, add a check in <code>backend/api/auth.py</code> after the OAuth callback:</p>
+  <pre><code><span class="kw">if</span> <span class="kw">not</span> user_info[<span class="str">"email"</span>].endswith(<span class="str">"@yourcompany.com"</span>):
+    <span class="kw">raise</span> <span class="fn">HTTPException</span>(status_code=<span class="num">403</span>, detail=<span class="str">"Access restricted to company accounts"</span>)</code></pre>
+
+  <h3>Sensitivity labels</h3>
+  <p>The four built-in sensitivity labels are: <span class="tag-inline">public</span> <span class="tag-inline">internal</span> <span class="tag-inline">confidential</span> <span class="tag-inline">restricted</span>. To add or rename them, update the enum in <code>backend/schemas/catalog.py</code> and the frontend select in <code>frontend/src/pages/TableDetail.tsx</code>.</p>
+</section>
+
+</main>
+
+<script>
+  // Highlight active sidebar link on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const links = document.querySelectorAll('nav a');
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const a = document.querySelector(`nav a[href="#${e.target.id}"]`);
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -75% 0px' });
+  sections.forEach(s => obs.observe(s));
+</script>
+</body>
+</html>
