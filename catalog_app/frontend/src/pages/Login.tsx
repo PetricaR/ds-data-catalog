@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
@@ -20,26 +21,30 @@ const FEATURES = [
 ]
 
 export default function Login() {
-  const [params] = useSearchParams()
   const navigate = useNavigate()
   const { setUser, user } = useAuth()
+  const [error, setError] = useState<string | null>(null)
 
+  // The OAuth callback returns the token (or an error) in the URL fragment, which never reaches a server.
   useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1))
+    if (!params.toString()) return
+    window.history.replaceState(null, '', window.location.pathname)
     const token = params.get('token')
     const userParam = params.get('user')
-    if (token) {
+    if (token && userParam) {
       try {
-        const parsedUser: User = userParam
-          ? JSON.parse(decodeURIComponent(userParam))
-          : { id: '', email: '', name: null, picture: null, role: 'viewer' }
+        const parsedUser: User = JSON.parse(userParam)
         authApi.storeToken(token, parsedUser)
         setUser(parsedUser)
         navigate('/browse', { replace: true })
       } catch {
-        // ignore
+        setError('Sign-in failed. Please try again.')
       }
+    } else {
+      setError(params.get('error') || 'Sign-in failed. Please try again.')
     }
-  }, [params]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (user) navigate('/browse', { replace: true })
@@ -116,6 +121,10 @@ export default function Login() {
           <Typography variant="body1" color="text.secondary" sx={{ mb: 4, lineHeight: 1.6 }}>
             Sign in with your Google Workspace account to access your organization's data catalog.
           </Typography>
+
+          {error && (
+            <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>
+          )}
 
           <Button
             variant="contained"

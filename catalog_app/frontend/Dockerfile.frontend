@@ -1,9 +1,10 @@
+# Vite dev server for docker-compose (local development only — production uses ../Dockerfile.frontend).
 FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY . .
 

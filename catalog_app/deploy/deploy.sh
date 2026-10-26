@@ -1,44 +1,66 @@
 #!/bin/bash
 
-# DS Data Catalog — Full GKE Deployment
-# =======================================
-# One-shot script: sets up Workload Identity → builds & deploys.
-# Cluster creation is skipped if the cluster already exists.
-# Run from catalog_app/deploy/:
-#   GCP_PROJECT_ID=formare-ai CLUSTER_NAME=my-existing-cluster ./deploy.sh
+# DS Data Catalog — GKE Deployment
+# =================================
+# One-shot script: APIs → cluster → Workload Identity → images → Kubernetes manifests.
+# Safe to re-run; existing resources are reused.
 #
-# Environment variables (all have defaults):
-#   GCP_PROJECT_ID   GCP project (default: formare-ai)
-#   GCP_REGION       Region (default: europe-west1)
-#   CLUSTER_NAME     GKE cluster name (default: ds-catalog-cluster)
-#   REGISTRY_TYPE    gcr or artifact-registry (default: gcr)
-#   K8S_NAMESPACE    K8s namespace (default: default)
-#   SKIP_CLUSTER     Set to "1" to skip cluster creation entirely
-
-set -e
+# Usage (from catalog_app/deploy/):
+#   GCP_PROJECT_ID=my-project ADMIN_EMAILS=me@example.com ALLOWED_EMAIL_DOMAINS=example.com \
+#   DOMAIN=catalog.example.com ./deploy.sh
+#
+#   ./deploy.sh secrets    Re-sync the Kubernetes secret from Secret Manager and restart the backend
+#
+# Environment variables:
+#   GCP_PROJECT_ID          GCP project (required)
+#   ADMIN_EMAILS            Comma-separated admin accounts (required)
+#   ALLOWED_EMAIL_DOMAINS   Comma-separated domains whose users may sign in
+#   ALLOWED_EMAILS          Comma-separated individual accounts that may sign in
+#   DEFAULT_ROLE            Role for new users: viewer (default) | editor
+#   DOMAIN                  Serve over HTTPS on this domain (Ingress + Google-managed certificate).
+#                           Without it the app is exposed over plain HTTP on <ip>.nip.io — testing only.
+#   GCP_REGION              Region (default: europe-west1)
+#   CLUSTER_NAME            GKE cluster name (default: ds-catalog-cluster)
+#   K8S_NAMESPACE           Kubernetes namespace (default: default)
+#   REGISTRY_TYPE           artifact-registry (default) or gcr
+#   AR_LOCATION             Artifact Registry location (default: $GCP_REGION)
+#   AR_REPOSITORY           Artifact Registry repository (default: ds-catalog)
+#   SKIP_CLUSTER            Set to "1" to skip cluster creation entirely
+#   ASSUME_YES              Set to "1" to skip the confirmation prompt
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
 # ── Config ────────────────────────────────────────────────────────────────────
-export PROJECT_ID="${GCP_PROJECT_ID:-formare-ai}"
-export REGION="${GCP_REGION:-europe-west1}"
-export CLUSTER_NAME="${CLUSTER_NAME:-ai-agents-cluster}"
-export NAMESPACE="${K8S_NAMESPACE:-default}"
-export REGISTRY_TYPE="${REGISTRY_TYPE:-gcr}"
-export AR_LOCATION="${AR_LOCATION:-$REGION}"
-export AR_REPOSITORY="${AR_REPOSITORY:-docker-repo}"
-export APP_NAME="ds-catalog"
-export SKIP_CLUSTER="${SKIP_CLUSTER:-0}"
+PROJECT_ID="${GCP_PROJECT_ID:-}"
+REGION="${GCP_REGION:-europe-west1}"
+CLUSTER_NAME="${CLUSTER_NAME:-ds-catalog-cluster}"
+NAMESPACE="${K8S_NAMESPACE:-default}"
+REGISTRY_TYPE="${REGISTRY_TYPE:-artifact-registry}"
+AR_LOCATION="${AR_LOCATION:-$REGION}"
+AR_REPOSITORY="${AR_REPOSITORY:-ds-catalog}"
+APP_NAME="ds-catalog"
+SKIP_CLUSTER="${SKIP_CLUSTER:-0}"
+DOMAIN="${DOMAIN:-}"
+STATIC_IP_NAME="ds-catalog-ip"
 
 # Paths — script lives in catalog_app/deploy/
 DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_CONTEXT="$(cd "$DEPLOY_DIR/.." && pwd)"   # catalog_app/
+
+# Kubernetes secret key : Secret Manager secret name : required?
+SECRET_SOURCES="
+GOOGLE_CLIENT_ID:GOOGLE_CLIENT_ID:required
+GOOGLE_CLIENT_SECRET:GOOGLE_CLIENT_SECRET:required
+JWT_SECRET:jwt-secret-key:required
+GEMINI_API_KEY:gemini-api-key:optional
+GOOGLE_CHAT_WEBHOOK_URL:ds-catalog-google-chat-webhook:optional
+BQ_SECRET_NAME:ds-catalog-bq-secret-name:optional
+"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 print_step()    { echo -e "\n${CYAN}▶ STEP $1: $2${NC}\n"; }
@@ -56,6 +78,10 @@ get_image_url() {
     fi
 }
 
+read_secret() {
+    gcloud secrets versions access latest --secret="$1" --project="$PROJECT_ID" 2>/dev/null || true
+}
+
 wait_for_ip() {
     local svc=$1 ns=${2:-$NAMESPACE}
     local timeout=300 interval=10 elapsed=0
@@ -65,7 +91,7 @@ wait_for_ip() {
              -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
         [ -n "$ip" ] && echo "$ip" && return 0
         sleep $interval; elapsed=$((elapsed + interval))
-        print_info "Waiting for external IP... ($elapsed/${timeout}s)"
+        echo -e "${GREEN}[INFO]${NC} Waiting for external IP... ($elapsed/${timeout}s)" >&2
     done
     return 1
 }
@@ -73,12 +99,19 @@ wait_for_ip() {
 # ── Step 1: Prerequisites ─────────────────────────────────────────────────────
 check_prerequisites() {
     print_step 1 "Checking prerequisites"
-    for cmd in gcloud docker kubectl; do
+    if [ -z "$PROJECT_ID" ]; then
+        print_error "GCP_PROJECT_ID is required"
+        exit 1
+    fi
+    if [ -z "${ADMIN_EMAILS:-}" ]; then
+        print_error "ADMIN_EMAILS is required — nobody could administer the catalog otherwise"
+        exit 1
+    fi
+    for cmd in gcloud kubectl openssl; do
         if ! command -v "$cmd" &>/dev/null; then
             print_error "$cmd is not installed"
-            [ "$cmd" == "gcloud" ]   && echo "Install: https://cloud.google.com/sdk/docs/install"
-            [ "$cmd" == "docker" ]   && echo "Install: https://docs.docker.com/engine/install/"
-            [ "$cmd" == "kubectl" ]  && echo "Run: gcloud components install kubectl"
+            [ "$cmd" == "gcloud" ]  && echo "Install: https://cloud.google.com/sdk/docs/install"
+            [ "$cmd" == "kubectl" ] && echo "Run: gcloud components install kubectl"
             exit 1
         fi
         print_info "$cmd: ✓"
@@ -99,14 +132,19 @@ setup_project() {
     local apis=(
         container.googleapis.com
         compute.googleapis.com
+        artifactregistry.googleapis.com
+        cloudbuild.googleapis.com
         aiplatform.googleapis.com
         bigquery.googleapis.com
-        bigquerystorage.googleapis.com
         secretmanager.googleapis.com
         cloudresourcemanager.googleapis.com
         iam.googleapis.com
         logging.googleapis.com
         monitoring.googleapis.com
+        dlp.googleapis.com
+        dataplex.googleapis.com
+        cloudasset.googleapis.com
+        datalineage.googleapis.com
     )
     print_info "Enabling required APIs..."
     gcloud services enable "${apis[@]}" --project="$PROJECT_ID"
@@ -159,13 +197,18 @@ setup_workload_identity() {
         print_success "GCP service account created"
     fi
 
-    # Grant IAM roles
+    # Grant IAM roles (one per catalog feature; see README → IAM roles)
     local roles=(
-        roles/aiplatform.user
-        roles/bigquery.jobUser
-        roles/bigquery.dataViewer
-        roles/bigquery.metadataViewer
-        roles/secretmanager.secretAccessor
+        roles/bigquery.jobUser              # run preview / stats / quality queries
+        roles/bigquery.dataViewer           # read table data for previews and scans
+        roles/bigquery.metadataViewer       # sync schemas and metadata
+        roles/bigquery.resourceViewer       # usage statistics (INFORMATION_SCHEMA.JOBS)
+        roles/aiplatform.user               # Gemini insights via Vertex AI
+        roles/dlp.user                      # PII detection
+        roles/dataplex.dataScanAdmin        # Dataplex quality scans
+        roles/datalineage.viewer            # lineage discovery
+        roles/cloudasset.viewer             # schema history
+        roles/secretmanager.secretAccessor  # optional per-source service account keys
         roles/logging.logWriter
         roles/monitoring.metricWriter
     )
@@ -180,7 +223,7 @@ setup_workload_identity() {
     gcloud iam service-accounts add-iam-policy-binding "$GCP_SA_EMAIL" \
         --role roles/iam.workloadIdentityUser \
         --member "serviceAccount:${PROJECT_ID}.svc.id.goog[${NAMESPACE}/${K8S_SA_NAME}]" \
-        --project="$PROJECT_ID"
+        --project="$PROJECT_ID" >/dev/null
 
     # K8s service account
     kubectl get namespace "$NAMESPACE" &>/dev/null || kubectl create namespace "$NAMESPACE"
@@ -193,16 +236,20 @@ setup_workload_identity() {
 }
 
 # ── Step 5: Build & push images (via Cloud Build) ────────────────────────────
-# Uses 'gcloud builds submit' — builds in GCP, pushes directly to GCR.
-# Avoids all local Docker BuildKit / docker-container driver issues on Mac.
+# Uses 'gcloud builds submit' — builds in GCP, no local Docker needed.
+# Files listed in catalog_app/.gcloudignore (e.g. .env) are never uploaded.
 build_and_push_images() {
     print_step 5 "Building & pushing Docker images (Cloud Build)"
 
+    if [ "$REGISTRY_TYPE" != "gcr" ] && ! gcloud artifacts repositories describe "$AR_REPOSITORY" \
+         --location="$AR_LOCATION" --project="$PROJECT_ID" &>/dev/null; then
+        print_info "Creating Artifact Registry repository $AR_REPOSITORY ($AR_LOCATION)..."
+        gcloud artifacts repositories create "$AR_REPOSITORY" \
+            --repository-format=docker --location="$AR_LOCATION" --project="$PROJECT_ID"
+    fi
+
     local TAG
     TAG=$(date +%Y%m%d-%H%M%S)
-
-    # Enable Cloud Build API if not already enabled
-    gcloud services enable cloudbuild.googleapis.com --project="$PROJECT_ID" --quiet
 
     for name in ds-catalog-backend ds-catalog-frontend; do
         local dockerfile
@@ -214,7 +261,7 @@ build_and_push_images() {
 
         print_info "Submitting $name to Cloud Build → $image"
         local tmpconfig
-        tmpconfig=$(mktemp /tmp/cloudbuild-XXXXXX)
+        tmpconfig=$(mktemp "${TMPDIR:-/tmp}/cloudbuild-XXXXXX")
         cat > "$tmpconfig" <<EOF
 steps:
   - name: 'gcr.io/cloud-builders/docker'
@@ -229,188 +276,234 @@ EOF
         rm -f "$tmpconfig"
         print_success "$name pushed"
 
-        [ "$name" == "ds-catalog-backend" ]  && export BACKEND_IMAGE="$image"
-        [ "$name" == "ds-catalog-frontend" ] && export FRONTEND_IMAGE="$image"
+        [ "$name" == "ds-catalog-backend" ]  && BACKEND_IMAGE="$image"
+        [ "$name" == "ds-catalog-frontend" ] && FRONTEND_IMAGE="$image"
     done
 }
 
 # ── Secret Manager → K8s secret sync ─────────────────────────────────────────
-# Reads credentials from GCP Secret Manager and upserts the ds-catalog-secret.
-# Secret Manager naming convention: ds-catalog-<lower-kebab-name>
-#   e.g. ds-catalog-google-client-id, ds-catalog-jwt-secret, etc.
-#
-# Static infra values (DATABASE_URL, POSTGRES_PASSWORD) are kept as-is unless
-# a Secret Manager secret with that name also exists.
+# Reads credentials from Secret Manager and upserts the ds-catalog-secret.
+postgres_password() {
+    local value
+    # Keep the password the database was initialised with.
+    value=$(kubectl get secret ds-catalog-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.POSTGRES_PASSWORD}' 2>/dev/null | base64 --decode 2>/dev/null || true)
+    [ -n "$value" ] && { echo "$value"; return; }
+    value=$(read_secret ds-catalog-postgres-password)
+    [ -n "$value" ] && { echo "$value"; return; }
+    value=$(openssl rand -hex 24)
+    printf '%s' "$value" | gcloud secrets create ds-catalog-postgres-password \
+        --data-file=- --project="$PROJECT_ID" >/dev/null
+    echo -e "${GREEN}[INFO]${NC} Generated a PostgreSQL password and stored it in Secret Manager (ds-catalog-postgres-password)" >&2
+    echo "$value"
+}
+
 sync_secrets_from_secret_manager() {
     print_info "Syncing secrets from Secret Manager..."
 
-    # Map: K8s key → Secret Manager secret name
-    declare -A SECRET_MAP=(
-        [GOOGLE_CLIENT_ID]="GOOGLE_CLIENT_ID"
-        [GOOGLE_CLIENT_SECRET]="GOOGLE_CLIENT_SECRET"
-        [JWT_SECRET]="jwt-secret-key"
-        [SECRET_KEY]="jwt-secret-key"
-        [GEMINI_API_KEY]="gemini-api-key"
-        [GOOGLE_CHAT_WEBHOOK_URL]="ds-catalog-google-chat-webhook"
-        [BQ_SECRET_NAME]="ds-catalog-bq-secret-name"
-    )
-
-    # Start with static infra values
-    local POSTGRES_PASSWORD="catalog"
-    local DATABASE_URL="postgresql://catalog:${POSTGRES_PASSWORD}@ds-catalog-postgres:5432/ds_catalog"
-
+    local pg_password
+    pg_password=$(postgres_password)
     local kubectl_args=(
-        "--from-literal=POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
-        "--from-literal=DATABASE_URL=${DATABASE_URL}"
+        "--from-literal=POSTGRES_PASSWORD=${pg_password}"
+        "--from-literal=DATABASE_URL=postgresql://catalog:${pg_password}@ds-catalog-postgres:5432/ds_catalog"
     )
 
-    local missing=()
-    for k8s_key in "${!SECRET_MAP[@]}"; do
-        local sm_name="${SECRET_MAP[$k8s_key]}"
-        local value
-        value=$(gcloud secrets versions access latest \
-            --secret="$sm_name" \
-            --project="$PROJECT_ID" 2>/dev/null || echo "")
+    local missing_required=()
+    local line k8s_key sm_name required value
+    for line in $SECRET_SOURCES; do
+        IFS=: read -r k8s_key sm_name required <<< "$line"
+        value=$(read_secret "$sm_name")
         if [ -n "$value" ]; then
             kubectl_args+=("--from-literal=${k8s_key}=${value}")
             print_info "  ✓ $k8s_key (from $sm_name)"
+        elif [ "$required" == "required" ]; then
+            missing_required+=("$sm_name")
         else
-            missing+=("$sm_name")
             kubectl_args+=("--from-literal=${k8s_key}=")
-            print_warning "  ✗ $k8s_key — secret '$sm_name' not found in Secret Manager, set to empty"
+            print_info "  - $k8s_key not set (optional secret '$sm_name' not found)"
         fi
     done
 
-    if [ ${#missing[@]} -gt 0 ]; then
-        print_warning "Missing secrets (create them with):"
-        for s in "${missing[@]}"; do
-            echo "    echo -n 'VALUE' | gcloud secrets create $s --data-file=- --project=$PROJECT_ID"
-            echo "    # or if already exists:"
-            echo "    echo -n 'VALUE' | gcloud secrets versions add $s --data-file=- --project=$PROJECT_ID"
+    if [ ${#missing_required[@]} -gt 0 ]; then
+        print_error "Missing required secrets in Secret Manager. Create them with:"
+        for s in "${missing_required[@]}"; do
+            if [ "$s" == "jwt-secret-key" ]; then
+                echo "    openssl rand -hex 32 | tr -d '\\n' | gcloud secrets create $s --data-file=- --project=$PROJECT_ID"
+            else
+                echo "    echo -n 'VALUE' | gcloud secrets create $s --data-file=- --project=$PROJECT_ID"
+            fi
         done
+        exit 1
     fi
 
-    # Upsert the k8s secret (delete+create is simplest for full replacement)
-    kubectl delete secret ds-catalog-secret -n "$NAMESPACE" --ignore-not-found
-    kubectl create secret generic ds-catalog-secret \
-        -n "$NAMESPACE" \
-        "${kubectl_args[@]}"
+    kubectl create secret generic ds-catalog-secret -n "$NAMESPACE" \
+        "${kubectl_args[@]}" --dry-run=client -o yaml | kubectl apply -n "$NAMESPACE" -f -
 
     print_success "K8s secret upserted from Secret Manager"
+}
+
+apply_configmap() {
+    local frontend_url=$1
+    kubectl create configmap ds-catalog-config -n "$NAMESPACE" \
+        --from-literal=GCP_PROJECT_ID="$PROJECT_ID" \
+        --from-literal=FRONTEND_URL="$frontend_url" \
+        --from-literal=CORS_ORIGINS="[\"$frontend_url\"]" \
+        --from-literal=ADMIN_EMAILS="${ADMIN_EMAILS:-}" \
+        --from-literal=ALLOWED_EMAIL_DOMAINS="${ALLOWED_EMAIL_DOMAINS:-}" \
+        --from-literal=ALLOWED_EMAILS="${ALLOWED_EMAILS:-}" \
+        --from-literal=DEFAULT_ROLE="${DEFAULT_ROLE:-viewer}" \
+        --dry-run=client -o yaml | kubectl apply -n "$NAMESPACE" -f -
 }
 
 # ── Step 6: Apply K8s manifests ───────────────────────────────────────────────
 deploy_to_kubernetes() {
     print_step 6 "Deploying to Kubernetes"
 
-    # Postgres first — backend needs DB on startup
-    print_info "Applying PostgreSQL..."
-    kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/postgres.yaml"
-    kubectl rollout status statefulset/ds-catalog-postgres -n "$NAMESPACE" --timeout=3m || true
+    # A previous HTTPS deploy (or setup-iap.sh) created an Ingress — never fall back to a public HTTP IP.
+    if [ -z "$DOMAIN" ] && kubectl get ingress ds-catalog-ingress -n "$NAMESPACE" &>/dev/null; then
+        DOMAIN=$(kubectl get managedcertificate ds-catalog-cert -n "$NAMESPACE" \
+            -o jsonpath='{.spec.domains[0]}' 2>/dev/null || true)
+        [ -n "$DOMAIN" ] && print_info "Existing Ingress found — keeping HTTPS on $DOMAIN"
+    fi
 
-    # Config
-    print_info "Applying ConfigMap..."
-    kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/configmap.yaml"
-
-    # Secret — always sync from Secret Manager
+    # Secret first — PostgreSQL and the backend read it on startup
     sync_secrets_from_secret_manager
 
-    # ServiceAccount
-    print_info "Applying ServiceAccount..."
-    kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/service-account.yaml"
+    print_info "Applying PostgreSQL..."
+    kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/postgres.yaml"
+    kubectl rollout status statefulset/ds-catalog-postgres -n "$NAMESPACE" --timeout=5m
 
-    # Backend
+    local service_type frontend_url
+    if [ -n "$DOMAIN" ]; then
+        service_type="ClusterIP"
+        frontend_url="https://${DOMAIN}"
+    else
+        service_type="LoadBalancer"
+    fi
+
+    print_info "Applying frontend service ($service_type)..."
+    sed "s|^  type: ClusterIP$|  type: ${service_type}|" \
+        "$DEPLOY_DIR/frontend-service.yaml" | kubectl apply -n "$NAMESPACE" -f -
+    if kubectl get backendconfig ds-catalog-backend-config -n "$NAMESPACE" &>/dev/null; then
+        # Keep IAP (set up by setup-iap.sh) attached across redeploys
+        kubectl annotate service ds-catalog-frontend -n "$NAMESPACE" \
+            cloud.google.com/backend-config='{"default":"ds-catalog-backend-config"}' --overwrite
+    fi
+
+    if [ -z "$DOMAIN" ]; then
+        local frontend_ip
+        if ! frontend_ip=$(wait_for_ip "ds-catalog-frontend" "$NAMESPACE"); then
+            print_error "The frontend LoadBalancer did not get an external IP within 5 minutes"
+            exit 1
+        fi
+        frontend_url="http://${frontend_ip}.nip.io"
+    fi
+
+    print_info "Applying ConfigMap (FRONTEND_URL=$frontend_url)..."
+    apply_configmap "$frontend_url"
+
     print_info "Applying backend..."
     sed "s|IMAGE_URL_PLACEHOLDER|${BACKEND_IMAGE}|g" \
         "$DEPLOY_DIR/deployment.yaml" | kubectl apply -n "$NAMESPACE" -f -
     kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/service.yaml"
 
-    # Frontend
     print_info "Applying frontend..."
     sed "s|IMAGE_URL_PLACEHOLDER|${FRONTEND_IMAGE}|g" \
         "$DEPLOY_DIR/frontend-deployment.yaml" | kubectl apply -n "$NAMESPACE" -f -
-    kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/frontend-service.yaml"
 
-    # HPA
     kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/autoscaling.yaml"
+
+    if [ -n "$DOMAIN" ]; then
+        if ! gcloud compute addresses describe "$STATIC_IP_NAME" --global --project="$PROJECT_ID" &>/dev/null; then
+            print_info "Reserving global static IP $STATIC_IP_NAME..."
+            gcloud compute addresses create "$STATIC_IP_NAME" --global --project="$PROJECT_ID"
+        fi
+        print_info "Applying HTTPS Ingress + managed certificate for $DOMAIN..."
+        kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/frontend-config.yaml"
+        sed "s|DOMAIN_PLACEHOLDER|${DOMAIN}|g" \
+            "$DEPLOY_DIR/certificate.yaml" | kubectl apply -n "$NAMESPACE" -f -
+        kubectl apply -n "$NAMESPACE" -f "$DEPLOY_DIR/ingress.yaml"
+    fi
 
     print_success "All manifests applied"
 
-    # Wait for rollouts
-    print_info "Waiting for backend rollout..."
+    # Every deploy builds a new image tag, so the apply above already rolls the pods
+    # and they pick up the new ConfigMap and Secret.
+    print_info "Waiting for rollouts..."
     kubectl rollout status deployment/ds-catalog-backend  -n "$NAMESPACE" --timeout=5m
-    print_info "Waiting for frontend rollout..."
     kubectl rollout status deployment/ds-catalog-frontend -n "$NAMESPACE" --timeout=5m
     print_success "Rollouts complete"
 
-    # Patch ConfigMap with the real frontend IP so OAuth redirect URIs work
-    local frontend_ip
-    frontend_ip=$(wait_for_ip "ds-catalog-frontend" "$NAMESPACE" 2>/dev/null || echo "")
-    if [ -n "$frontend_ip" ]; then
-        local frontend_host="${frontend_ip}.nip.io"
-        print_info "Patching ConfigMap with frontend URL: http://$frontend_host"
-        kubectl patch configmap ds-catalog-config -n "$NAMESPACE" -p \
-            "{\"data\":{\"FRONTEND_URL\":\"http://${frontend_host}\",\"CORS_ORIGINS\":\"[\\\"http://${frontend_host}\\\"]\"}}"
-        kubectl rollout restart deployment/ds-catalog-backend -n "$NAMESPACE"
-        print_success "ConfigMap updated — backend restarting"
-    else
-        print_warning "Could not determine frontend IP — update ConfigMap manually"
-    fi
+    APP_URL="$frontend_url"
 }
 
 # ── Step 7: Summary ───────────────────────────────────────────────────────────
 print_summary() {
     print_step 7 "Done!"
 
-    local ip
-    ip=$(wait_for_ip "ds-catalog-frontend" "$NAMESPACE" 2>/dev/null || echo "")
-
-    echo ""
     echo -e "${GREEN}✓ Project:${NC}  $PROJECT_ID"
     echo -e "${GREEN}✓ Cluster:${NC}  $CLUSTER_NAME ($REGION)"
     echo -e "${GREEN}✓ Backend:${NC}  $BACKEND_IMAGE"
     echo -e "${GREEN}✓ Frontend:${NC} $FRONTEND_IMAGE"
+    echo ""
+    echo -e "${CYAN}══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  App URL: $APP_URL${NC}"
+    echo -e "${CYAN}══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "Register these on your OAuth client (APIs & Services → Credentials):"
+    echo "  Authorised JavaScript origin: $APP_URL"
+    echo "  Authorised redirect URI:      $APP_URL/api/v1/auth/callback"
 
-    if [ -n "$ip" ]; then
+    if [ -n "$DOMAIN" ]; then
+        local ip
+        ip=$(gcloud compute addresses describe "$STATIC_IP_NAME" --global \
+            --project="$PROJECT_ID" --format="value(address)" 2>/dev/null || true)
         echo ""
-        echo -e "${CYAN}══════════════════════════════════════${NC}"
-        echo -e "${CYAN}  App URL: http://$ip.nip.io${NC}"
-        echo -e "${CYAN}══════════════════════════════════════${NC}"
-        echo ""
-        echo -e "${YELLOW}Update FRONTEND_URL in ConfigMap so OAuth login redirects correctly:${NC}"
-        echo "  kubectl patch configmap ds-catalog-config -n $NAMESPACE \\"
-        echo "    -p '{\"data\":{\"FRONTEND_URL\":\"http://$ip\"}}'"
-        echo "  kubectl rollout restart deployment/ds-catalog-backend -n $NAMESPACE"
+        echo -e "${YELLOW}Point the DNS A record for $DOMAIN to $ip.${NC}"
+        echo "The managed certificate is issued 10–60 min after DNS resolves:"
+        echo "  kubectl describe managedcertificate ds-catalog-cert -n $NAMESPACE"
     else
         echo ""
-        echo -e "${YELLOW}External IP not ready yet. Check later:${NC}"
-        echo "  kubectl get service ds-catalog-frontend -n $NAMESPACE"
+        print_warning "The app is served over plain HTTP on a public IP. Use this for testing only;"
+        print_warning "re-run with DOMAIN=<your domain> for HTTPS before real users or data."
     fi
 
     echo ""
     echo -e "${YELLOW}Useful commands:${NC}"
-    echo "  kubectl get pods -n $NAMESPACE"
-    echo "  kubectl logs -l app=ds-catalog-backend  -n $NAMESPACE --tail=50"
-    echo "  kubectl logs -l app=ds-catalog-frontend -n $NAMESPACE --tail=50"
+    echo "  ./utils.sh status"
+    echo "  ./utils.sh logs ds-catalog-backend"
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 main() {
+    set -euo pipefail
+
+    if [ "${1:-}" == "secrets" ]; then
+        [ -z "$PROJECT_ID" ] && { print_error "GCP_PROJECT_ID is required"; exit 1; }
+        sync_secrets_from_secret_manager
+        kubectl rollout restart deployment/ds-catalog-backend -n "$NAMESPACE"
+        exit 0
+    fi
+
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║   DS Data Catalog — GKE Deployment       ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
     echo ""
-    echo "  Project:        $PROJECT_ID"
+    echo "  Project:        ${PROJECT_ID:-<not set>}"
     echo "  Region:         $REGION"
     echo "  Cluster:        $CLUSTER_NAME"
     echo "  Namespace:      $NAMESPACE"
     echo "  Registry:       $REGISTRY_TYPE"
-    echo "  Skip cluster:   $SKIP_CLUSTER (set SKIP_CLUSTER=1 to reuse existing)"
+    echo "  Domain:         ${DOMAIN:-<none — HTTP on a public IP>}"
+    echo "  Admins:         ${ADMIN_EMAILS:-<not set>}"
+    echo "  Allowed:        ${ALLOWED_EMAIL_DOMAINS:-} ${ALLOWED_EMAILS:-}"
     echo ""
 
-    read -rp "Continue? (y/n) " -n 1; echo
-    [[ ! $REPLY =~ ^[Yy]$ ]] && echo "Aborted." && exit 0
+    if [ "${ASSUME_YES:-0}" != "1" ]; then
+        read -rp "Continue? (y/n) " -n 1; echo
+        [[ ! $REPLY =~ ^[Yy]$ ]] && echo "Aborted." && exit 0
+    fi
 
     check_prerequisites
     setup_project

@@ -1,9 +1,9 @@
-# GKE Managed TLS Certificate — only needed when using the Ingress approach.
-# Replace the domain with your actual domain before applying.
+# Google-managed TLS certificate for the HTTPS Ingress.
+# deploy.sh replaces DOMAIN_PLACEHOLDER with $DOMAIN.
 apiVersion: networking.gke.io/v1
 kind: ManagedCertificate
 metadata:
   name: ds-catalog-cert
 spec:
   domains:
-    - catalog.YOUR_DOMAIN_HERE  # e.g. catalog.formare-ai.com
+    - DOMAIN_PLACEHOLDER

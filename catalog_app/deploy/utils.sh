@@ -52,7 +52,12 @@ cmd_ip() {
     ip=$(kubectl get service "$svc" -n "$ns" \
          -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
     if [ -n "$ip" ]; then
-        echo -e "${GREEN}$svc:${NC} http://$ip"
+        echo -e "${GREEN}$svc:${NC} http://$ip.nip.io"
+    elif kubectl get ingress ds-catalog-ingress -n "$ns" &>/dev/null; then
+        local domain ingress_ip
+        domain=$(kubectl get managedcertificate ds-catalog-cert -n "$ns" -o jsonpath='{.spec.domains[0]}' 2>/dev/null || true)
+        ingress_ip=$(kubectl get ingress ds-catalog-ingress -n "$ns" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+        echo -e "${GREEN}ds-catalog-ingress:${NC} https://$domain (load balancer IP: ${ingress_ip:-pending})"
     else
         print_warning "$svc has no external IP yet"
         kubectl get service "$svc" -n "$ns"
@@ -110,15 +115,19 @@ cmd_delete() {
     echo -e "${YELLOW}WARNING: This will delete ALL ds-catalog resources in namespace $ns${NC}"
     echo "  Deployments: ds-catalog-backend, ds-catalog-frontend"
     echo "  StatefulSet: ds-catalog-postgres"
-    echo "  Services, ConfigMap, Secret, HPA, PVC"
+    echo "  Services, Ingress, certificate, ConfigMap, Secrets, HPA, PVC (all catalog data)"
     read -rp "Type 'yes' to confirm: "
     if [ "$REPLY" = "yes" ]; then
         kubectl delete deployment ds-catalog-backend ds-catalog-frontend -n "$ns" --ignore-not-found
         kubectl delete statefulset ds-catalog-postgres -n "$ns" --ignore-not-found
+        kubectl delete ingress ds-catalog-ingress -n "$ns" --ignore-not-found
+        kubectl delete managedcertificate ds-catalog-cert -n "$ns" --ignore-not-found
+        kubectl delete frontendconfig ds-catalog-frontend-config -n "$ns" --ignore-not-found
+        kubectl delete backendconfig ds-catalog-backend-config -n "$ns" --ignore-not-found
         kubectl delete service ds-catalog-backend ds-catalog-frontend ds-catalog-postgres -n "$ns" --ignore-not-found
         kubectl delete hpa ds-catalog-backend-hpa -n "$ns" --ignore-not-found
         kubectl delete configmap ds-catalog-config -n "$ns" --ignore-not-found
-        kubectl delete secret ds-catalog-secret -n "$ns" --ignore-not-found
+        kubectl delete secret ds-catalog-secret iap-oauth-secret -n "$ns" --ignore-not-found
         kubectl delete pvc ds-catalog-postgres-pvc -n "$ns" --ignore-not-found
         print_info "All ds-catalog resources deleted"
     else

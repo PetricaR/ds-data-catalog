@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -116,7 +116,6 @@ class TableUpdate(BaseModel):
 
 
 class ValidatePayload(BaseModel):
-    validated_by: str = "anonymous"
     validated_columns: list[str] = []
 
 
@@ -246,3 +245,23 @@ class CatalogStats(BaseModel):
     total_columns: int
     documented_tables: int
     documentation_coverage: float
+
+
+# ── Users ─────────────────────────────────────────────────────────────────────
+
+class UserResponse(BaseModel):
+    id: UUID
+    email: str
+    name: Optional[str] = None
+    picture: Optional[str] = None
+    role: str
+    is_active: bool
+    created_at: Optional[datetime] = None
+    last_login: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class UserUpdate(BaseModel):
+    role: Optional[Literal["viewer", "editor", "admin"]] = None
+    is_active: Optional[bool] = None

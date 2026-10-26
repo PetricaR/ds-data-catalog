@@ -84,27 +84,23 @@ class TestUpdateDataset:
 
 
 class TestValidateDataset:
-    def test_validate_dataset(self, client, auth_headers, seed_dataset):
+    def test_validate_dataset_records_signed_in_user(self, client, editor_user, auth_headers, seed_dataset):
         r = client.patch(
-            f"/api/v1/datasets/{seed_dataset.id}/validate?validated_by=validator@example.com",
+            f"/api/v1/datasets/{seed_dataset.id}/validate?validated_by=someone-else@example.com",
             headers=auth_headers,
         )
         assert r.status_code == 200
         assert r.json()["is_validated"] is True
-        assert r.json()["validated_by"] == "validator@example.com"
+        assert r.json()["validated_by"] == editor_user.email
 
     def test_revoke_validation(self, client, auth_headers, seed_dataset):
         # First validate
-        client.patch(
-            f"/api/v1/datasets/{seed_dataset.id}/validate?validated_by=v@example.com",
-            headers=auth_headers,
-        )
+        client.patch(f"/api/v1/datasets/{seed_dataset.id}/validate", headers=auth_headers)
         # Then revoke (validate again toggles off)
-        r = client.patch(
-            f"/api/v1/datasets/{seed_dataset.id}/validate?validated_by=v@example.com",
-            headers=auth_headers,
-        )
+        r = client.patch(f"/api/v1/datasets/{seed_dataset.id}/validate", headers=auth_headers)
         assert r.status_code == 200
+        assert r.json()["is_validated"] is False
+        assert r.json()["validated_by"] is None
 
 
 class TestDatasetProjects:

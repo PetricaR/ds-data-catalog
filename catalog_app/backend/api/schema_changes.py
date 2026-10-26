@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..dependencies.auth import require_editor
 from ..models.catalog import Dataset, SchemaChange, Table
 from ..schemas.catalog import SchemaChangeResponse
 
@@ -41,7 +42,7 @@ def list_changes(
     return [_enrich(c, db) for c in changes]
 
 
-@router.patch("/{change_id}/acknowledge", response_model=SchemaChangeResponse)
+@router.patch("/{change_id}/acknowledge", response_model=SchemaChangeResponse, dependencies=[Depends(require_editor)])
 def acknowledge(change_id: UUID, db: Session = Depends(get_db)):
     change = db.query(SchemaChange).filter(SchemaChange.id == change_id).first()
     if not change:
@@ -52,7 +53,7 @@ def acknowledge(change_id: UUID, db: Session = Depends(get_db)):
     return _enrich(change, db)
 
 
-@router.post("/acknowledge-all", response_model=dict)
+@router.post("/acknowledge-all", response_model=dict, dependencies=[Depends(require_editor)])
 def acknowledge_all(table_id: UUID | None = None, db: Session = Depends(get_db)):
     q = db.query(SchemaChange).filter(SchemaChange.is_acknowledged == False)  # noqa: E712
     if table_id:

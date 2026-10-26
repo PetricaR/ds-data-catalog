@@ -22,4 +22,8 @@ export const authApi = {
     localStorage.setItem('light_data_catalog_token', token)
     localStorage.setItem('light_data_catalog_user', JSON.stringify(user))
   },
+
+  storeUser: (user: User) => {
+    localStorage.setItem('light_data_catalog_user', JSON.stringify(user))
+  },
 }

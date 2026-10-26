@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..config import settings
 from ..database import get_db
-from ..dependencies.auth import get_current_user
+from ..dependencies.auth import require_auth, require_editor
 from ..models.catalog import Dataset, MetadataChangeLog, Table, TableColumn
 from ..schemas.catalog import ColumnUpdate, ExampleQuery, ProjectUsage, QualityCheckResult, TableCreate, TableInsights, TableResponse, TableUpdate, ValidatePayload
 from ..services import bq_preview, bq_lineage, bq_quality, bq_usage, dlp_scan, dataplex_quality, asset_inventory
@@ -105,7 +105,7 @@ def list_tables(
     return [_table_response(t, db) for t in tables]
 
 
-@router.post("", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TableResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_editor)])
 def create_table(payload: TableCreate, db: Session = Depends(get_db)):
     ds = db.query(Dataset).filter(Dataset.id == payload.dataset_id, Dataset.is_active == True).first()
     if not ds:
@@ -137,10 +137,14 @@ def create_table(payload: TableCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{table_id}", response_model=TableResponse)
-def get_table(table_id: UUID, db: Session = Depends(get_db)):
+def get_table(table_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(require_auth)):
     t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
+    ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    restricted = t.sensitivity_label == "restricted" or (ds is not None and ds.sensitivity_label == "restricted")
+    if restricted and current_user["role"] not in ("editor", "admin"):
+        raise HTTPException(status_code=403, detail="This table is restricted. Admin or editor access required.")
     return _table_response(t, db)
 
 
@@ -149,13 +153,13 @@ def update_table(
     table_id: UUID,
     payload: TableUpdate,
     db: Session = Depends(get_db),
-    current_user: Optional[dict] = Depends(get_current_user),
+    current_user: dict = Depends(require_editor),
 ):
     t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     update_data = payload.model_dump(exclude_none=True)
-    changed_by = (current_user or {}).get("email", "system")
+    changed_by = current_user["email"]
     watch = ["description", "sensitivity_label", "owner", "tags"]
     changes = [(f, getattr(t, f, None), update_data[f]) for f in watch if f in update_data and getattr(t, f, None) != update_data[f]]
     _log_field_changes(db, "table", t.id, t.display_name or t.table_id, t, update_data, changed_by=changed_by)
@@ -185,13 +189,12 @@ def validate_table(
     table_id: UUID,
     payload: ValidatePayload,
     db: Session = Depends(get_db),
-    current_user: Optional[dict] = Depends(get_current_user),
+    current_user: dict = Depends(require_editor),
 ):
     t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     was_validated = t.is_validated
-    prev_validated_by = t.validated_by
     if was_validated:
         # Revoke
         t.is_validated = False
@@ -201,7 +204,7 @@ def validate_table(
     else:
         # Mark as trusted
         t.is_validated = True
-        t.validated_by = payload.validated_by or "anonymous"
+        t.validated_by = current_user["email"]
         t.validated_at = datetime.now(timezone.utc)
         t.validated_columns = payload.validated_columns
     t.quality_score = _compute_quality_score(t)
@@ -222,11 +225,10 @@ def validate_table(
             dataset_id=str(ds.id) if ds else None,
         )
     else:
-        revoked_by = (current_user or {}).get("email") or payload.validated_by or prev_validated_by or "unknown"
         notify_revoked(
             table_name=t.display_name or t.table_id,
             table_bq_path=bq_path,
-            revoked_by=revoked_by,
+            revoked_by=current_user["email"],
             frontend_url=settings.frontend_url,
             table_id=str(t.id),
             project_id=ds.project_id if ds else None,
@@ -236,7 +238,7 @@ def validate_table(
     return _table_response(t, db)
 
 
-@router.patch("/{table_id}/columns", response_model=TableResponse)
+@router.patch("/{table_id}/columns", response_model=TableResponse, dependencies=[Depends(require_editor)])
 def update_columns(table_id: UUID, payload: list[ColumnUpdate], db: Session = Depends(get_db)):
     t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
@@ -256,7 +258,7 @@ def update_columns(table_id: UUID, payload: list[ColumnUpdate], db: Session = De
     return _table_response(t, db)
 
 
-@router.get("/{table_id}/preview")
+@router.get("/{table_id}/preview", dependencies=[Depends(require_editor)])
 def preview_estimate(table_id: UUID, db: Session = Depends(get_db)):
     """Dry-run: returns query SQL + byte/cost estimate without reading any data."""
     t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
@@ -271,7 +273,7 @@ def preview_estimate(table_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=f"Estimate failed: {exc}")
 
 
-@router.post("/{table_id}/preview/run")
+@router.post("/{table_id}/preview/run", dependencies=[Depends(require_editor)])
 def preview_run(table_id: UUID, db: Session = Depends(get_db)):
     """Execute the TABLESAMPLE query and return rows."""
     t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
@@ -286,7 +288,7 @@ def preview_run(table_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=f"BigQuery query failed: {exc}")
 
 
-@router.post("/{table_id}/quality-check", response_model=QualityCheckResult)
+@router.post("/{table_id}/quality-check", response_model=QualityCheckResult, dependencies=[Depends(require_editor)])
 def quality_check(table_id: UUID, db: Session = Depends(get_db)):
     """Run data quality checks: null rates per column + timestamp ranges."""
     t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
@@ -305,7 +307,7 @@ def quality_check(table_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=f"Quality check failed: {exc}")
 
 
-@router.patch("/{table_id}/queries", response_model=TableResponse)
+@router.patch("/{table_id}/queries", response_model=TableResponse, dependencies=[Depends(require_editor)])
 def update_queries(table_id: UUID, payload: list[ExampleQuery], db: Session = Depends(get_db)):
     t = db.query(Table).options(joinedload(Table.columns)).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:
@@ -317,7 +319,7 @@ def update_queries(table_id: UUID, payload: list[ExampleQuery], db: Session = De
     return _table_response(t, db)
 
 
-@router.patch("/{table_id}/columns/{column_id}/pii")
+@router.patch("/{table_id}/columns/{column_id}/pii", dependencies=[Depends(require_editor)])
 def toggle_pii(
     table_id: UUID,
     column_id: UUID,
@@ -336,7 +338,7 @@ def toggle_pii(
     return {"id": str(col.id), "is_pii": col.is_pii}
 
 
-@router.get("/{table_id}/lineage/discover")
+@router.get("/{table_id}/lineage/discover", dependencies=[Depends(require_editor)])
 def discover_lineage(table_id: UUID, db: Session = Depends(get_db)):
     """
     Query the Google Cloud Data Lineage API to auto-discover upstream/downstream
@@ -375,7 +377,7 @@ def discover_lineage(table_id: UUID, db: Session = Depends(get_db)):
     }
 
 
-@router.put("/{table_id}/lineage")
+@router.put("/{table_id}/lineage", dependencies=[Depends(require_editor)])
 def update_lineage(
     table_id: UUID,
     upstream_refs: list[str] = Body(default=[]),
@@ -392,7 +394,7 @@ def update_lineage(
     return {"upstream_refs": t.upstream_refs, "downstream_refs": t.downstream_refs}
 
 
-@router.post("/{table_id}/pull-stats")
+@router.post("/{table_id}/pull-stats", dependencies=[Depends(require_editor)])
 def pull_stats(table_id: UUID, db: Session = Depends(get_db)):
     """Trigger column statistics pull from BigQuery."""
     from ..services.bq_stats import pull_column_stats
@@ -423,7 +425,7 @@ def pull_stats(table_id: UUID, db: Session = Depends(get_db)):
     return {"updated_columns": updated, "pulled_at": now.isoformat()}
 
 
-@router.post("/{table_id}/insights", response_model=TableInsights)
+@router.post("/{table_id}/insights", response_model=TableInsights, dependencies=[Depends(require_editor)])
 def generate_insights(
     table_id: UUID,
     db: Session = Depends(get_db),
@@ -475,7 +477,7 @@ def generate_insights(
     return TableInsights(**t.insights)
 
 
-@router.put("/{table_id}/projects", response_model=TableResponse)
+@router.put("/{table_id}/projects", response_model=TableResponse, dependencies=[Depends(require_editor)])
 def update_table_projects(
     table_id: UUID,
     payload: list[ProjectUsage],
@@ -491,7 +493,7 @@ def update_table_projects(
     return _table_response(t, db)
 
 
-@router.get("/{table_id}/usage")
+@router.get("/{table_id}/usage", dependencies=[Depends(require_editor)])
 def get_usage_stats(
     table_id: UUID,
     days: int = Query(default=30, ge=1, le=90),
@@ -520,7 +522,7 @@ def get_usage_stats(
         raise HTTPException(status_code=502, detail=f"Usage stats failed: {exc}")
 
 
-@router.post("/{table_id}/scan-pii")
+@router.post("/{table_id}/scan-pii", dependencies=[Depends(require_editor)])
 def scan_pii(table_id: UUID, db: Session = Depends(get_db)):
     """
     Run Cloud DLP on a sample of this table to auto-detect PII columns.
@@ -567,7 +569,7 @@ def scan_pii(table_id: UUID, db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/{table_id}/dataplex-quality")
+@router.post("/{table_id}/dataplex-quality", dependencies=[Depends(require_editor)])
 def dataplex_quality_scan(table_id: UUID, db: Session = Depends(get_db)):
     """
     Create and run a Dataplex DataScan quality job on this BQ table.
@@ -638,7 +640,7 @@ def get_schema_history(
         raise HTTPException(status_code=502, detail=f"Schema history fetch failed: {exc}")
 
 
-@router.delete("/{table_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{table_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_editor)])
 def delete_table(table_id: UUID, db: Session = Depends(get_db)):
     t = db.query(Table).filter(Table.id == table_id, Table.is_active == True).first()
     if not t:

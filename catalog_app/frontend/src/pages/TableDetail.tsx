@@ -162,7 +162,7 @@ export default function TableDetail() {
   const cancelColEdit = () => setEditingColId(null)
 
   const validateMutation = useMutation({
-    mutationFn: (payload: { validated_by: string; validated_columns: string[] }) =>
+    mutationFn: (payload: { validated_columns: string[] }) =>
       tablesApi.validate(tableId!, payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['table', tableId] }),
   })
@@ -379,7 +379,7 @@ export default function TableDetail() {
               variant={table.is_validated ? 'contained' : 'outlined'}
               size="small"
               startIcon={validateMutation.isPending ? <CircularProgress size={13} color="inherit" /> : <VerifiedIcon />}
-              onClick={() => table.is_validated ? validateMutation.mutate({ validated_by: '', validated_columns: [] }) : setWizardOpen(true)}
+              onClick={() => table.is_validated ? validateMutation.mutate({ validated_columns: [] }) : setWizardOpen(true)}
               disabled={validateMutation.isPending}
               color={table.is_validated ? 'success' : 'inherit'}
               sx={{ textTransform: 'none', fontWeight: 600, fontSize: '0.8rem', flexShrink: 0, mt: 0.25 }}
@@ -1678,7 +1678,7 @@ export default function TableDetail() {
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
         table={table}
-        onValidate={(validatedBy, validatedColumns) => validateMutation.mutate({ validated_by: validatedBy, validated_columns: validatedColumns })}
+        onValidate={(validatedColumns) => validateMutation.mutate({ validated_columns: validatedColumns })}
         isValidating={validateMutation.isPending}
       />
     </Box>

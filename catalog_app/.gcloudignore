@@ -1,0 +1,11 @@
+# Files never uploaded to Cloud Build by deploy/deploy.sh (gcloud builds submit).
+.gcloudignore
+.env
+.env.*
+**/__pycache__
+**/*.pyc
+.pytest_cache
+tests/
+tests_e2e/
+frontend/node_modules/
+frontend/dist/

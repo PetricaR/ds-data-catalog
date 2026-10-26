@@ -1,21 +1,15 @@
-# Optional: use this Ingress instead of the LoadBalancer on frontend-service.yaml
-# when you have a custom domain and want GKE-managed TLS via ManagedCertificate.
-#
-# Prerequisites:
-#   1. Reserve a static global IP: gcloud compute addresses create ds-catalog-ip --global
-#   2. Point your DNS A-record to that IP
-#   3. Update the domain in certificate.yaml and spec.rules below
-#   4. Change frontend-service.yaml type to ClusterIP
-#   5. kubectl apply -f certificate.yaml -f ingress.yaml
-#
+# HTTPS entry point, applied by deploy.sh when DOMAIN is set.
+# Uses the global static IP "ds-catalog-ip" (reserved by deploy.sh) and the
+# ManagedCertificate from certificate.yaml; HTTP is redirected to HTTPS.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: ds-catalog-ingress
   annotations:
     kubernetes.io/ingress.class: "gce"
-    networking.gke.io/managed-certificates: "ds-catalog-cert"
     kubernetes.io/ingress.global-static-ip-name: "ds-catalog-ip"
+    networking.gke.io/managed-certificates: "ds-catalog-cert"
+    networking.gke.io/v1beta1.FrontendConfig: "ds-catalog-frontend-config"
 spec:
   defaultBackend:
     service:

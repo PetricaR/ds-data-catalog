@@ -33,7 +33,7 @@ export const tablesApi = {
   update: (id: string, data: TableUpdate) =>
     client.put<Table>(`/tables/${id}`, data).then((r) => r.data),
 
-  validate: (id: string, payload: { validated_by: string; validated_columns: string[] }) =>
+  validate: (id: string, payload: { validated_columns: string[] }) =>
     client.patch<Table>(`/tables/${id}/validate`, payload).then((r) => r.data),
 
   patchColumns: (tableId: string, cols: { id: string; description?: string; is_primary_key?: boolean }[]) =>

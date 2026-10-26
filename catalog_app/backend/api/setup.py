@@ -11,7 +11,10 @@ router = APIRouter(prefix="/setup", tags=["setup"])
 
 @router.get("/status")
 def setup_status(db: Session = Depends(get_db)):
-    """Return the current setup/health status of the installation."""
+    """Return the current setup/health status of the installation.
+
+    Public (the setup wizard runs before anyone can sign in), so it only reports booleans and counts.
+    """
     try:
         db.execute(text("SELECT 1"))
         db_connected = True
@@ -28,8 +31,7 @@ def setup_status(db: Session = Depends(get_db)):
         "has_data": datasets_count > 0,
         "gemini_configured": bool(settings.gemini_api_key),
         "gchat_configured": bool(settings.google_chat_webhook_url),
-        "gcp_project_id": settings.gcp_project_id or "",
-        "frontend_url": settings.frontend_url,
+        "admin_configured": bool(settings.admin_emails.strip()),
         # A fresh install has no sources and no data
         "is_fresh_install": bq_sources_count == 0 and datasets_count == 0,
     }

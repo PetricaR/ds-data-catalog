@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from ..dependencies.auth import get_current_user
+from ..dependencies.auth import require_auth, require_editor
 from ..models.catalog import Dataset, MetadataChangeLog, Table
 from ..schemas.catalog import DatasetCreate, DatasetResponse, DatasetUpdate, ProjectUsage
 from ..services.gchat import notify_metadata_change
@@ -76,7 +76,12 @@ def list_datasets(
     return [_dataset_response(ds, db) for ds in datasets]
 
 
-@router.post("", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=DatasetResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_editor)],
+)
 def create_dataset(payload: DatasetCreate, db: Session = Depends(get_db)):
     existing = db.query(Dataset).filter(
         Dataset.project_id == payload.project_id,
@@ -99,14 +104,12 @@ def create_dataset(payload: DatasetCreate, db: Session = Depends(get_db)):
 def get_dataset(
     dataset_id: UUID,
     db: Session = Depends(get_db),
-    current_user: Optional[dict] = Depends(get_current_user),
+    current_user: dict = Depends(require_auth),
 ):
     ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.is_active == True).first()
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    if ds.sensitivity_label == "restricted" and (
-        not current_user or current_user["role"] not in ("editor", "admin")
-    ):
+    if ds.sensitivity_label == "restricted" and current_user["role"] not in ("editor", "admin"):
         raise HTTPException(status_code=403, detail="This dataset is restricted. Admin or editor access required.")
     return _dataset_response(ds, db)
 
@@ -116,13 +119,13 @@ def update_dataset(
     dataset_id: UUID,
     payload: DatasetUpdate,
     db: Session = Depends(get_db),
-    current_user: Optional[dict] = Depends(get_current_user),
+    current_user: dict = Depends(require_editor),
 ):
     ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.is_active == True).first()
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
     update_data = payload.model_dump(exclude_none=True)
-    changed_by = (current_user or {}).get("email", "system")
+    changed_by = current_user["email"]
     watch = ["description", "sensitivity_label", "owner", "data_steward", "tags"]
     changes = [(f, getattr(ds, f, None), update_data[f]) for f in watch if f in update_data and getattr(ds, f, None) != update_data[f]]
     _log_dataset_field_changes(db, ds, update_data, changed_by=changed_by)
@@ -146,20 +149,24 @@ def update_dataset(
 
 
 @router.patch("/{dataset_id}/validate", response_model=DatasetResponse)
-def validate_dataset(dataset_id: UUID, validated_by: str = "anonymous", db: Session = Depends(get_db)):
+def validate_dataset(
+    dataset_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_editor),
+):
     from datetime import datetime, timezone
     ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.is_active == True).first()
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
     ds.is_validated = not ds.is_validated
-    ds.validated_by = validated_by if ds.is_validated else None
+    ds.validated_by = current_user["email"] if ds.is_validated else None
     ds.validated_at = datetime.now(timezone.utc) if ds.is_validated else None
     db.commit()
     db.refresh(ds)
     return _dataset_response(ds, db)
 
 
-@router.put("/{dataset_id}/projects", response_model=DatasetResponse)
+@router.put("/{dataset_id}/projects", response_model=DatasetResponse, dependencies=[Depends(require_editor)])
 def update_dataset_projects(
     dataset_id: UUID,
     payload: list[ProjectUsage],
@@ -175,7 +182,7 @@ def update_dataset_projects(
     return _dataset_response(ds, db)
 
 
-@router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_editor)])
 def delete_dataset(dataset_id: UUID, db: Session = Depends(get_db)):
     ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.is_active == True).first()
     if not ds:

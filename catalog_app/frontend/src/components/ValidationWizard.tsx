@@ -22,12 +22,12 @@ import TableCell from '@mui/material/TableCell'
 import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import Paper from '@mui/material/Paper'
 import KeyIcon from '@mui/icons-material/Key'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import SensitivityChip from './SensitivityChip'
+import { useAuth } from '../contexts/AuthContext'
 import type { Table as TableType, SensitivityLabel } from '../api/types'
 
 function bytes(n: number) {
@@ -43,14 +43,15 @@ interface Props {
   open: boolean
   onClose: () => void
   table: TableType
-  onValidate: (validatedBy: string, validatedColumns: string[]) => void
+  onValidate: (validatedColumns: string[]) => void
   isValidating: boolean
 }
 
 export default function ValidationWizard({ open, onClose, table, onValidate, isValidating }: Props) {
   const [activeStep, setActiveStep] = useState(0)
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(new Set())
-  const [validatedBy, setValidatedBy] = useState('')
+  const { user } = useAuth()
+  const validatedBy = user?.email ?? ''
 
   const allSelected = selectedColumns.size === table.columns.length
   const noneSelected = selectedColumns.size === 0
@@ -77,10 +78,9 @@ export default function ValidationWizard({ open, onClose, table, onValidate, isV
   }
 
   const handleValidate = () => {
-    onValidate(validatedBy || 'anonymous', [...selectedColumns])
+    onValidate([...selectedColumns])
     setActiveStep(0)
     setSelectedColumns(new Set())
-    setValidatedBy('')
     onClose()
   }
 
@@ -226,18 +226,10 @@ export default function ValidationWizard({ open, onClose, table, onValidate, isV
         {/* Step 2 — Validator Info */}
         {activeStep === 2 && (
           <Box sx={{ py: 2 }}>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-              Enter your name to record who validated this table as a trusted source.
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+              The validation is recorded under your signed-in account, alongside the validation timestamp.
             </Typography>
-            <TextField
-              fullWidth
-              label="Validated by"
-              value={validatedBy}
-              onChange={(e) => setValidatedBy(e.target.value)}
-              placeholder="e.g. Jane Smith"
-              helperText="This will be permanently recorded alongside the validation timestamp."
-              autoFocus
-            />
+            <Typography variant="body1" fontWeight={600}>{validatedBy}</Typography>
           </Box>
         )}
 
@@ -252,7 +244,7 @@ export default function ValidationWizard({ open, onClose, table, onValidate, isV
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="body2" color="text.secondary">Validated by</Typography>
-                    <Typography variant="body2" fontWeight={600}>{validatedBy || 'anonymous'}</Typography>
+                    <Typography variant="body2" fontWeight={600}>{validatedBy}</Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="body2" color="text.secondary">Columns validated</Typography>

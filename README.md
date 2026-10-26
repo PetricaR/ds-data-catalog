@@ -1,1080 +1,426 @@
 # DS Data Catalog
 
-A self-hosted data catalog for Google Cloud / BigQuery teams. Provides a central registry where data scientists and engineers can discover, document, govern, and monitor BigQuery tables — with AI-powered insights, data lineage, quality checks, and OAuth2 authentication.
+A self-hosted data catalog for Google Cloud / BigQuery teams. It syncs table and column metadata from your BigQuery projects into a searchable, documented and governed registry — with schema-change alerts, data previews, quality checks, PII detection, lineage, usage statistics and AI-generated insights.
+
+It runs in your own GCP project (GKE Autopilot + PostgreSQL), so catalog metadata never leaves your infrastructure.
+
+How each Google Cloud integration works — sync, previews, DLP, Dataplex, lineage, usage, AI insights, Google Chat — is described in [`docs/integrations.md`](docs/integrations.md).
 
 ---
 
-## Table of Contents
+## Contents
 
-1. [Overview](#overview)
+1. [Features](#features)
 2. [Architecture](#architecture)
-3. [Features](#features)
-4. [Prerequisites](#prerequisites)
-5. [Quick Start — Local Development](#quick-start--local-development)
-6. [Production Deployment on GKE](#production-deployment-on-gke)
-   - [Step 1 — GCP Project Setup](#step-1--gcp-project-setup)
-   - [Step 2 — Google OAuth2 Client](#step-2--google-oauth2-client)
-   - [Step 3 — Secret Manager Secrets](#step-3--secret-manager-secrets)
-   - [Step 4 — Create GKE Cluster](#step-4--create-gke-cluster)
-   - [Step 5 — Workload Identity](#step-5--workload-identity)
-   - [Step 6 — Deploy the Application](#step-6--deploy-the-application)
-   - [Step 7 — Post-Deploy OAuth Registration](#step-7--post-deploy-oauth-registration)
-7. [Configuration Reference](#configuration-reference)
-8. [Secret Manager Reference](#secret-manager-reference)
-9. [API Reference](#api-reference)
-10. [Frontend Pages](#frontend-pages)
-11. [Database Schema](#database-schema)
-12. [Authentication Flow](#authentication-flow)
-13. [BigQuery Sync](#bigquery-sync)
-14. [AI Insights](#ai-insights)
-15. [Data Lineage](#data-lineage)
-16. [Operations](#operations)
-17. [Adapting for a New Organization](#adapting-for-a-new-organization)
-18. [Troubleshooting](#troubleshooting)
-
----
-
-## Overview
-
-DS Data Catalog is a FastAPI + React application that runs on GKE Autopilot. It connects to your BigQuery projects, syncs table/column metadata, and gives your team a searchable, documented, trusted view of your data assets.
-
-**Stack:**
-
-| Layer | Technology |
-|---|---|
-| Frontend | React 18, TypeScript, MUI v5, Vite |
-| Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic |
-| Database | PostgreSQL 16 (in-cluster StatefulSet) |
-| Auth | Google OAuth2 + JWT (HS256) |
-| AI | Vertex AI Gemini (via Workload Identity) or Gemini API key |
-| Data | Google BigQuery, Cloud Data Lineage API |
-| Infrastructure | GKE Autopilot, GCR, Cloud Build, Secret Manager |
-
----
-
-## Architecture
-
-```
-Browser
-  │
-  ▼
-LoadBalancer (port 80)
-  │
-  ▼
-ds-catalog-frontend  (nginx)
-  ├── /              → serves React SPA (index.html)
-  ├── /api/v1/*      → proxied to ds-catalog-backend:8000
-  └── static assets  → cached 1 year
-  │
-  ▼
-ds-catalog-backend  (FastAPI / uvicorn)
-  ├── /api/v1/auth/*       Google OAuth2 flow + JWT
-  ├── /api/v1/tables/*     Table CRUD, preview, lineage, insights
-  ├── /api/v1/datasets/*   Dataset CRUD
-  ├── /api/v1/bq/*         BigQuery sync + sources
-  ├── /api/v1/search       Full-text search
-  └── /health              Liveness probe
-  │
-  ├──► ds-catalog-postgres:5432   (PostgreSQL StatefulSet)
-  ├──► BigQuery API               (via Workload Identity)
-  ├──► Vertex AI API              (via Workload Identity)
-  ├──► Cloud Data Lineage API     (via Workload Identity)
-  └──► Secret Manager             (via Workload Identity)
-```
-
-All traffic flows through a single LoadBalancer IP. The frontend nginx container proxies `/api/v1/` to the backend — no separate backend ingress is needed.
+3. [Security model](#security-model)
+4. [Local development](#local-development)
+5. [Tests](#tests)
+6. [Deploying to GKE](#deploying-to-gke)
+7. [Configuration reference](#configuration-reference)
+8. [IAM roles](#iam-roles)
+9. [API reference](#api-reference)
+10. [Operations](#operations)
+11. [Troubleshooting](#troubleshooting)
+12. [Project layout](#project-layout)
+13. [License](#license)
 
 ---
 
 ## Features
 
-### Data Discovery
-- Browse all BigQuery datasets and tables in a tree view
-- Full-text search across table names, descriptions, column names, and tags
-- Filter by dataset, sensitivity label, owner, tags
-
-### Table Documentation
-- Inline-editable table and column descriptions
-- Sensitivity labels: `public`, `internal`, `confidential`, `restricted`
-- Custom tags, owner assignment
-- Example SQL queries saved per table
-
-### Schema Management
-- Automatic schema change detection (columns added/removed) on every sync
-- Visual diff alerts on table detail pages
-- Acknowledge-and-dismiss workflow
-
-### Data Preview
-- Cost-estimated TABLESAMPLE query before execution
-- Run preview and view results inline
-- Save the generated query to example queries
-
-### Quality Checks
-- Column-level null percentage, distinct count, min/max value stats
-- Pulled from BigQuery INFORMATION_SCHEMA and APPROX_COUNT_DISTINCT queries
-
-### AI Insights (Vertex AI Gemini)
-- Auto-generated analysis questions, observations, and DS/ML use cases
-- Based on table description, column names, and stats
-- Regeneratable on demand
-
-### Data Lineage
-- Manual upstream/downstream table references (project.dataset.table format)
-- Auto-discovery via Cloud Data Lineage API
-- Merges discovered with manually entered
-
-### Trusted Data
-- Validation workflow: mark tables and specific columns as validated/certified
-- Dedicated "Trusted Data" page listing all certified assets
-
-### DS Project Tracking
-- Link tables to JIRA tickets and GitHub repos
-- Track which internal projects depend on which tables
-
-### Sources & Sync
-- Register multiple GCP projects as sync sources
-- Per-source service account key (via Secret Manager) or Workload Identity
-- Sync all sources or individual sources on demand
-
-### Notifications
-- In-app notifications for metadata changes
-- Google Chat webhook integration for automated alerts
+- **Discovery** — browse datasets and tables, full-text search across names, descriptions, columns and tags, filter by sensitivity, owner and tags.
+- **Documentation** — table and column descriptions, owners, data stewards, tags, sensitivity labels (`public`, `internal`, `confidential`, `restricted`), example queries, links to the projects that use a table.
+- **Multi-project sync** — register several GCP projects as sources; each uses Workload Identity or its own service-account key from Secret Manager. Re-syncs keep user-edited metadata.
+- **Schema change detection** — columns added or removed since the last sync are flagged for acknowledgement.
+- **Trusted data** — editors certify tables (and specific columns) as validated; the validation is recorded under their account.
+- **Data preview** — a `TABLESAMPLE` query with a dry-run cost estimate before it runs.
+- **Quality** — null rates and timestamp ranges, column statistics (approximate distinct count, null %, min/max), a documentation-based quality score, and [Dataplex data quality scans](https://cloud.google.com/dataplex/docs/data-quality-overview).
+- **PII detection** — [Cloud DLP](https://cloud.google.com/sensitive-data-protection/docs) inspects a sample and flags PII columns.
+- **Lineage** — manual upstream/downstream references plus discovery through the Cloud Data Lineage API.
+- **Usage statistics** — who queries a table and how often (`INFORMATION_SCHEMA.JOBS`).
+- **Schema history** — column changes over the last 30 days from Cloud Asset Inventory.
+- **AI insights** — Gemini suggests analysis questions, observations and ML use cases. It receives table metadata and column statistics (including per-column min/max values), never sampled rows.
+- **Notifications** — in-app change feed and optional Google Chat alerts.
 
 ---
 
-## Prerequisites
+## Architecture
 
-### Local Development
-- Python 3.12+
-- Node.js 20+
-- PostgreSQL 16 (local or Docker)
-- `gcloud` CLI authenticated
+```text
+Browser
+  │  HTTPS
+  ▼
+GKE Ingress + Google-managed certificate  (HTTP → HTTPS redirect, optional IAP)
+  │
+  ▼
+ds-catalog-frontend  (nginx)
+  ├── /           → React SPA
+  └── /api/v1/*   → ds-catalog-backend:8000
+                       │
+ds-catalog-backend  (FastAPI)  ── Workload Identity ──► BigQuery, Vertex AI, DLP, Dataplex,
+  │                                                      Data Lineage, Asset Inventory, Secret Manager
+  ▼
+ds-catalog-postgres  (PostgreSQL 16 StatefulSet)
+```
 
-### Production (GKE)
-- GCP project with billing enabled
-- `gcloud` CLI authenticated with Owner or Editor role
-- `kubectl`
-- `docker` (only needed if not using Cloud Build)
-- `gke-gcloud-auth-plugin`
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, TypeScript, MUI v5, TanStack Query, Vite |
+| Backend | Python 3.12, FastAPI, SQLAlchemy 2, Pydantic 2 |
+| Database | PostgreSQL 16 (full-text search with `tsvector` + GIN indexes) |
+| Auth | Google OAuth 2.0 → app-issued JWT (HS256), role checks on every request |
+| Infrastructure | GKE Autopilot, Artifact Registry, Cloud Build, Secret Manager |
+
+The backend creates and migrates its own tables on startup (`init_db` in `backend/database.py`).
 
 ---
 
-## Quick Start — Local Development
+## Security model
 
-### 1. Clone the repository
+**Sign-in.** Every page and API call requires a signed-in user; only `/health`, `/api/v1/auth/login`, `/api/v1/auth/callback` and `/api/v1/setup/status` are public. Users sign in with Google and must be allowed by configuration:
 
-```bash
-git clone <repo-url>
-cd catalog-ds/ds-data-catalog/catalog_app
-```
+| Setting | Effect |
+|---|---|
+| `ADMIN_EMAILS` | Always allowed; promoted to `admin` at every sign-in |
+| `ALLOWED_EMAIL_DOMAINS` | Anyone with a verified Google account on these domains |
+| `ALLOWED_EMAILS` | Individual accounts outside those domains |
 
-### 2. Backend setup
+With all three empty, nobody can sign in. New users get `DEFAULT_ROLE` (`viewer` unless set to `editor`).
 
-```bash
-# Create and activate virtual environment
-python3 -m venv catalog_env
-source catalog_env/bin/activate
+**Roles.** Admins change roles and deactivate accounts on the **Users** page. Roles are read from the database on every request, so changes apply immediately, even to tokens already issued.
 
-# Install dependencies
-pip install -r requirements.txt
+| Role | Can |
+|---|---|
+| `viewer` | Browse, search and read catalog metadata (not the detail page of `restricted` datasets or tables) |
+| `editor` | Everything a viewer can, plus edit metadata, validate tables, and run BigQuery/AI jobs: preview, quality checks, stats, DLP and Dataplex scans, lineage discovery, usage stats, insights |
+| `admin` | Everything, plus GCP sources, BigQuery sync and user management |
 
-# Create local .env file
-cat > .env << 'EOF'
-DATABASE_URL=postgresql://catalog:catalog@localhost:5432/ds_catalog
-GCP_PROJECT_ID=your-project-id
-GOOGLE_CLIENT_ID=your-oauth-client-id
-GOOGLE_CLIENT_SECRET=your-oauth-client-secret
-FRONTEND_URL=http://localhost:5173
-JWT_SECRET=local-dev-secret
-SECRET_KEY=local-dev-secret
-CORS_ORIGINS=["http://localhost:5173"]
-EOF
+The full route-by-role matrix is enforced in `backend/` and checked against every registered route by `tests/test_authorization.py`.
 
-# Create local database
-createdb ds_catalog
-psql ds_catalog -c "CREATE USER catalog WITH PASSWORD 'catalog';"
-psql ds_catalog -c "GRANT ALL PRIVILEGES ON DATABASE ds_catalog TO catalog;"
+**What BigQuery jobs run as.** Previews, quality checks, stats, DLP and Dataplex scans run as the catalog's service account (`ds-catalog-sa`, or the key in `BQ_SECRET_NAME`), not as the signed-in user. An editor can therefore sample rows from any table that service account can read. Grant the service account access only to the datasets the catalog should cover, and give the `editor` role only to people who may see that data.
 
-# Run backend (auto-creates tables on startup)
-uvicorn backend.main:app --reload --port 8000
-```
+**Tokens.** After the OAuth callback, the app's JWT is handed to the browser in the URL fragment (never in a query string or server log) and stored in `localStorage`; it expires after `JWT_EXPIRE_MINUTES` (default 7 days). The backend refuses to start unless `JWT_SECRET` is a random value of at least 32 characters. The user's Google access and refresh tokens (scopes `bigquery.readonly` and `cloud-platform.read-only`) are stored in PostgreSQL and used to list the projects an admin can add as sources and to sync with the admin's own credentials. Protect the database accordingly.
 
-### 3. Frontend setup
-
-```bash
-cd frontend
-npm install
-
-# Create .env.local (API is proxied by Vite dev server)
-# No VITE_ env vars needed — client.ts uses relative /api/v1 base URL
-
-# Configure Vite proxy (already set in vite.config.ts)
-npm run dev
-```
-
-The app is available at `http://localhost:5173`.
+**Network.** Deploy with `DOMAIN` set so the app is served over HTTPS behind a GKE Ingress with a Google-managed certificate. For an extra gate at the load balancer, add [Identity-Aware Proxy](#optional-identity-aware-proxy).
 
 ---
 
-## Production Deployment on GKE
+## Local development
 
-The `deploy/` directory contains everything needed. The main script is `deploy.sh` — it handles cluster creation, Workload Identity, image builds, and Kubernetes manifests in one run.
+Prerequisites: Python 3.12, Node.js 20 and Docker (for PostgreSQL). For BigQuery features, run the backend on your machine (option B below) after `gcloud auth application-default login`.
 
-### Step 1 — GCP Project Setup
+1. **Create a Google OAuth client** — Google Cloud Console → APIs & Services → Credentials → *Create credentials* → *OAuth client ID* → *Web application*. Authorised redirect URI: `http://localhost:5173/api/v1/auth/callback`.
+
+2. **Configure:**
+
+   ```bash
+   cd catalog_app
+   cp .env.example .env
+   # set JWT_SECRET (openssl rand -hex 32), GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+   # ADMIN_EMAILS and ALLOWED_EMAIL_DOMAINS
+   ```
+
+3. **Option A — run everything in Docker:**
+
+   ```bash
+   docker compose up
+   ```
+
+   **Option B — PostgreSQL in Docker, the app on your machine:**
+
+   ```bash
+   docker compose up -d db
+   python3 -m venv ../catalog_env
+   ../catalog_env/bin/pip install -r requirements-dev.txt
+   ./start.sh
+   ```
+
+Open http://localhost:5173, sign in with an account from `ADMIN_EMAILS`, and the setup wizard at `/setup` walks you through adding a BigQuery project and running the first sync.
+
+---
+
+## Tests
 
 ```bash
-# Authenticate
-gcloud auth login
-gcloud auth application-default login
-
-# Set your project
-export GCP_PROJECT_ID=your-project-id
-gcloud config set project $GCP_PROJECT_ID
-
-# Enable required APIs (deploy.sh does this automatically, but you can run manually)
-gcloud services enable \
-  container.googleapis.com \
-  compute.googleapis.com \
-  aiplatform.googleapis.com \
-  bigquery.googleapis.com \
-  bigquerystorage.googleapis.com \
-  secretmanager.googleapis.com \
-  datalineage.googleapis.com \
-  cloudresourcemanager.googleapis.com \
-  iam.googleapis.com \
-  cloudbuild.googleapis.com \
-  logging.googleapis.com \
-  monitoring.googleapis.com
+cd catalog_app
+docker compose up -d db      # a fresh volume also gets the ds_catalog_test database
+pytest
 ```
 
-### Step 2 — Google OAuth2 Client
+The suite uses `TEST_DATABASE_URL` (default `postgresql://catalog:catalog@localhost:5432/ds_catalog_test`) and drops all tables when it finishes, so it refuses to run against a database whose name does not end in `_test`. Google APIs are mocked.
 
-1. Go to **Google Cloud Console → APIs & Services → Credentials**
-2. Click **Create Credentials → OAuth 2.0 Client ID**
-3. Application type: **Web application**
-4. Name: `DS Data Catalog`
-5. Leave Authorised JavaScript origins and redirect URIs **empty for now** — you will fill them in after deploy (Step 7)
-6. Click **Create** and copy the **Client ID** and **Client Secret**
+`tests_e2e/` holds opt-in smoke tests for a running deployment (reachability, anonymous access rejected, a dataset create/search/delete round trip):
 
-### Step 3 — Secret Manager Secrets
+```bash
+APP_BASE_URL=https://catalog.example.com E2E_TOKEN=<editor JWT> pytest tests_e2e
+```
 
-The deploy script reads secrets from Secret Manager automatically. Create the following secrets:
+To get a token, sign in and copy `light_data_catalog_token` from the browser's local storage.
+
+CI (`.github/workflows/ci.yml`) runs the backend tests against PostgreSQL 16, builds the frontend, and syntax-checks the shell scripts.
+
+---
+
+## Deploying to GKE
+
+`catalog_app/deploy/deploy.sh` does the whole deployment and is safe to re-run: it enables APIs, creates (or reuses) a GKE Autopilot cluster, sets up Workload Identity and IAM, builds both images with Cloud Build into Artifact Registry, and applies the Kubernetes manifests.
+
+Prerequisites: a GCP project with billing, `gcloud` authenticated as a project Owner (or equivalent), `kubectl`, and `openssl`. Docker is not needed locally.
+
+### 1. Create a Google OAuth client
+
+Google Cloud Console → APIs & Services → Credentials → *Create credentials* → *OAuth client ID* → *Web application*. You add its origin and redirect URI after the deploy prints the app URL (step 4).
+
+### 2. Store secrets in Secret Manager
 
 ```bash
 PROJECT_ID=your-project-id
 
-# Google OAuth2 credentials (from Step 2)
-echo -n "your-google-client-id" | \
-  gcloud secrets create GOOGLE_CLIENT_ID --data-file=- --project=$PROJECT_ID
+echo -n "your-client-id"     | gcloud secrets create GOOGLE_CLIENT_ID     --data-file=- --project=$PROJECT_ID
+echo -n "your-client-secret" | gcloud secrets create GOOGLE_CLIENT_SECRET --data-file=- --project=$PROJECT_ID
+openssl rand -hex 32 | tr -d '\n' | gcloud secrets create jwt-secret-key --data-file=- --project=$PROJECT_ID
 
-echo -n "your-google-client-secret" | \
-  gcloud secrets create GOOGLE_CLIENT_SECRET --data-file=- --project=$PROJECT_ID
-
-# JWT signing secret (generate a strong random string)
-echo -n "$(openssl rand -hex 32)" | \
-  gcloud secrets create jwt-secret-key --data-file=- --project=$PROJECT_ID
-
-# Gemini API key (optional — leave empty to use Vertex AI via Workload Identity)
-echo -n "your-gemini-api-key" | \
-  gcloud secrets create gemini-api-key --data-file=- --project=$PROJECT_ID
-
-# Google Chat webhook (optional)
-echo -n "https://chat.googleapis.com/v1/spaces/..." | \
-  gcloud secrets create ds-catalog-google-chat-webhook --data-file=- --project=$PROJECT_ID
+# Optional
+echo -n "your-gemini-api-key"  | gcloud secrets create gemini-api-key                 --data-file=- --project=$PROJECT_ID
+echo -n "https://chat.googleapis.com/v1/spaces/..." \
+                               | gcloud secrets create ds-catalog-google-chat-webhook --data-file=- --project=$PROJECT_ID
+echo -n "bq-sa-key-secret"     | gcloud secrets create ds-catalog-bq-secret-name      --data-file=- --project=$PROJECT_ID
 ```
 
-**Secret Manager naming convention used by the deploy script:**
+| Kubernetes secret key | Secret Manager name | |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | `GOOGLE_CLIENT_ID` | required |
+| `GOOGLE_CLIENT_SECRET` | `GOOGLE_CLIENT_SECRET` | required |
+| `JWT_SECRET` | `jwt-secret-key` | required |
+| `GEMINI_API_KEY` | `gemini-api-key` | optional — without it insights use Vertex AI |
+| `GOOGLE_CHAT_WEBHOOK_URL` | `ds-catalog-google-chat-webhook` | optional |
+| `BQ_SECRET_NAME` | `ds-catalog-bq-secret-name` | optional — name of a secret holding a service-account key JSON for BigQuery jobs |
+| `POSTGRES_PASSWORD`, `DATABASE_URL` | `ds-catalog-postgres-password` | generated on the first deploy |
 
-| K8s env var | Secret Manager name |
-|---|---|
-| `GOOGLE_CLIENT_ID` | `GOOGLE_CLIENT_ID` |
-| `GOOGLE_CLIENT_SECRET` | `GOOGLE_CLIENT_SECRET` |
-| `JWT_SECRET` | `jwt-secret-key` |
-| `SECRET_KEY` | `jwt-secret-key` |
-| `GEMINI_API_KEY` | `gemini-api-key` |
-| `GOOGLE_CHAT_WEBHOOK_URL` | `ds-catalog-google-chat-webhook` |
-| `BQ_SECRET_NAME` | `ds-catalog-bq-secret-name` |
+Secrets are copied into the Kubernetes secret `ds-catalog-secret` at deploy time. After rotating one, run `./deploy.sh secrets`.
 
-If a secret is not found in Secret Manager, the corresponding env var is set to empty (feature disabled, not a crash).
-
-### Step 4 — Create GKE Cluster
-
-The deploy script creates the cluster automatically. To run it standalone:
+### 3. Deploy
 
 ```bash
 cd catalog_app/deploy
 GCP_PROJECT_ID=your-project-id \
-GCP_REGION=europe-west1 \
-CLUSTER_NAME=ds-catalog-cluster \
-  ./1-create-cluster.sh
-```
-
-This creates a **GKE Autopilot** cluster. Autopilot manages node pools automatically — no node sizing needed. Typical cluster creation takes 5–10 minutes.
-
-### Step 5 — Workload Identity
-
-Workload Identity lets the backend pods access GCP APIs (BigQuery, Vertex AI, Secret Manager) without storing service account keys anywhere.
-
-```bash
-cd catalog_app/deploy
-GCP_PROJECT_ID=your-project-id \
-GCP_REGION=europe-west1 \
-CLUSTER_NAME=ds-catalog-cluster \
-  ./2-setup-workload-identity.sh
-```
-
-This script:
-1. Creates a GCP service account `ds-catalog-sa@<project>.iam.gserviceaccount.com`
-2. Grants it these IAM roles:
-   - `roles/aiplatform.user` — Vertex AI / Gemini
-   - `roles/bigquery.jobUser` — run BigQuery jobs
-   - `roles/bigquery.dataViewer` — read table data
-   - `roles/bigquery.metadataViewer` — read schema
-   - `roles/secretmanager.secretAccessor` — read secrets
-   - `roles/logging.logWriter`
-   - `roles/monitoring.metricWriter`
-3. Binds the GCP SA to the Kubernetes SA `ds-catalog-sa` in the `default` namespace
-
-### Step 6 — Deploy the Application
-
-```bash
-cd catalog_app/deploy
-
-# Full deploy (cluster + workload identity + build + manifests)
-GCP_PROJECT_ID=your-project-id \
-GCP_REGION=europe-west1 \
-CLUSTER_NAME=ds-catalog-cluster \
-  ./deploy.sh
-
-# If cluster already exists, skip creation:
-GCP_PROJECT_ID=your-project-id \
-GCP_REGION=europe-west1 \
-CLUSTER_NAME=ds-catalog-cluster \
-SKIP_CLUSTER=1 \
+ADMIN_EMAILS=you@yourcompany.com \
+ALLOWED_EMAIL_DOMAINS=yourcompany.com \
+DOMAIN=catalog.yourcompany.com \
   ./deploy.sh
 ```
 
-The script will:
-1. Check prerequisites
-2. Enable GCP APIs
-3. Create or reuse the GKE cluster
-4. Set up Workload Identity
-5. Build backend and frontend images via Cloud Build (no local Docker needed)
-6. Apply Kubernetes manifests (PostgreSQL, ConfigMap, Secret, ServiceAccount, Deployments, Services, HPA)
-7. **Pull all secrets from Secret Manager** and create the K8s secret automatically
-8. Wait for rollouts
-9. **Auto-patch the ConfigMap** with the real frontend LoadBalancer IP (as `<ip>.nip.io`)
-10. Print the app URL
+With `DOMAIN`, the frontend sits behind a GKE Ingress on the global static IP `ds-catalog-ip` with a Google-managed certificate, and HTTP redirects to HTTPS. Point the domain's DNS A record at the IP the script prints; the certificate is issued 10–60 minutes after DNS resolves.
 
-### Step 7 — Post-Deploy OAuth Registration
+Without `DOMAIN`, the frontend gets a public LoadBalancer IP and is served over plain HTTP on `http://<ip>.nip.io`. Use that only to try the app out, not for real users or data.
 
-After deploy completes, the script prints the app URL (e.g. `http://34.90.12.55.nip.io`).
+Other variables: `GCP_REGION` (default `europe-west1`), `CLUSTER_NAME` (default `ds-catalog-cluster`), `K8S_NAMESPACE`, `REGISTRY_TYPE` (`artifact-registry` or `gcr`), `AR_LOCATION`, `AR_REPOSITORY`, `SKIP_CLUSTER=1`, `ALLOWED_EMAILS`, `DEFAULT_ROLE`, `ASSUME_YES=1`. See the header of `deploy.sh`.
 
-Go back to **Google Cloud Console → APIs & Services → Credentials → your OAuth client** and add:
+### 4. Register the OAuth redirect URI
 
-- **Authorised JavaScript origins:**
-  ```
-  http://34.90.12.55.nip.io
-  ```
-- **Authorised redirect URIs:**
-  ```
-  http://34.90.12.55.nip.io/api/v1/auth/callback
-  ```
+The script prints the app URL. On your OAuth client add:
 
-Replace `34.90.12.55` with your actual LoadBalancer IP.
+- Authorised JavaScript origin: `https://catalog.yourcompany.com`
+- Authorised redirect URI: `https://catalog.yourcompany.com/api/v1/auth/callback`
 
-> **Custom domain:** If you have a domain, point an A record to the LoadBalancer IP and use that domain instead of nip.io. Update `FRONTEND_URL` and `CORS_ORIGINS` in the ConfigMap accordingly:
-> ```bash
-> kubectl patch configmap ds-catalog-config \
->   -p '{"data":{"FRONTEND_URL":"https://catalog.yourcompany.com","CORS_ORIGINS":"[\"https://catalog.yourcompany.com\"]"}}'
-> kubectl rollout restart deployment/ds-catalog-backend
-> ```
+### 5. Sign in and connect BigQuery
+
+Sign in with an `ADMIN_EMAILS` account, open **GCP Sources** (or `/setup`), add your projects and run a sync. Give the `ds-catalog-sa` service account read access to any project other than the one it was created in.
+
+### Optional: Identity-Aware Proxy
+
+IAP makes Google check identity at the load balancer, before any request reaches the app. It requires the HTTPS deploy.
+
+```bash
+cd catalog_app/deploy
+GCP_PROJECT_ID=your-project-id \
+IAP_MEMBERS="group:data-team@yourcompany.com,user:you@yourcompany.com" \
+  ./setup-iap.sh
+```
+
+Redeploys keep IAP attached.
 
 ---
 
-## Configuration Reference
+## Configuration reference
 
-All configuration is passed to the backend as environment variables. In production they come from the ConfigMap and the K8s Secret.
-
-### ConfigMap (`deploy/configmap.yaml`)
+All backend settings are environment variables (`backend/config.py`). In production `deploy.sh` writes the non-secret ones to the ConfigMap `ds-catalog-config` and the secrets to `ds-catalog-secret`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `GCP_PROJECT_ID` | — | GCP project used for BigQuery and Vertex AI |
-| `FRONTEND_URL` | `http://FRONTEND_IP_OR_DOMAIN` | Public URL of the frontend — used as OAuth2 redirect base and JWT redirect target |
-| `CORS_ORIGINS` | `["http://localhost:5173"]` | JSON array of allowed CORS origins |
+| `DATABASE_URL` | `postgresql://catalog:catalog@localhost:5432/ds_catalog` | PostgreSQL connection string |
+| `JWT_SECRET` | — (required) | At least 32 random characters; the backend will not start without it |
+| `JWT_ALGORITHM` | `HS256` | `HS256`, `HS384` or `HS512` |
+| `JWT_EXPIRE_MINUTES` | `10080` (7 days) | Session length |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | OAuth client; sign-in is unavailable without them |
+| `FRONTEND_URL` | `http://localhost:5173` | Public URL of the app; the OAuth redirect URI is `<FRONTEND_URL>/api/v1/auth/callback` |
+| `CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | JSON array |
+| `ADMIN_EMAILS` | — | Comma-separated admin accounts |
+| `ALLOWED_EMAIL_DOMAINS` | — | Comma-separated domains allowed to sign in |
+| `ALLOWED_EMAILS` | — | Comma-separated individual accounts allowed to sign in |
+| `DEFAULT_ROLE` | `viewer` | Role for new users: `viewer` or `editor` |
+| `GCP_PROJECT_ID` | — | Default project for `POST /bq/sync` |
+| `BQ_SECRET_NAME` | — | Secret Manager secret with a service-account key for BigQuery jobs; empty uses Workload Identity / ADC |
+| `GEMINI_API_KEY` | — | Use the Gemini API instead of Vertex AI |
+| `GOOGLE_CHAT_WEBHOOK_URL` | — | Google Chat alerts for metadata changes, validations, PII findings and quality scores |
 
-### Secret (`deploy/secret.yaml` / Secret Manager)
+---
 
-| Variable | Description |
+## IAM roles
+
+`deploy.sh` grants these roles to `ds-catalog-sa` on the project:
+
+| Role | Used for |
 |---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `POSTGRES_PASSWORD` | Password for the in-cluster PostgreSQL |
-| `GOOGLE_CLIENT_ID` | Google OAuth2 client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret |
-| `JWT_SECRET` | Secret used to sign JWT tokens |
-| `SECRET_KEY` | Application secret key (same value as JWT_SECRET is fine) |
-| `GEMINI_API_KEY` | Optional — Gemini API key. Leave empty to use Vertex AI via Workload Identity |
-| `GOOGLE_CHAT_WEBHOOK_URL` | Optional — Google Chat webhook for change notifications |
-| `BQ_SECRET_NAME` | Optional — Secret Manager secret name for a BigQuery service account key. Leave empty to use Workload Identity |
+| `roles/bigquery.jobUser` | Running preview, stats and quality queries |
+| `roles/bigquery.dataViewer` | Reading table data for previews and scans |
+| `roles/bigquery.metadataViewer` | Syncing datasets, tables and schemas |
+| `roles/bigquery.resourceViewer` | Usage statistics from `INFORMATION_SCHEMA.JOBS` |
+| `roles/aiplatform.user` | Gemini insights on Vertex AI |
+| `roles/dlp.user` | PII detection |
+| `roles/dataplex.dataScanAdmin` | Dataplex data quality scans |
+| `roles/datalineage.viewer` | Lineage discovery |
+| `roles/cloudasset.viewer` | Schema history |
+| `roles/secretmanager.secretAccessor` | Per-source service-account keys |
+| `roles/logging.logWriter`, `roles/monitoring.metricWriter` | Logs and metrics |
 
-### Backend Config Defaults (`backend/config.py`)
-
-| Variable | Default |
-|---|---|
-| `JWT_ALGORITHM` | `HS256` |
-| `JWT_EXPIRE_MINUTES` | `10080` (7 days) |
+To catalog other projects, grant `ds-catalog-sa@<project>.iam.gserviceaccount.com` the BigQuery roles there, or register the source with its own service-account key.
 
 ---
 
-## Secret Manager Reference
+## API reference
 
-The deploy script (`deploy.sh`) reads from Secret Manager at deploy time and writes the values into the Kubernetes secret `ds-catalog-secret`. It does **not** use a sidecar or init container — secrets are fetched once at deploy time by the deploy script running on the operator's machine.
+All endpoints are under `/api/v1` and expect `Authorization: Bearer <jwt>` unless marked public. Interactive docs are served by the backend at `/docs` (not exposed through nginx in production).
 
-This means:
-- Rotating a secret requires re-running the deploy script (or manually running `sync_secrets_from_secret_manager`)
-- The GCP SA used by the deploy script (your personal gcloud credentials) needs `roles/secretmanager.secretAccessor` on the project
-
-To manually re-sync secrets without a full redeploy:
-
-```bash
-cd catalog_app/deploy
-source ./deploy.sh  # sources the function definitions
-
-GCP_PROJECT_ID=your-project-id NAMESPACE=default \
-  sync_secrets_from_secret_manager
-
-kubectl rollout restart deployment/ds-catalog-backend
-```
-
----
-
-## API Reference
-
-All endpoints are under `/api/v1/`. The frontend nginx proxies them — no direct backend port is exposed externally.
-
-### Authentication
-
-| Method | Path | Auth | Description |
+| Method | Path | Role | Description |
 |---|---|---|---|
-| GET | `/auth/login` | None | Redirect to Google OAuth2 consent screen |
-| GET | `/auth/callback` | None | OAuth2 callback — exchanges code for JWT, redirects to frontend |
-| GET | `/auth/me` | JWT | Return current user info |
-
-### Tables
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/tables` | JWT | List tables (filters: `dataset_id`, `sensitivity_label`, `tags`, `owner`, `skip`, `limit`) |
-| POST | `/tables` | JWT | Register a new table |
-| GET | `/tables/{id}` | JWT | Get table with all columns |
-| PUT | `/tables/{id}` | JWT | Update table metadata |
-| DELETE | `/tables/{id}` | JWT | Soft-delete a table |
-| PATCH | `/tables/{id}/validate` | JWT | Mark table as validated / revoke validation |
-| PATCH | `/tables/{id}/columns` | JWT | Batch-update column descriptions and primary key flags |
-| PATCH | `/tables/{id}/columns/{col_id}/pii` | JWT | Toggle PII flag on a column |
-| GET | `/tables/{id}/preview` | JWT | Get estimated cost + SQL for a TABLESAMPLE preview |
-| POST | `/tables/{id}/preview/run` | JWT | Execute preview query and return rows |
-| POST | `/tables/{id}/quality-check` | JWT | Pull column stats from BigQuery |
-| PATCH | `/tables/{id}/queries` | JWT | Replace example queries list |
-| POST | `/tables/{id}/insights` | JWT | Generate AI insights via Vertex AI Gemini |
-| GET | `/tables/{id}/lineage/discover` | JWT | Auto-discover lineage from Cloud Data Lineage API |
-| PUT | `/tables/{id}/lineage` | JWT | Update upstream/downstream refs |
-| PUT | `/tables/{id}/projects` | JWT | Update DS projects linked to this table |
-
-### Datasets
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/datasets` | JWT | List datasets |
-| POST | `/datasets` | JWT | Create dataset |
-| GET | `/datasets/{id}` | JWT | Get dataset |
-| PUT | `/datasets/{id}` | JWT | Update dataset metadata |
-| DELETE | `/datasets/{id}` | JWT | Soft-delete dataset |
-| PATCH | `/datasets/{id}/validate` | JWT | Toggle dataset validation |
-| PUT | `/datasets/{id}/projects` | JWT | Update DS projects list |
-| GET | `/datasets/{id}/tables` | JWT | List all tables in dataset |
-
-### BigQuery Sources
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/bq/sources` | JWT | List registered GCP project sources |
-| POST | `/bq/sources` | JWT | Add a GCP project as sync source |
-| PATCH | `/bq/sources/{id}` | JWT | Update source (name, secret, active state) |
-| DELETE | `/bq/sources/{id}` | JWT | Remove a source |
-| POST | `/bq/sync` | JWT | Sync a single GCP project by project ID |
-| POST | `/bq/sync/all` | JWT | Sync all active sources |
-| POST | `/bq/sync/source/{id}` | JWT | Sync a specific source by source ID |
-
-### Search
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/search` | JWT | Full-text search across datasets and tables |
-| GET | `/search/columns` | JWT | Find columns by name pattern |
-
-### Other
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/tags` | JWT | List all unique tags |
-| GET | `/stats` | JWT | Catalog statistics (counts, coverage) |
-| GET | `/schema-changes` | JWT | List schema change alerts |
-| PATCH | `/schema-changes/{id}/acknowledge` | JWT | Acknowledge a change |
-| POST | `/schema-changes/acknowledge-all` | JWT | Acknowledge all changes for a table |
-| GET | `/notifications` | JWT | List recent metadata change notifications |
-| POST | `/notifications/{id}/dismiss` | JWT | Dismiss a notification |
-| POST | `/notifications/dismiss-all` | JWT | Dismiss all notifications |
-| GET | `/health` | None | Liveness probe |
-
----
-
-## Frontend Pages
-
-| Route | Page | Description |
-|---|---|---|
-| `/login` | Login | Google OAuth2 sign-in |
-| `/browse` | Browse | Dataset + table tree with filters and search |
-| `/datasets/:id` | DatasetDetail | Dataset metadata, table list, validation |
-| `/datasets/:datasetId/tables/:tableId` | TableDetail | Full table view: schema, preview, queries, insights, lineage, projects |
-| `/search` | SearchResults | Full-text search results |
-| `/trusted` | TrustedData | Validated datasets and tables |
-| `/sources` | Sources | BigQuery source management + sync triggers |
-
----
-
-## Database Schema
-
-The database is PostgreSQL 16. Tables are created automatically on first backend startup via `Base.metadata.create_all()`.
-
-### users
-Stores authenticated users after first OAuth2 login.
-
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| email | VARCHAR(255) UNIQUE | |
-| name | VARCHAR(255) | |
-| picture | VARCHAR(500) | Google profile picture URL |
-| role | VARCHAR(50) | `viewer` \| `editor` \| `admin` |
-| is_active | BOOLEAN | |
-| created_at | TIMESTAMPTZ | |
-| last_login | TIMESTAMPTZ | |
-| gcp_access_token | TEXT | Stored for BQ API calls on behalf of user |
-| gcp_refresh_token | TEXT | |
-| gcp_token_expiry | TIMESTAMPTZ | |
-
-### datasets
-One row per BigQuery dataset.
-
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| project_id | VARCHAR(255) | GCP project |
-| dataset_id | VARCHAR(255) | BigQuery dataset ID |
-| display_name | VARCHAR(500) | |
-| description | TEXT | |
-| owner | VARCHAR(255) | |
-| data_steward | VARCHAR(255) | |
-| tags | ARRAY(VARCHAR) | |
-| sensitivity_label | VARCHAR(50) | `public` \| `internal` \| `confidential` \| `restricted` |
-| bq_location | VARCHAR(50) | e.g. `US`, `europe-west1` |
-| bq_created_at | TIMESTAMPTZ | |
-| bq_last_modified | TIMESTAMPTZ | |
-| is_active | BOOLEAN | |
-| is_validated | BOOLEAN | |
-| validated_by | VARCHAR(255) | |
-| validated_at | TIMESTAMPTZ | |
-| used_in_projects | JSONB | `[{project_name, jira_id, repo_url}]` |
-| created_at | TIMESTAMPTZ | |
-| updated_at | TIMESTAMPTZ | auto-updated |
-| search_vector | TSVECTOR | GIN-indexed for full-text search |
-
-### tables
-One row per BigQuery table.
-
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| dataset_id | UUID FK → datasets | cascade delete |
-| table_id | VARCHAR(255) | BigQuery table ID |
-| display_name | VARCHAR(500) | |
-| description | TEXT | |
-| owner | VARCHAR(255) | |
-| tags | ARRAY(VARCHAR) | |
-| sensitivity_label | VARCHAR(50) | |
-| row_count | BIGINT | synced from BQ |
-| size_bytes | BIGINT | synced from BQ |
-| bq_created_at | TIMESTAMPTZ | |
-| bq_last_modified | TIMESTAMPTZ | |
-| is_active | BOOLEAN | |
-| is_validated | BOOLEAN | |
-| validated_by | VARCHAR(255) | |
-| validated_at | TIMESTAMPTZ | |
-| example_queries | JSONB | `[{title, sql}]` |
-| validated_columns | JSONB | `["col1", "col2"]` |
-| upstream_refs | JSONB | `["project.dataset.table"]` |
-| downstream_refs | JSONB | `["project.dataset.table"]` |
-| quality_score | FLOAT | 0–100 |
-| used_in_projects | JSONB | `[{project_name, jira_id, repo_url}]` |
-| insights | JSONB | `{questions, observations, use_cases}` |
-| insights_generated_at | TIMESTAMPTZ | |
-| created_at | TIMESTAMPTZ | |
-| updated_at | TIMESTAMPTZ | auto-updated |
-| search_vector | TSVECTOR | GIN-indexed |
-
-### table_columns
-One row per column in each table.
-
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| table_id | UUID FK → tables | cascade delete |
-| name | VARCHAR(255) | column name |
-| data_type | VARCHAR(100) | BigQuery type |
-| description | TEXT | |
-| is_nullable | BOOLEAN | |
-| is_primary_key | BOOLEAN | |
-| position | INTEGER | column order |
-| is_pii | BOOLEAN | manually flagged |
-| approx_count_distinct | BIGINT | pulled from BQ |
-| null_pct | FLOAT | pulled from BQ |
-| min_val | VARCHAR(255) | pulled from BQ |
-| max_val | VARCHAR(255) | pulled from BQ |
-| last_stats_at | TIMESTAMPTZ | when stats were last pulled |
-
-### schema_changes
-Tracks column additions and removals detected on sync.
-
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| table_id | UUID FK → tables | |
-| change_type | VARCHAR(50) | `column_added` \| `column_removed` |
-| column_name | VARCHAR(255) | |
-| detected_at | TIMESTAMPTZ | |
-| is_acknowledged | BOOLEAN | |
-
-### gcp_sources
-Registered GCP projects for BigQuery sync.
-
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| project_id | VARCHAR(255) UNIQUE | GCP project ID |
-| display_name | VARCHAR(255) | |
-| secret_name | VARCHAR(255) | Secret Manager secret for SA key (NULL = use Workload Identity) |
-| is_active | BOOLEAN | |
-| last_synced_at | TIMESTAMPTZ | |
-| last_sync_status | VARCHAR(50) | `ok` \| `error` \| `running` |
-| last_sync_summary | JSONB | stats from last sync |
-| created_at | TIMESTAMPTZ | |
-| created_by | VARCHAR(255) | email |
-
-### metadata_change_log
-Audit log for metadata edits, used for Google Chat notifications.
-
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID PK | |
-| entity_type | VARCHAR(50) | `dataset` \| `table` |
-| entity_id | UUID | |
-| entity_name | VARCHAR(255) | |
-| field_changed | VARCHAR(100) | |
-| old_value | TEXT | |
-| new_value | TEXT | |
-| changed_by | VARCHAR(255) | email or `system` |
-| changed_at | TIMESTAMPTZ | |
-| data_steward | VARCHAR(255) | |
-| is_notified | BOOLEAN | sent to Google Chat |
-
----
-
-## Authentication Flow
-
-```
-1. User clicks "Sign in with Google"
-   └─► GET /api/v1/auth/login
-
-2. Backend builds OAuth2 URL with redirect_uri = <FRONTEND_URL>/api/v1/auth/callback
-   └─► 302 → accounts.google.com
-
-3. User consents → Google redirects to:
-   GET /api/v1/auth/callback?code=...
-
-4. Backend exchanges code for access_token + refresh_token
-   └─► POST oauth2.googleapis.com/token
-
-5. Backend fetches user info (email, name, picture)
-   └─► GET googleapis.com/oauth2/v2/userinfo
-
-6. Backend upserts user in database, stores GCP tokens
-
-7. Backend creates JWT (7-day expiry) with {sub, email, role, exp}
-   └─► 302 → <FRONTEND_URL>/login?token=<jwt>&user=<json>
-
-8. Frontend stores JWT in localStorage key ds_catalog_token
-   All subsequent API calls send: Authorization: Bearer <jwt>
-
-9. On 401 response → frontend clears localStorage and redirects to /login
-```
-
-The stored GCP `access_token` is used when running BigQuery preview queries on behalf of the authenticated user, ensuring BigQuery row-level security is respected.
-
----
-
-## BigQuery Sync
-
-Syncing imports metadata from BigQuery into the local PostgreSQL database.
-
-### What is synced
-- All datasets in the GCP project (name, description, location, created/modified timestamps)
-- All tables in each dataset (name, description, row count, size, column schema)
-- All columns (name, type, nullable, description)
-- Schema change detection: columns added or removed since last sync are recorded in `schema_changes`
-
-### How to trigger
-- **UI:** Sources page → Sync button per source, or "Sync All"
-- **API:** `POST /api/v1/bq/sync/all`
-
-### Multi-project support
-Each source can use a different service account key (stored in Secret Manager) or fall back to Workload Identity. This allows syncing from projects outside your main GCP project.
-
-```
-Sources page:
-  ├── project-a (Workload Identity)
-  ├── project-b (SA key: secret-name-in-sm)
-  └── project-c (Workload Identity)
-```
-
----
-
-## AI Insights
-
-Insights are generated using **Vertex AI Gemini** (default) or the **Gemini API** (if `GEMINI_API_KEY` is set).
-
-### What is generated
-For each table, Gemini receives the table name, description, column names/types/descriptions, and row count. It returns:
-
-- **Analysis Questions** — business questions this table can answer
-- **Observations** — notable patterns, data quality notes, or interesting characteristics
-- **DS/ML Use Cases** — potential machine learning or analytics applications
-
-### How to trigger
-- Table Detail page → Insights section → "Generate Insights" / "Regenerate"
-- **API:** `POST /api/v1/tables/{id}/insights`
-
-### Cost
-Uses `gemini-2.0-flash` model. Token usage is minimal per table (< 1K input tokens typically).
-
----
-
-## Data Lineage
-
-### Manual lineage
-Edit upstream and downstream refs directly in the Lineage section. Format: `project.dataset.table`.
-
-### Auto-discovery
-The "Discover from GCP" button calls the **Cloud Data Lineage API** (`datalineage.googleapis.com`).
-
-**Requirements:**
-- Cloud Data Lineage API enabled in your project
-- BigQuery automatic lineage tracking must be active (enabled via Dataplex, or auto-captured for COPY/QUERY/EXPORT job types)
-- The `ds-catalog-sa` service account needs `roles/datalineage.viewer`
-
-```bash
-# Grant lineage viewer role
-gcloud projects add-iam-policy-binding your-project-id \
-  --member="serviceAccount:ds-catalog-sa@your-project-id.iam.gserviceaccount.com" \
-  --role="roles/datalineage.viewer"
-```
-
-Discovery merges results with existing manually-entered refs (union, not overwrite).
+| GET | `/auth/login` | public | Redirect to Google sign-in |
+| GET | `/auth/callback` | public | OAuth callback; redirects to `/login#token=…` |
+| GET | `/auth/me` | any | Current user profile and role |
+| GET | `/setup/status` | public | Setup wizard checks (booleans and counts only) |
+| GET | `/datasets` | any | List datasets (`project_id`, `sensitivity_label`, `tags`, `owner`, `validated`, `skip`, `limit`) |
+| POST | `/datasets` | editor | Register a dataset |
+| GET | `/datasets/{id}` | any | Dataset detail (`restricted`: editor) |
+| PUT | `/datasets/{id}` | editor | Update metadata |
+| DELETE | `/datasets/{id}` | editor | Soft-delete |
+| PATCH | `/datasets/{id}/validate` | editor | Toggle validation |
+| PUT | `/datasets/{id}/projects` | editor | Replace linked projects |
+| GET | `/datasets/{id}/tables` | any | Tables in a dataset |
+| GET | `/tables` | any | List tables |
+| POST | `/tables` | editor | Register a table |
+| GET | `/tables/{id}` | any | Table detail with columns (`restricted`: editor) |
+| PUT | `/tables/{id}` | editor | Update metadata |
+| DELETE | `/tables/{id}` | editor | Soft-delete |
+| PATCH | `/tables/{id}/validate` | editor | Mark trusted / revoke |
+| PATCH | `/tables/{id}/columns` | editor | Column descriptions and primary keys |
+| PATCH | `/tables/{id}/columns/{column_id}/pii` | editor | Toggle a column's PII flag |
+| PATCH | `/tables/{id}/queries` | editor | Replace example queries |
+| PUT | `/tables/{id}/projects` | editor | Replace linked projects |
+| PUT | `/tables/{id}/lineage` | editor | Set upstream/downstream refs |
+| GET | `/tables/{id}/lineage/discover` | editor | Discover lineage via Data Lineage API and merge it in |
+| GET | `/tables/{id}/preview` | editor | Preview SQL and cost estimate (dry run) |
+| POST | `/tables/{id}/preview/run` | editor | Run the preview and return rows |
+| POST | `/tables/{id}/quality-check` | editor | Null rates and timestamp ranges |
+| POST | `/tables/{id}/pull-stats` | editor | Column statistics |
+| POST | `/tables/{id}/scan-pii` | editor | Cloud DLP PII scan |
+| POST | `/tables/{id}/dataplex-quality` | editor | Dataplex data quality scan |
+| POST | `/tables/{id}/insights` | editor | Generate Gemini insights |
+| GET | `/tables/{id}/usage` | editor | Query usage over the last `days` (1–90) |
+| GET | `/tables/{id}/schema-history` | any | Column changes from Cloud Asset Inventory |
+| GET | `/search` | any | Full-text search across datasets and tables |
+| GET | `/search/columns` | any | Find columns by name |
+| GET | `/tags` | any | All tags |
+| GET | `/stats` | any | Catalog totals and documentation coverage |
+| GET | `/schema-changes` | any | Schema change alerts |
+| PATCH | `/schema-changes/{id}/acknowledge` | editor | Acknowledge one change |
+| POST | `/schema-changes/acknowledge-all` | editor | Acknowledge all (optionally per table) |
+| GET | `/notifications` | any | Recent metadata changes |
+| POST | `/notifications/{id}/dismiss` | editor | Dismiss one |
+| POST | `/notifications/dismiss-all` | editor | Dismiss all |
+| GET | `/bq/projects` | admin | Projects the signed-in admin can access |
+| GET | `/bq/sources` | admin | Registered sources |
+| POST | `/bq/sources` | admin | Add a source |
+| PATCH | `/bq/sources/{id}` | admin | Update a source |
+| DELETE | `/bq/sources/{id}` | admin | Remove a source (keeps synced metadata) |
+| POST | `/bq/sync` | admin | Sync one project |
+| POST | `/bq/sync/all` | admin | Sync all active sources |
+| POST | `/bq/sync/source/{id}` | admin | Sync one source |
+| GET | `/users` | admin | List users |
+| PATCH | `/users/{id}` | admin | Change role or active status |
+| GET | `/health` (no prefix) | public | Liveness probe |
 
 ---
 
 ## Operations
 
-### View pod logs
+`catalog_app/deploy/utils.sh` wraps common commands:
 
 ```bash
-# Backend
-kubectl logs -l app=ds-catalog-backend --tail=100 -f
-
-# Frontend
-kubectl logs -l app=ds-catalog-frontend --tail=50
-
-# PostgreSQL
-kubectl logs ds-catalog-postgres-0 --tail=50
+./utils.sh status                    # deployments, pods, services, URL
+./utils.sh logs ds-catalog-backend   # follow logs
+./utils.sh restart ds-catalog-backend
+./utils.sh scale ds-catalog-backend 3
+./utils.sh shell                     # shell in a backend pod
 ```
 
-### Restart a deployment
+The backend HorizontalPodAutoscaler (`deploy/autoscaling.yaml`) runs 2–8 replicas at 70% CPU.
 
 ```bash
-kubectl rollout restart deployment/ds-catalog-backend
-kubectl rollout restart deployment/ds-catalog-frontend
-```
+# Re-sync the Kubernetes secret after rotating a value in Secret Manager
+./deploy.sh secrets
 
-### Scale manually
-
-```bash
-kubectl scale deployment ds-catalog-backend --replicas=3
-```
-
-### Connect to PostgreSQL directly
-
-```bash
+# Database shell and backup
 kubectl exec -it ds-catalog-postgres-0 -- psql -U catalog -d ds_catalog
+kubectl exec ds-catalog-postgres-0 -- pg_dump -U catalog ds_catalog | gzip > ds_catalog_$(date +%Y%m%d).sql.gz
 ```
-
-### Update a secret without full redeploy
-
-```bash
-# Update a single key in the K8s secret
-kubectl patch secret ds-catalog-secret \
-  -p '{"stringData":{"GOOGLE_CHAT_WEBHOOK_URL":"https://chat.googleapis.com/..."}}'
-
-kubectl rollout restart deployment/ds-catalog-backend
-```
-
-### Update ConfigMap
-
-```bash
-kubectl patch configmap ds-catalog-config \
-  -p '{"data":{"FRONTEND_URL":"https://catalog.yourcompany.com"}}'
-
-kubectl rollout restart deployment/ds-catalog-backend
-```
-
-### HPA (autoscaling)
-
-The backend has a HorizontalPodAutoscaler configured in `deploy/autoscaling.yaml`. Default: 2 min replicas, 5 max, scale on 70% CPU.
-
-```bash
-kubectl get hpa
-```
-
-### Database backup
-
-```bash
-kubectl exec ds-catalog-postgres-0 -- \
-  pg_dump -U catalog ds_catalog | gzip > ds_catalog_backup_$(date +%Y%m%d).sql.gz
-```
-
----
-
-## Adapting for a New Organization
-
-To deploy this for a different organization, you only need to change values — no code changes are required.
-
-### 1. Fork / copy the repository
-
-```bash
-git clone <original-repo>
-cd ds-data-catalog
-```
-
-### 2. Edit `deploy/deploy.sh` — top-level config
-
-```bash
-PROJECT_ID="${GCP_PROJECT_ID:-your-new-project-id}"
-REGION="${GCP_REGION:-your-preferred-region}"    # e.g. us-central1
-CLUSTER_NAME="${CLUSTER_NAME:-ds-catalog-cluster}"
-```
-
-### 3. Edit `deploy/configmap.yaml`
-
-```yaml
-data:
-  GCP_PROJECT_ID: "your-new-project-id"
-  # FRONTEND_URL and CORS_ORIGINS are auto-patched by deploy.sh after deploy
-  FRONTEND_URL: "http://FRONTEND_IP_OR_DOMAIN"
-  CORS_ORIGINS: '["http://localhost:5173"]'
-```
-
-### 4. Edit `deploy/service-account.yaml`
-
-```yaml
-annotations:
-  iam.gke.io/gcp-service-account: ds-catalog-sa@your-new-project-id.iam.gserviceaccount.com
-```
-
-### 5. Create secrets in Secret Manager
-
-```bash
-PROJECT_ID=your-new-project-id
-
-echo -n "your-client-id"     | gcloud secrets create GOOGLE_CLIENT_ID     --data-file=- --project=$PROJECT_ID
-echo -n "your-client-secret" | gcloud secrets create GOOGLE_CLIENT_SECRET  --data-file=- --project=$PROJECT_ID
-echo -n "$(openssl rand -hex 32)" | gcloud secrets create jwt-secret-key   --data-file=- --project=$PROJECT_ID
-echo -n "your-gemini-key"    | gcloud secrets create gemini-api-key        --data-file=- --project=$PROJECT_ID
-```
-
-### 6. Run deploy
-
-```bash
-cd deploy
-GCP_PROJECT_ID=your-new-project-id \
-GCP_REGION=us-central1 \
-CLUSTER_NAME=ds-catalog-cluster \
-  ./deploy.sh
-```
-
-### 7. Register the OAuth redirect URI
-
-After deploy prints the app URL, add it to your Google OAuth client (see Step 7 above).
-
-### 8. Optional — Add your BigQuery sources
-
-After logging in, go to **Sources** and add your GCP projects. Each project syncs its BigQuery metadata into the catalog.
-
-### What NOT to change
-
-The following are internal to the cluster and do not need to change:
-- `DATABASE_URL` — always `postgresql://catalog:catalog@ds-catalog-postgres:5432/ds_catalog`
-- `POSTGRES_PASSWORD` — only used internally between backend and the StatefulSet
-- nginx.conf — the backend service name `ds-catalog-backend` is fixed
 
 ---
 
 ## Troubleshooting
 
-### Pods in CrashLoopBackOff
-
-```bash
-# Identify the failing pod
-kubectl get pods
-
-# View crash logs
-kubectl logs <pod-name> --previous
-```
-
-**Common causes:**
-
-| Error | Cause | Fix |
+| Symptom | Cause | Fix |
 |---|---|---|
-| `connection refused` on `ds-catalog-postgres` | PostgreSQL not ready or crashed | Check postgres pod logs |
-| `initdb: directory not empty` on postgres | PVC mount has `lost+found` | Add `PGDATA=/var/lib/postgresql/data/pgdata` env to postgres StatefulSet |
-| `GOOGLE_CLIENT_ID not configured` | Secret not synced | Re-run secret sync or check Secret Manager values |
-| `unable to connect to server` on Vertex AI | Workload Identity not set up | Run `2-setup-workload-identity.sh` |
-
-### OAuth 400 — invalid request
-
-**Cause:** Redirect URI in the request does not match what is registered in Google Cloud Console.
-
-**Fix:**
-1. Note the exact `redirect_uri` from the error page
-2. Add it to your OAuth client in Google Cloud Console under **Authorised redirect URIs**
-3. Also add the base domain to **Authorised JavaScript origins**
-
-### OAuth 400 — Invalid Origin: must end with a public top-level domain
-
-**Cause:** You are using a raw IP address (e.g. `http://34.90.12.55`) as the OAuth origin.
-
-**Fix:** Use `<ip>.nip.io` instead. Update ConfigMap and register the nip.io URL in Google Cloud Console:
-
-```bash
-IP=34.90.12.55
-kubectl patch configmap ds-catalog-config \
-  -p "{\"data\":{\"FRONTEND_URL\":\"http://${IP}.nip.io\",\"CORS_ORIGINS\":\"[\\\"http://${IP}.nip.io\\\"]\"}}"
-kubectl rollout restart deployment/ds-catalog-backend
-```
-
-### gke-gcloud-auth-plugin not found
-
-```bash
-gcloud components install gke-gcloud-auth-plugin
-export PATH="$(gcloud info --format='value(installation.sdk_root)')/bin:$PATH"
-```
-
-### Rollout timeout
-
-```bash
-# Check what's blocking the rollout
-kubectl describe deployment ds-catalog-backend
-kubectl get events --sort-by='.lastTimestamp' | tail -20
-```
-
-### Secret Manager permission denied
-
-The GCP SA needs `roles/secretmanager.secretAccessor`:
-
-```bash
-gcloud projects add-iam-policy-binding your-project-id \
-  --member="serviceAccount:ds-catalog-sa@your-project-id.iam.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
-```
-
-### Backend returns 502 on AI features
-
-Vertex AI is not reachable. Verify:
-1. `roles/aiplatform.user` is granted to `ds-catalog-sa`
-2. `aiplatform.googleapis.com` API is enabled
-3. Workload Identity annotation is present on the K8s ServiceAccount:
-   ```bash
-   kubectl describe serviceaccount ds-catalog-sa | grep gcp-service-account
-   ```
+| Backend crash-loops with `JWT_SECRET must be a random value…` | Secret missing or too short | Create `jwt-secret-key` (32+ chars) and run `./deploy.sh secrets` |
+| Sign-in returns "not allowed to sign in" | Account not in `ADMIN_EMAILS`, `ALLOWED_EMAIL_DOMAINS` or `ALLOWED_EMAILS` | Re-run `deploy.sh` with the right lists |
+| Google shows `redirect_uri_mismatch` | Redirect URI not registered | Add `<FRONTEND_URL>/api/v1/auth/callback` to the OAuth client |
+| "Your sign-in session expired" | OAuth state cookie missing (blocked cookies, or more than 10 minutes on the consent screen) | Try again |
+| 403 on an action | Your role is too low | Ask an admin to change it on the Users page |
+| Certificate stays `Provisioning` | DNS does not point at `ds-catalog-ip` yet | Check the A record; `kubectl describe managedcertificate ds-catalog-cert` |
+| 502 on BigQuery, DLP or AI features | Missing API or IAM role, or Workload Identity not bound | Check [IAM roles](#iam-roles) and `kubectl describe serviceaccount ds-catalog-sa` |
+| `initdb: directory not empty` on PostgreSQL | PVC contains `lost+found` | Already handled by `PGDATA=/var/lib/postgresql/data/pgdata` in `postgres.yaml` |
 
 ---
 
-## File Structure
+## Project layout
 
-```
+```text
 catalog_app/
 ├── backend/
-│   ├── api/
-│   │   ├── auth.py          # Google OAuth2 + JWT endpoints
-│   │   ├── bq.py            # BigQuery sources + sync endpoints
-│   │   ├── datasets.py      # Dataset CRUD
-│   │   ├── tables.py        # Table CRUD + preview + insights + lineage
-│   │   ├── search.py        # Full-text search
-│   │   ├── schema_changes.py
-│   │   ├── notifications.py
-│   │   ├── stats.py
-│   │   └── tags.py
-│   ├── services/
-│   │   ├── bq_lineage.py    # Cloud Data Lineage REST API client
-│   │   ├── bq_preview.py    # BigQuery TABLESAMPLE preview
-│   │   ├── bq_quality.py    # Column stats quality checks
-│   │   ├── bq_safety.py     # Query safety / cost estimation
-│   │   ├── bq_stats.py      # Column statistics pull
-│   │   ├── bq_sync.py       # Full BigQuery metadata sync
-│   │   ├── gchat.py         # Google Chat webhook notifications
-│   │   └── insights.py      # Vertex AI Gemini insights
-│   ├── models/
-│   │   └── catalog.py       # SQLAlchemy ORM models
-│   ├── schemas/
-│   │   └── catalog.py       # Pydantic request/response schemas
-│   ├── dependencies/
-│   │   └── auth.py          # JWT dependency injection
-│   ├── config.py            # Pydantic settings (env vars)
-│   ├── database.py          # SQLAlchemy engine + session
-│   └── main.py              # FastAPI app + router registration
-├── frontend/
-│   ├── src/
-│   │   ├── api/             # Axios API clients per resource
-│   │   ├── components/      # Shared MUI components
-│   │   ├── contexts/        # AuthContext (JWT state)
-│   │   ├── pages/           # One file per route
-│   │   └── design.ts        # Shared MUI design tokens
-│   ├── package.json
-│   └── vite.config.ts
-├── deploy/
-│   ├── deploy.sh            # Main one-shot deploy script
-│   ├── 1-create-cluster.sh  # GKE Autopilot cluster creation
-│   ├── 2-setup-workload-identity.sh
-│   ├── deployment.yaml      # Backend Deployment
-│   ├── frontend-deployment.yaml
-│   ├── service.yaml         # Backend ClusterIP Service
-│   ├── frontend-service.yaml # Frontend LoadBalancer Service
-│   ├── postgres.yaml        # PostgreSQL StatefulSet + PVC + Service
-│   ├── configmap.yaml
-│   ├── secret.yaml          # Template only — real values from Secret Manager
-│   ├── service-account.yaml # K8s ServiceAccount with Workload Identity annotation
-│   └── autoscaling.yaml     # HPA for backend
+│   ├── api/            # Routers: auth, users, datasets, tables, search, bq, setup, …
+│   ├── services/       # BigQuery sync/preview/stats/quality/usage, DLP, Dataplex,
+│   │                   # lineage, asset inventory, Gemini insights, Google Chat
+│   ├── dependencies/   # Auth and role dependencies
+│   ├── models/         # SQLAlchemy models
+│   ├── schemas/        # Pydantic schemas
+│   ├── config.py       # Settings (environment variables)
+│   ├── database.py     # Engine, sessions, startup migrations
+│   └── main.py         # App and router registration
+├── frontend/           # React + Vite app (src/api, components, contexts, pages)
+├── deploy/             # deploy.sh, setup-iap.sh, utils.sh, Kubernetes manifests
+├── docker/initdb/      # Local PostgreSQL init (test database)
+├── tests/              # API tests (pytest + PostgreSQL)
+├── tests_e2e/          # Opt-in smoke tests for a running deployment
 ├── Dockerfile.backend
-├── Dockerfile.frontend
-├── nginx.conf               # Frontend nginx — proxies /api/v1/ to backend
-└── requirements.txt
+├── Dockerfile.frontend # Production frontend: build + nginx
+├── nginx.conf
+├── docker-compose.yml
+├── start.sh
+├── requirements.txt
+└── requirements-dev.txt
 ```
+
+---
+
+## License
+
+[Apache License 2.0](LICENSE)

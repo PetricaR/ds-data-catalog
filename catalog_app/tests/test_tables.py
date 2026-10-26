@@ -78,16 +78,16 @@ class TestUpdateTable:
 
 
 class TestValidateTable:
-    def test_validate_table(self, client, auth_headers, seed_table, seed_column):
+    def test_validate_table_records_signed_in_user(self, client, editor_user, auth_headers, seed_table, seed_column):
         r = client.patch(
             f"/api/v1/tables/{seed_table.id}/validate",
-            json={"validated_by": "ds@example.com", "validated_columns": ["id"]},
+            json={"validated_by": "someone-else@example.com", "validated_columns": ["id"]},
             headers=auth_headers,
         )
         assert r.status_code == 200
         data = r.json()
         assert data["is_validated"] is True
-        assert data["validated_by"] == "ds@example.com"
+        assert data["validated_by"] == editor_user.email
         assert "id" in data["validated_columns"]
 
 

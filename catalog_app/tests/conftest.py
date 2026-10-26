@@ -1,60 +1,56 @@
 """
 Shared pytest fixtures.
 
-Uses the in-cluster PostgreSQL via a kubectl port-forward on localhost:5433.
-To start the port-forward (once, in a separate terminal):
+Tests run against a dedicated PostgreSQL database whose name must end in `_test`.
+The session drops every catalog table when it finishes, so never point this at real data.
 
-    kubectl port-forward svc/ds-catalog-postgres 5433:5432
+Start a local database (once):
 
-Or run it automatically in the background before the test session.
+    docker compose up -d db          # creates ds_catalog and ds_catalog_test
 
 Run tests:
     cd catalog_app
-    pytest tests/ -v
+    pytest
 """
 
 import os
-import subprocess
-import time
 import uuid
-from datetime import datetime, timezone
 from typing import Generator
+from urllib.parse import urlparse
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 # ── Database URL ──────────────────────────────────────────────────────────────
-# Use ds_catalog_test if it exists, else fall back to ds_catalog with a
-# per-session schema prefix to avoid polluting production data.
 
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql://catalog:catalog@localhost:5433/ds_catalog",
+    "postgresql://catalog:catalog@localhost:5432/ds_catalog_test",
 )
 
+_db_name = urlparse(TEST_DB_URL).path.lstrip("/")
+if not _db_name.endswith("_test"):
+    raise pytest.UsageError(
+        f"Refusing to run: TEST_DATABASE_URL points at database '{_db_name}'. "
+        "The test session drops all tables, so the database name must end in '_test'."
+    )
+
 # ── patch settings BEFORE importing the app ───────────────────────────────────
-os.environ.setdefault("DATABASE_URL", TEST_DB_URL)
-os.environ.setdefault("JWT_SECRET", "test-secret-that-is-long-enough-32b")
-os.environ.setdefault("SECRET_KEY", "test-secret-that-is-long-enough-32b")
+os.environ["DATABASE_URL"] = TEST_DB_URL
+os.environ.setdefault("JWT_SECRET", "test-secret-that-is-at-least-32-characters-long")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "")
 os.environ.setdefault("GOOGLE_CLIENT_SECRET", "")
+os.environ.setdefault("GOOGLE_CHAT_WEBHOOK_URL", "")
 os.environ.setdefault("FRONTEND_URL", "http://localhost:5173")
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
-from backend.config import settings  # noqa: E402
-
-settings.database_url = TEST_DB_URL
-settings.jwt_secret = "test-secret-that-is-long-enough-32b"
-
 from backend.database import Base, get_db  # noqa: E402
+from backend.dependencies.auth import create_token  # noqa: E402
 from backend.main import app  # noqa: E402
 from backend.models.catalog import (  # noqa: E402
     Dataset,
-    GCPSource,
-    MetadataChangeLog,
-    SchemaChange,
     Table,
     TableColumn,
     User,
@@ -65,38 +61,14 @@ from backend.models.catalog import (  # noqa: E402
 engine = create_engine(TEST_DB_URL, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# ── Port-forward management ───────────────────────────────────────────────────
-
-_pf_proc = None
-
-
-def _ensure_port_forward():
-    """Start kubectl port-forward if port 5433 is not already listening."""
-    import socket
-    global _pf_proc
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        if s.connect_ex(("127.0.0.1", 5433)) == 0:
-            return  # already open
-    _pf_proc = subprocess.Popen(
-        ["kubectl", "port-forward", "svc/ds-catalog-postgres", "5433:5432"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(3)
-
 
 # ── Session-scoped: create tables once, drop after all tests ──────────────────
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_db():
-    _ensure_port_forward()
-    # Create test schema
     Base.metadata.create_all(bind=engine)
     yield
-    # Drop only test-created tables — use a clean slate each session
     Base.metadata.drop_all(bind=engine)
-    if _pf_proc:
-        _pf_proc.terminate()
 
 
 # ── Per-test: transactional rollback for isolation ────────────────────────────
@@ -128,33 +100,44 @@ def client(db) -> Generator:
     app.dependency_overrides.clear()
 
 
-# ── JWT helpers ───────────────────────────────────────────────────────────────
+# ── Users + auth headers ──────────────────────────────────────────────────────
 
-def make_token(role: str = "editor") -> str:
-    from datetime import timedelta
-
-    try:
-        from jose import jwt
-    except ImportError:
-        import jwt  # type: ignore
-
-    payload = {
-        "sub": str(uuid.uuid4()),
-        "email": "test@example.com",
-        "role": role,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
-    }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+def make_user(db, role: str = "editor", is_active: bool = True) -> User:
+    user = User(
+        email=f"{role}-{uuid.uuid4().hex[:8]}@example.com",
+        name=f"Test {role}",
+        role=role,
+        is_active=is_active,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
-@pytest.fixture()
-def auth_headers() -> dict:
-    return {"Authorization": f"Bearer {make_token('editor')}"}
+def bearer(user: User) -> dict:
+    return {"Authorization": f"Bearer {create_token(user)}"}
 
 
 @pytest.fixture()
-def admin_headers() -> dict:
-    return {"Authorization": f"Bearer {make_token('admin')}"}
+def viewer_headers(db) -> dict:
+    return bearer(make_user(db, "viewer"))
+
+
+@pytest.fixture()
+def editor_user(db) -> User:
+    return make_user(db, "editor")
+
+
+@pytest.fixture()
+def auth_headers(editor_user) -> dict:
+    """Editor — can read and change catalog metadata."""
+    return bearer(editor_user)
+
+
+@pytest.fixture()
+def admin_headers(db) -> dict:
+    return bearer(make_user(db, "admin"))
 
 
 # ── Seed fixtures ─────────────────────────────────────────────────────────────

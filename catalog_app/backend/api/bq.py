@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from ..dependencies.auth import get_current_user
+from ..dependencies.auth import require_admin
 from ..models.catalog import GCPSource, User
 from ..services.bq_sync import SyncResult, _credentials_from_user_token, sync_project
 
@@ -42,8 +42,7 @@ class SourceResponse(BaseModel):
     created_at: Optional[datetime]
     created_by: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class SyncRequest(BaseModel):
@@ -60,11 +59,9 @@ class SyncResponse(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_user_credentials(current_user: dict | None, db: Session):
+def _get_user_credentials(current_user: dict, db: Session):
     """Return google.oauth2.credentials.Credentials for the current user, or None."""
-    if not current_user:
-        return None
-    user = db.query(User).filter(User.id == current_user["id"]).first()
+    user = db.query(User).filter(User.id == UUID(current_user["id"])).first()
     if not user or not user.gcp_access_token:
         return None
     return _credentials_from_user_token(
@@ -87,16 +84,13 @@ class ProjectInfo(BaseModel):
 @router.get("/projects", response_model=list[ProjectInfo])
 def list_accessible_projects(
     db: Session = Depends(get_db),
-    current_user: dict | None = Depends(get_current_user),
+    current_user: dict = Depends(require_admin),
 ):
     """
     List all GCP projects the logged-in user has access to,
     annotated with whether they're already added as sources.
     """
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    user = db.query(User).filter(User.id == current_user["id"]).first()
+    user = db.query(User).filter(User.id == UUID(current_user["id"])).first()
     if not user or not user.gcp_access_token:
         raise HTTPException(
             status_code=400,
@@ -140,14 +134,14 @@ def list_accessible_projects(
 
 # ── Sources CRUD ──────────────────────────────────────────────────────────────
 
-@router.get("/sources", response_model=list[SourceResponse])
+@router.get("/sources", response_model=list[SourceResponse], dependencies=[Depends(require_admin)])
 def list_sources(db: Session = Depends(get_db)):
     """List all configured GCP project sources."""
     return db.query(GCPSource).order_by(GCPSource.created_at).all()
 
 
 @router.post("/sources", response_model=SourceResponse, status_code=201)
-def add_source(body: SourceCreate, db: Session = Depends(get_db)):
+def add_source(body: SourceCreate, db: Session = Depends(get_db), admin: dict = Depends(require_admin)):
     """Add a new GCP project as a sync source."""
     existing = db.query(GCPSource).filter(GCPSource.project_id == body.project_id).first()
     if existing:
@@ -158,6 +152,7 @@ def add_source(body: SourceCreate, db: Session = Depends(get_db)):
         display_name=body.display_name or body.project_id,
         secret_name=body.secret_name or None,
         is_active=True,
+        created_by=admin["email"],
     )
     db.add(source)
     db.commit()
@@ -165,7 +160,7 @@ def add_source(body: SourceCreate, db: Session = Depends(get_db)):
     return source
 
 
-@router.patch("/sources/{source_id}", response_model=SourceResponse)
+@router.patch("/sources/{source_id}", response_model=SourceResponse, dependencies=[Depends(require_admin)])
 def update_source(source_id: UUID, body: SourceUpdate, db: Session = Depends(get_db)):
     """Update display name, secret, or active state."""
     source = db.query(GCPSource).filter(GCPSource.id == source_id).first()
@@ -182,7 +177,7 @@ def update_source(source_id: UUID, body: SourceUpdate, db: Session = Depends(get
     return source
 
 
-@router.delete("/sources/{source_id}", status_code=204)
+@router.delete("/sources/{source_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_source(source_id: UUID, db: Session = Depends(get_db)):
     """Remove a source (does not delete synced datasets/tables)."""
     source = db.query(GCPSource).filter(GCPSource.id == source_id).first()
@@ -198,7 +193,7 @@ def delete_source(source_id: UUID, db: Session = Depends(get_db)):
 def sync_one(
     req: SyncRequest = SyncRequest(),
     db: Session = Depends(get_db),
-    current_user: dict | None = Depends(get_current_user),
+    current_user: dict = Depends(require_admin),
 ):
     """
     Sync a single GCP project.  Defaults to GCP_PROJECT_ID from config.
@@ -227,7 +222,7 @@ def sync_one(
 @router.post("/sync/all", response_model=list[SyncResponse])
 def sync_all(
     db: Session = Depends(get_db),
-    current_user: dict | None = Depends(get_current_user),
+    current_user: dict = Depends(require_admin),
 ):
     """
     Sync all active GCP sources in order.
@@ -275,7 +270,7 @@ def sync_all(
 def sync_one_source(
     source_id: UUID,
     db: Session = Depends(get_db),
-    current_user: dict | None = Depends(get_current_user),
+    current_user: dict = Depends(require_admin),
 ):
     """Sync a specific source by its ID."""
     source = db.query(GCPSource).filter(GCPSource.id == source_id).first()

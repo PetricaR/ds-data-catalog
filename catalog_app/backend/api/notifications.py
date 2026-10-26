@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..dependencies.auth import require_editor
 from ..models.catalog import MetadataChangeLog
 from ..schemas.catalog import NotificationResponse
 
@@ -24,9 +25,9 @@ def list_notifications(limit: int = 20, db: Session = Depends(get_db)):
     return [NotificationResponse.model_validate(log) for log in logs]
 
 
-@router.post("/{notification_id}/dismiss")
-def dismiss_notification(notification_id: str, db: Session = Depends(get_db)):
-    log = db.query(MetadataChangeLog).filter(MetadataChangeLog.id == UUID(notification_id)).first()
+@router.post("/{notification_id}/dismiss", dependencies=[Depends(require_editor)])
+def dismiss_notification(notification_id: UUID, db: Session = Depends(get_db)):
+    log = db.query(MetadataChangeLog).filter(MetadataChangeLog.id == notification_id).first()
     if not log:
         raise HTTPException(status_code=404, detail="Notification not found")
     log.is_notified = True
@@ -34,7 +35,7 @@ def dismiss_notification(notification_id: str, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-@router.post("/dismiss-all")
+@router.post("/dismiss-all", dependencies=[Depends(require_editor)])
 def dismiss_all(db: Session = Depends(get_db)):
     db.query(MetadataChangeLog).filter(
         MetadataChangeLog.is_notified == False  # noqa: E712

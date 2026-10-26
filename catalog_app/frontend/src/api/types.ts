@@ -189,12 +189,20 @@ export interface QualityCheckResult {
   checked_at: string
 }
 
+export type UserRole = 'viewer' | 'editor' | 'admin'
+
 export interface User {
   id: string
   email: string
   name: string | null
   picture: string | null
-  role: 'viewer' | 'editor' | 'admin'
+  role: UserRole
+}
+
+export interface ManagedUser extends User {
+  is_active: boolean
+  created_at: string | null
+  last_login: string | null
 }
 
 export interface ColumnSearchResult {

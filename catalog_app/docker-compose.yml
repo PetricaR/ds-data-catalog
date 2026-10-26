@@ -1,4 +1,8 @@
-version: "3.9"
+# Local development stack: PostgreSQL + backend (auto-reload) + Vite dev server.
+#   cp .env.example .env    # then fill in JWT_SECRET, Google OAuth and ADMIN_EMAILS
+#   docker compose up
+# Postgres only (to run the backend or tests from your machine):
+#   docker compose up -d db
 
 services:
   db:
@@ -9,9 +13,10 @@ services:
       POSTGRES_PASSWORD: catalog
       POSTGRES_DB: ds_catalog
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U catalog -d ds_catalog"]
       interval: 5s
@@ -23,12 +28,12 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     restart: unless-stopped
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://catalog:catalog@db:5432/ds_catalog
-      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
-      CORS_ORIGINS: '["http://localhost:5173","http://localhost:3000","http://frontend:5173"]'
     depends_on:
       db:
         condition: service_healthy
@@ -40,8 +45,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.frontend
     restart: unless-stopped
+    environment:
+      API_PROXY_TARGET: http://backend:8000
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     depends_on:
       - backend
 

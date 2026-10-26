@@ -36,7 +36,7 @@ export default function TrustedData() {
   const [confirmTable, setConfirmTable] = useState<Table | null>(null)
 
   const revokeMutation = useMutation({
-    mutationFn: (id: string) => tablesApi.validate(id, { validated_by: '', validated_columns: [] }),
+    mutationFn: (id: string) => tablesApi.validate(id, { validated_columns: [] }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tables', { validated: true }] })
       setConfirmTable(null)

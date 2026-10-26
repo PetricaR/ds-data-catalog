@@ -4,10 +4,13 @@ metadata:
   name: ds-catalog-frontend
   labels:
     app: ds-catalog-frontend
+  annotations:
+    # Container-native load balancing for the HTTPS Ingress (DOMAIN mode)
+    cloud.google.com/neg: '{"ingress": true}'
 spec:
-  # LoadBalancer exposes the frontend (with nginx proxying /api/v1 to backend)
-  # Change to ClusterIP + Ingress if you want TLS / a custom domain
-  type: LoadBalancer
+  # ClusterIP behind the HTTPS Ingress when DOMAIN is set. Without DOMAIN, deploy.sh switches
+  # this to LoadBalancer (plain HTTP on a public IP, testing only).
+  type: ClusterIP
   selector:
     app: ds-catalog-frontend
   ports:

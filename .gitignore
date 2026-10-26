@@ -1,0 +1,25 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+catalog_env/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node / frontend build
+node_modules/
+dist/
+build/
+
+# Editors, OS and local tooling
+.claude/
+.idea/
+.vscode/
+*.swp
+*.swo
+*.log
+.DS_Store

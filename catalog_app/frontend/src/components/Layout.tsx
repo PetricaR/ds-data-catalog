@@ -26,28 +26,31 @@ import VerifiedIcon from '@mui/icons-material/Verified'
 import CloudSyncIcon from '@mui/icons-material/CloudSync'
 import SettingsIcon from '@mui/icons-material/Settings'
 import NotificationsIcon from '@mui/icons-material/Notifications'
+import PeopleIcon from '@mui/icons-material/People'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useAuth } from '../contexts/AuthContext'
+import { canEdit, isAdmin, useAuth } from '../contexts/AuthContext'
 import { notificationsApi } from '../api/notifications'
 import SearchBar from './SearchBar'
 
 const DRAWER_WIDTH = 210
 
-const SECTIONS: { heading?: string; items: { label: string; path: string; icon: ReactNode }[] }[] = [
-  {
-    items: [
-      { label: 'Browse',       path: '/browse',  icon: <StorageIcon fontSize="small" /> },
-      { label: 'Trusted Data', path: '/trusted', icon: <VerifiedIcon fontSize="small" /> },
-    ],
-  },
-  {
-    heading: 'Admin',
-    items: [
-      { label: 'GCP Sources', path: '/sources', icon: <CloudSyncIcon fontSize="small" /> },
-      { label: 'Setup',       path: '/setup',   icon: <SettingsIcon fontSize="small" /> },
-    ],
-  },
-]
+type Section = { heading?: string; items: { label: string; path: string; icon: ReactNode }[] }
+
+const MAIN_SECTION: Section = {
+  items: [
+    { label: 'Browse',       path: '/browse',  icon: <StorageIcon fontSize="small" /> },
+    { label: 'Trusted Data', path: '/trusted', icon: <VerifiedIcon fontSize="small" /> },
+  ],
+}
+
+const ADMIN_SECTION: Section = {
+  heading: 'Admin',
+  items: [
+    { label: 'GCP Sources', path: '/sources', icon: <CloudSyncIcon fontSize="small" /> },
+    { label: 'Users',       path: '/users',   icon: <PeopleIcon fontSize="small" /> },
+    { label: 'Setup',       path: '/setup',   icon: <SettingsIcon fontSize="small" /> },
+  ],
+}
 
 function NavItem({ label, path, icon, active, onClick }: {
   label: string; path: string; icon: ReactNode; active: boolean; onClick: () => void
@@ -92,6 +95,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null)
   const { user, logout } = useAuth()
   const qc = useQueryClient()
+  const sections = isAdmin(user) ? [MAIN_SECTION, ADMIN_SECTION] : [MAIN_SECTION]
+  const canDismiss = canEdit(user)
 
   const { data: notifications } = useQuery({
     queryKey: ['notifications'],
@@ -113,7 +118,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   const drawer = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', pt: 1, pb: 2 }}>
-      {SECTIONS.map((section, si) => (
+      {sections.map((section, si) => (
         <Box key={si}>
           {section.heading && (
             <Typography
@@ -137,7 +142,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               />
             ))}
           </List>
-          {si < SECTIONS.length - 1 && <Divider sx={{ mx: 2, my: 1.5 }} />}
+          {si < sections.length - 1 && <Divider sx={{ mx: 2, my: 1.5 }} />}
         </Box>
       ))}
 
@@ -206,7 +211,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           >
             <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}>
               <Typography variant="subtitle2" fontWeight={700} sx={{ flex: 1 }}>Notifications</Typography>
-              {(notifications?.length ?? 0) > 0 && (
+              {canDismiss && (notifications?.length ?? 0) > 0 && (
                 <Button size="small" sx={{ fontSize: '0.75rem', color: '#1a73e8' }}
                   onClick={() => { dismissAllMutation.mutate(); setNotifAnchor(null) }}>
                   Clear all
@@ -223,7 +228,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 <MenuItem
                   key={n.id}
                   sx={{ alignItems: 'flex-start', gap: 1.5, py: 1.5, px: 2 }}
-                  onClick={() => dismissMutation.mutate(n.id)}
+                  onClick={() => { if (canDismiss) dismissMutation.mutate(n.id) }}
                 >
                   <Box sx={{
                     width: 8, height: 8, borderRadius: '50%', bgcolor: '#1a73e8',

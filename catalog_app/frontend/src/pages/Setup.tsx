@@ -13,7 +13,8 @@ import CloudIcon from '@mui/icons-material/Cloud'
 import SyncIcon from '@mui/icons-material/Sync'
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch'
 import SchemaIcon from '@mui/icons-material/Schema'
-import axios from 'axios'
+import client from '../api/client'
+import { isAdmin, useAuth } from '../contexts/AuthContext'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,14 +25,30 @@ interface SetupStatus {
   has_data: boolean
   gemini_configured: boolean
   gchat_configured: boolean
-  gcp_project_id: string
+  admin_configured: boolean
   is_fresh_install: boolean
 }
 
 interface SyncResult {
   project_id: string
-  tables_synced: number
-  error?: string
+  result: {
+    tables_added: number
+    tables_updated: number
+    errors: string[]
+  }
+}
+
+function SignInPrompt() {
+  return (
+    <Box sx={{ bgcolor: '#e8f0fe', borderRadius: 1, p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+      <Typography variant="body2" sx={{ flex: 1 }}>
+        Sign in with an admin account (listed in <code>ADMIN_EMAILS</code>) to connect BigQuery projects.
+      </Typography>
+      <Button size="small" variant="contained" onClick={() => { window.location.href = '/api/v1/auth/login' }} sx={{ textTransform: 'none' }}>
+        Sign in
+      </Button>
+    </Box>
+  )
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
@@ -81,6 +98,8 @@ function CodeBlock({ children }: { children: string }) {
 
 export default function Setup() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const admin = isAdmin(user)
   const [activeStep, setActiveStep] = useState(0)
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(true)
@@ -102,7 +121,7 @@ export default function Setup() {
   // ── Load status ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    axios.get('/api/v1/setup/status')
+    client.get('/setup/status')
       .then(r => {
         setStatus(r.data)
         // Resume wizard at the right step for existing installs
@@ -127,7 +146,7 @@ export default function Setup() {
     setAddingSource(true)
     setSourceError('')
     try {
-      await axios.post('/api/v1/bq/sources', {
+      await client.post('/bq/sources', {
         project_id: projectId.trim(),
         display_name: displayName.trim() || projectId.trim(),
         ...(secretName.trim() ? { secret_name: secretName.trim() } : {}),
@@ -145,7 +164,7 @@ export default function Setup() {
     setSyncing(true)
     setSyncError('')
     try {
-      const r = await axios.post('/api/v1/bq/sync/all')
+      const r = await client.post('/bq/sync/all')
       setSyncResults(r.data)
       setSyncDone(true)
       setStatus(s => s ? { ...s, has_data: true } : s)
@@ -242,32 +261,35 @@ export default function Setup() {
                     <StatusChip ok={status?.oauth_configured ?? false} label={status?.oauth_configured ? 'OAuth configured' : 'OAuth not configured'} />
                   </Box>
 
-                  {status?.oauth_configured ? (
+                  {status?.oauth_configured && status?.admin_configured ? (
                     <Typography variant="body2" color="text.secondary">
-                      Google OAuth credentials are set. Users can sign in with their Google account.
+                      Google sign-in is configured and an admin account is set. Users from the allowed domains can sign in.
                     </Typography>
                   ) : (
                     <>
                       <Typography variant="body2" color="text.secondary">
-                        To enable Google login, create OAuth 2.0 credentials in Google Cloud Console and set these environment variables on the backend:
+                        Google sign-in is required — every page and API call needs a signed-in user. Create OAuth 2.0
+                        credentials in Google Cloud Console and set these environment variables on the backend:
                       </Typography>
                       <CodeBlock>{`GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your-client-secret`}</CodeBlock>
+GOOGLE_CLIENT_SECRET=your-client-secret
+ADMIN_EMAILS=you@yourcompany.com
+ALLOWED_EMAIL_DOMAINS=yourcompany.com`}</CodeBlock>
                       <Typography variant="body2" color="text.secondary">
                         In Google Cloud Console → APIs & Services → Credentials, add this as an authorized redirect URI:
                       </Typography>
                       <CodeBlock>{`${window.location.origin}/api/v1/auth/callback`}</CodeBlock>
-                      <Box sx={{ bgcolor: '#fff8e1', borderRadius: 1, p: 1.5 }}>
-                        <Typography variant="body2" color="warning.dark">
-                          You can skip this step for local development — the app will still work, but login won't be available.
-                        </Typography>
-                      </Box>
                     </>
                   )}
                 </Box>
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Button variant="contained" onClick={() => setActiveStep(2)} sx={{ textTransform: 'none' }}>
-                    {status?.oauth_configured ? 'Continue' : 'Skip for now'}
+                  <Button
+                    variant="contained"
+                    disabled={!status?.oauth_configured || !status?.admin_configured}
+                    onClick={() => setActiveStep(2)}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Continue
                   </Button>
                 </Box>
               </StepContent>
@@ -294,6 +316,8 @@ GOOGLE_CLIENT_SECRET=your-client-secret`}</CodeBlock>
                         Project <strong>{projectId}</strong> added successfully!
                       </Typography>
                     </Box>
+                  ) : !admin ? (
+                    <SignInPrompt />
                   ) : (
                     <>
                       <Typography variant="body2" color="text.secondary">
@@ -319,12 +343,12 @@ GOOGLE_CLIENT_SECRET=your-client-secret`}</CodeBlock>
                       />
                       <TextField
                         label="Service Account Secret Name (optional)"
-                        placeholder="projects/123/secrets/bq-sa-key"
+                        placeholder="bq-sa-key"
                         value={secretName}
                         onChange={e => setSecretName(e.target.value)}
                         size="small"
                         fullWidth
-                        helperText="Secret Manager path to a service account key JSON. Leave blank to use Workload Identity / ADC."
+                        helperText="Name of a Secret Manager secret in this project that holds a service account key JSON. Leave blank to use Workload Identity / ADC."
                       />
                       {sourceError && (
                         <Typography variant="body2" color="error">{sourceError}</Typography>
@@ -378,16 +402,20 @@ GOOGLE_CLIENT_SECRET=your-client-secret`}</CodeBlock>
                       <Typography variant="body2" fontWeight={500} color="success.main">Sync complete!</Typography>
                       {syncResults.map(r => (
                         <Box key={r.project_id} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                          {r.error
+                          {r.result.errors.length
                             ? <ErrorIcon color="error" fontSize="small" />
                             : <CheckCircleIcon color="success" fontSize="small" />
                           }
                           <Typography variant="body2">
-                            {r.project_id}: {r.error ? r.error : `${r.tables_synced} tables synced`}
+                            {r.project_id}: {r.result.errors.length
+                              ? r.result.errors.join('; ')
+                              : `${r.result.tables_added + r.result.tables_updated} tables synced`}
                           </Typography>
                         </Box>
                       ))}
                     </Box>
+                  ) : !admin ? (
+                    <SignInPrompt />
                   ) : (
                     <>
                       <Typography variant="body2" color="text.secondary">
@@ -439,23 +467,18 @@ GOOGLE_CLIENT_SECRET=your-client-secret`}</CodeBlock>
                     <StatusChip ok={status?.database_connected ?? false} label="Database" />
                     <StatusChip ok={status?.oauth_configured ?? false} label="Google Login" />
                     <StatusChip ok={(status?.bq_sources_count ?? 0) > 0} label="BigQuery" />
-                    <OptionalChip ok={status?.gemini_configured ?? false} label="AI Insights" />
+                    <OptionalChip ok={status?.gemini_configured ?? false} label="Gemini API key" />
                     <OptionalChip ok={status?.gchat_configured ?? false} label="Google Chat" />
                   </Box>
 
-                  {(!status?.oauth_configured || !status?.gemini_configured || !status?.gchat_configured) && (
+                  {(!status?.gemini_configured || !status?.gchat_configured) && (
                     <>
                       <Divider />
                       <Typography variant="body2" fontWeight={500}>Optional integrations you can configure later:</Typography>
                       <Box component="ul" sx={{ m: 0, pl: 2.5, '& li': { mb: 0.5 } }}>
-                        {!status?.oauth_configured && (
-                          <li><Typography variant="body2">
-                            <strong>Google Login</strong> — set <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>
-                          </Typography></li>
-                        )}
                         {!status?.gemini_configured && (
                           <li><Typography variant="body2">
-                            <strong>AI Insights</strong> — set <code>GEMINI_API_KEY</code> to enable one-click table analysis
+                            <strong>AI Insights</strong> — run on Vertex AI by default; set <code>GEMINI_API_KEY</code> to use the Gemini API instead
                           </Typography></li>
                         )}
                         {!status?.gchat_configured && (
