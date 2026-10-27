@@ -209,7 +209,7 @@ def client_problem(client: OAuthClient) -> Optional[str]:
                                verify_with_google(client.client_id, client.client_secret))
             finally:
                 _recheck_lock.release()
-        health = _health
+        health = _health or health
     return health.verdict.message if health.verdict.status == "rejected" else None
 
 
