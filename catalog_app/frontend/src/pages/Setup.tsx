@@ -248,7 +248,7 @@ export default function Setup() {
         // Resume wizard at the right step for existing installs
         if (!s.database_connected) {
           setActiveStep(0)
-        } else if (!s.oauth_configured || !s.admin_configured) {
+        } else if (!s.oauth_configured || !s.admin_configured || s.oauth_client_error) {
           setActiveStep(1)
         } else if (s.bq_sources_count === 0) {
           setActiveStep(2)
@@ -431,11 +431,26 @@ export default function Setup() {
               <StepContent>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <StatusChip ok={status?.oauth_configured ?? false} label={status?.oauth_configured ? 'OAuth client configured' : 'OAuth client not configured'} />
+                    {status?.oauth_client_error ? (
+                      <StatusChip ok={false} label="Google rejects the OAuth client" />
+                    ) : (
+                      <StatusChip ok={status?.oauth_configured ?? false} label={status?.oauth_configured ? 'OAuth client configured' : 'OAuth client not configured'} />
+                    )}
                     <StatusChip ok={status?.admin_configured ?? false} label={status?.admin_configured ? 'Admin account set' : 'No admin account'} />
                   </Box>
 
-                  {status?.oauth_configured ? (
+                  {status?.oauth_client_error ? (
+                    <Box sx={{ bgcolor: '#fce8e6', borderRadius: 1, p: 1.5 }}>
+                      <Typography variant="body2" color="error.main" fontWeight={500}>
+                        Google rejects the configured OAuth client: {status.oauth_client_error}
+                      </Typography>
+                      <Typography variant="body2" sx={{ mt: 0.5 }}>
+                        {status.oauth_source === 'environment'
+                          ? <>Restore it in Google Cloud (Google Auth Platform → Clients), or create a new one and update <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> on the backend, then restart it. To enter it here instead, remove both variables and restart.</>
+                          : 'Restore it in Google Cloud (Google Auth Platform → Clients), or create a new one and enter it below.'}
+                      </Typography>
+                    </Box>
+                  ) : status?.oauth_configured ? (
                     <Typography variant="body2" color="text.secondary">
                       {status.oauth_source === 'environment'
                         ? <>Google sign-in uses the OAuth client from the <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> environment
@@ -462,10 +477,10 @@ export default function Setup() {
                       <CodeBlock>{status.redirect_uri}</CodeBlock>
                     </>
                   )}
-                  {!status?.oauth_configured && status?.oauth_source !== 'environment' && (
+                  {(!status?.oauth_configured || status?.oauth_client_error) && status?.oauth_source !== 'environment' && (
                     <OAuthClientForm admin={admin} onSaved={oauthSaved} />
                   )}
-                  {status?.oauth_configured && status.oauth_source === 'database' && (
+                  {status?.oauth_configured && !status.oauth_client_error && status.oauth_source === 'database' && (
                     <>
                       <Button
                         variant="text"
@@ -492,7 +507,7 @@ export default function Setup() {
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <Button
                     variant="contained"
-                    disabled={!status?.oauth_configured || !status?.admin_configured}
+                    disabled={!status?.oauth_configured || !status?.admin_configured || !!status?.oauth_client_error}
                     onClick={() => setActiveStep(2)}
                     sx={{ textTransform: 'none' }}
                   >
@@ -696,7 +711,7 @@ export default function Setup() {
 
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <StatusChip ok={status?.database_connected ?? false} label="Database" />
-                    <StatusChip ok={status?.oauth_configured ?? false} label="Google Login" />
+                    <StatusChip ok={!!status?.oauth_configured && !status.oauth_client_error} label="Google Login" />
                     <StatusChip ok={sourcesCount > 0} label="BigQuery" />
                     <OptionalChip ok={status?.team_access_configured ?? false} label="Team access" />
                     <OptionalChip ok={status?.gemini_configured ?? false} label="Gemini API key" />

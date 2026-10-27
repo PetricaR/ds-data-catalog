@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
@@ -39,6 +39,7 @@ export default function Login() {
   const { setUser, user } = useAuth()
   const [error, setError] = useState<string | null>(null)
   const [freshInstall, setFreshInstall] = useState(false)
+  const [clientError, setClientError] = useState<string | null>(null)
 
   // The OAuth callback returns the token (or an error) in the URL fragment, which never reaches a server.
   useEffect(() => {
@@ -68,7 +69,10 @@ export default function Login() {
     setupApi.status()
       .then((status) => {
         if (!status.oauth_configured || !status.admin_configured) navigate('/setup', { replace: true })
-        else setFreshInstall(status.is_fresh_install)
+        else {
+          setFreshInstall(status.is_fresh_install)
+          setClientError(status.oauth_client_error)
+        }
       })
       .catch(() => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -151,6 +155,12 @@ export default function Login() {
 
           {error && (
             <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>
+          )}
+          {clientError && (
+            <Alert severity="error" sx={{ mb: 3 }}>
+              Google sign-in is not working: Google rejects this app's OAuth client ({clientError}). An administrator
+              needs to replace it — see <RouterLink to="/setup">setup</RouterLink>.
+            </Alert>
           )}
           {freshInstall && (
             <Alert severity="info" sx={{ mb: 3 }}>

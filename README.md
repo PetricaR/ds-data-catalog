@@ -99,12 +99,19 @@ The full route-by-role matrix is enforced in `backend/` and checked against ever
 
 **What BigQuery jobs run as.** Previews, quality checks, stats, DLP and Dataplex scans run as the catalog's service account (`ds-catalog-sa`, or the key in `BQ_SECRET_NAME`), not as the signed-in user. An editor can therefore sample rows from any table that service account can read. Grant the service account access only to the datasets the catalog should cover, and give the `editor` role only to people who may see that data.
 
-**Tokens.** After the OAuth callback, the app's JWT is handed to the browser in the URL fragment (never in a query string or server log) and stored in `localStorage`; it expires after `JWT_EXPIRE_MINUTES` (default 7 days). The backend refuses to start unless `JWT_SECRET` is a random value of at least 32 characters. The user's Google access and refresh tokens (scopes `bigquery.readonly` and `cloud-platform.read-only`) are stored in PostgreSQL and used to list the projects an admin can add as sources and to sync with the admin's own credentials. Protect the database accordingly.
+**Tokens.** After the OAuth callback, the app's JWT is handed to the browser in the URL fragment (never in a query string or server log) and stored in `localStorage`; it expires after `JWT_EXPIRE_MINUTES` (default 7 days). The backend refuses to start unless `JWT_SECRET` is a random value of at least 32 characters. The user's Google access and refresh tokens (scopes `bigquery.readonly` and `cloud-platform.read-only`) are stored in PostgreSQL, encrypted, and used to list the projects an admin can add as sources and to sync with the admin's own credentials.
+
+**Encryption at rest.** The users' Google tokens and an OAuth client secret entered in the setup wizard are stored as Fernet tokens (`backend/crypto.py`) under a key derived from `ENCRYPTION_KEY`, so a database dump or backup alone cannot use them. The API never returns them.
+- Without `ENCRYPTION_KEY` the key is derived from `JWT_SECRET`, and changing `JWT_SECRET` then loses the stored secrets: users sign in again, and a client stored by the wizard is entered again. Set `ENCRYPTION_KEY` so `JWT_SECRET` can be rotated freely. `start.sh` and `deploy.sh` generate it.
+- At startup the backend encrypts any plaintext tokens left from older versions and moves values under an older key to the current one. To rotate the key, set `ENCRYPTION_KEY=new,old`, restart, then remove `old`.
+- A value no configured key can read is left in place, so it comes back if the key is restored. Until then it reads as missing, and the backend logs how many there are.
 
 <a name="oauth-client-in-the-setup-wizard"></a>**OAuth client in the setup wizard.** Instead of `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, the client can be entered at `/setup`. Environment variables win: while either is set, the wizard cannot change the client.
 - The wizard checks the client with Google before saving it, by exchanging a made-up authorization code: Google reports a wrong, unknown or deleted client as such.
-- The client secret is stored in the `app_settings` table, encrypted (Fernet) with a key derived from `JWT_SECRET`. It is never returned by the API. A database dump alone therefore cannot use it, nor the stored Google refresh tokens, which need it. If `JWT_SECRET` changes, the stored secret can no longer be read and has to be entered again.
-- Before anyone can sign in, saving requires the **setup token**, which the backend prints to its log at startup while no client is configured. Run `python -m backend.setup_token` where the backend runs (in `catalog_app/`, or `kubectl exec deploy/ds-catalog-backend -- python -m backend.setup_token`) to get it at any other time, for example after the client was deleted and nobody can sign in. The token is derived from `JWT_SECRET` and the stored client, so every replica accepts it and it stops working once a client is saved with it. A signed-in admin can replace the client without it.
+- The client secret is stored encrypted in the `app_settings` table (see *Encryption at rest*).
+- Before anyone can sign in, saving requires the **setup token**, which the backend prints to its log at startup while no client is configured. With `LOG_SETUP_TOKEN=false` (set by `deploy.sh`, since project members who can read Cloud Logging may be more than your admins) the log only says how to get it. Run `python -m backend.setup_token` where the backend runs (in `catalog_app/`, or `kubectl exec deploy/ds-catalog-backend -- python -m backend.setup_token`) to get it at any other time, for example after the client was deleted and nobody can sign in. The token is derived from `JWT_SECRET` and the stored client, so every replica accepts it and it stops working once a client is saved with it. A signed-in admin can replace the client without it.
+
+**OAuth client health.** Google deletes OAuth clients that go unused for months. The backend checks the configured client (from the environment or the wizard) with Google at startup and every `OAUTH_CHECK_INTERVAL_MINUTES` (default 6 hours). It does this with the same made-up code exchange as above. If Google rejects the client, the backend logs it, the login page says sign-in is broken, and `/setup` explains how to replace the client. A rejected client is checked again every few minutes, so restoring it in Google Cloud clears the warning.
 
 **Network.** Deploy with `DOMAIN` set so the app is served over HTTPS behind a GKE Ingress with a Google-managed certificate. For an extra gate at the load balancer, add [Identity-Aware Proxy](#optional-identity-aware-proxy).
 
@@ -121,7 +128,7 @@ Prerequisites: Python 3.12, Node.js 20 and Docker (for PostgreSQL). For BigQuery
    ```bash
    cd catalog_app
    cp .env.example .env
-   # set JWT_SECRET (openssl rand -hex 32), ADMIN_EMAILS, ALLOWED_EMAIL_DOMAINS
+   # set JWT_SECRET and ENCRYPTION_KEY (openssl rand -hex 32 each), ADMIN_EMAILS, ALLOWED_EMAIL_DOMAINS
    # and GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (or enter those in the setup wizard)
    ```
 
@@ -201,6 +208,7 @@ echo -n "bq-sa-key-secret"     | gcloud secrets create ds-catalog-bq-secret-name
 | `GOOGLE_CHAT_WEBHOOK_URL` | `ds-catalog-google-chat-webhook` | optional |
 | `BQ_SECRET_NAME` | `ds-catalog-bq-secret-name` | optional — name of a secret holding a service-account key JSON for BigQuery jobs |
 | `POSTGRES_PASSWORD`, `DATABASE_URL` | `ds-catalog-postgres-password` | generated on the first deploy |
+| `ENCRYPTION_KEY` | `ds-catalog-encryption-key` | generated on the first deploy; keep it (see [Encryption at rest](#security-model)) |
 
 Secrets are copied into the Kubernetes secret `ds-catalog-secret` at deploy time. After rotating one, run `./deploy.sh secrets`.
 
@@ -257,8 +265,11 @@ All backend settings are environment variables (`backend/config.py`). In product
 | `JWT_SECRET` | — (required) | At least 32 random characters; the backend will not start without it |
 | `JWT_ALGORITHM` | `HS256` | `HS256`, `HS384` or `HS512` |
 | `JWT_EXPIRE_MINUTES` | `10080` (7 days) | Session length |
+| `ENCRYPTION_KEY` | — (derived from `JWT_SECRET`) | Encrypts the secrets stored in the database; 32+ random characters, comma-separated to rotate (first encrypts, all decrypt) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | OAuth client. Leave both empty to enter it in the setup wizard instead; sign-in is unavailable until one or the other is done |
 | `FRONTEND_URL` | `http://localhost:5173` | Public URL of the app; the OAuth redirect URI is `<FRONTEND_URL>/api/v1/auth/callback` |
+| `OAUTH_CHECK_INTERVAL_MINUTES` | `360` | How often to ask Google whether the OAuth client still works; `0` turns the check off |
+| `LOG_SETUP_TOKEN` | `true` | Print the setup token in the startup log; if `false`, only `python -m backend.setup_token` shows it |
 | `CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | JSON array |
 | `ADMIN_EMAILS` | — | Comma-separated admin accounts |
 | `ALLOWED_EMAIL_DOMAINS` | — | Comma-separated domains allowed to sign in |
@@ -302,7 +313,7 @@ All endpoints are under `/api/v1` and expect `Authorization: Bearer <jwt>` unles
 | GET | `/auth/login` | public | Redirect to Google sign-in |
 | GET | `/auth/callback` | public | OAuth callback; redirects to `/login#token=…` |
 | GET | `/auth/me` | any | Current user profile and role |
-| GET | `/setup/status` | public | Setup wizard checks (booleans, counts and the OAuth redirect URI) |
+| GET | `/setup/status` | public | Setup wizard checks (booleans, counts, the OAuth redirect URI, and Google's reason if it rejects the OAuth client) |
 | PUT | `/setup/oauth` | admin or `X-Setup-Token` | Check the Google OAuth client with Google and store it, secret encrypted (409 while set in the environment) |
 | GET | `/datasets` | any | List datasets (`project_id`, `sensitivity_label`, `tags`, `owner`, `validated`, `skip`, `limit`) |
 | POST | `/datasets` | editor | Register a dataset |
@@ -389,7 +400,8 @@ kubectl exec ds-catalog-postgres-0 -- pg_dump -U catalog ds_catalog | gzip > ds_
 | Backend crash-loops with `JWT_SECRET must be a random value…` | Secret missing or too short | Create `jwt-secret-key` (32+ chars) and run `./deploy.sh secrets` |
 | Sign-in returns "not allowed to sign in" | Account not in `ADMIN_EMAILS`, `ALLOWED_EMAIL_DOMAINS` or `ALLOWED_EMAILS` | Re-run `deploy.sh` with the right lists |
 | Google shows `redirect_uri_mismatch` | Redirect URI not registered | Add `<FRONTEND_URL>/api/v1/auth/callback` to the OAuth client |
-| Google shows `Error 401: deleted_client` | The OAuth client was deleted in Google Cloud (Google also deletes clients unused for months) | Restore it under Google Auth Platform → Clients if still listed, or create a new one. Put it in the environment, or, if the client came from the setup wizard, replace it at `/setup` with the token from `python -m backend.setup_token`. Users sign in again afterwards |
+| Google shows `Error 401: deleted_client`, or the login page says Google rejects the OAuth client | The OAuth client was deleted in Google Cloud (Google also deletes clients unused for months) | Restore it under Google Auth Platform → Clients if still listed, or create a new one. Put it in the environment, or, if the client came from the setup wizard, replace it at `/setup` with the token from `python -m backend.setup_token`. Users sign in again afterwards |
+| Log says stored secrets "cannot be decrypted" | `ENCRYPTION_KEY` (or, without it, `JWT_SECRET`) changed or was removed | Restore the previous key, or list it after the new one (`ENCRYPTION_KEY=new,old`). Otherwise users sign in again and a wizard-stored OAuth client is entered again |
 | "Your sign-in session expired" | OAuth state cookie missing (blocked cookies, or more than 10 minutes on the consent screen) | Try again |
 | 403 on an action | Your role is too low | Ask an admin to change it on the Users page |
 | Certificate stays `Provisioning` | DNS does not point at `ds-catalog-ip` yet | Check the A record; `kubectl describe managedcertificate ds-catalog-cert` |

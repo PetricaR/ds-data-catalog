@@ -16,7 +16,7 @@ from ..config import settings
 from ..database import get_db
 from ..dependencies.auth import create_token, require_auth
 from ..models.catalog import User
-from ..services.oauth_client import get_oauth_client
+from ..services.oauth_client import get_oauth_client, redirect_uri
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -30,11 +30,6 @@ SCOPES = "openid email profile https://www.googleapis.com/auth/bigquery.readonly
 STATE_COOKIE = "ds_catalog_oauth_state"
 STATE_COOKIE_PATH = "/api/v1/auth"
 STATE_MAX_AGE_SECONDS = 600
-
-
-def _redirect_uri() -> str:
-    # Built from FRONTEND_URL, not the request, so it stays correct behind TLS-terminating proxies.
-    return settings.frontend_url.rstrip("/") + "/api/v1/auth/callback"
 
 
 def _to_login_page(**fragment: str) -> RedirectResponse:
@@ -59,7 +54,7 @@ def login(db: Session = Depends(get_db)):
     params = urlencode({
         "response_type": "code",
         "client_id": oauth.client_id,
-        "redirect_uri": _redirect_uri(),
+        "redirect_uri": redirect_uri(),
         "scope": SCOPES,
         "access_type": "offline",
         "prompt": "consent",
@@ -105,7 +100,7 @@ def callback(
                     "code": code,
                     "client_id": oauth.client_id,
                     "client_secret": oauth.client_secret,
-                    "redirect_uri": _redirect_uri(),
+                    "redirect_uri": redirect_uri(),
                     "grant_type": "authorization_code",
                 },
             )

@@ -5,6 +5,8 @@ export interface SetupStatus {
   oauth_configured: boolean
   // Where the OAuth client comes from; the wizard can only change one it stored itself
   oauth_source: 'environment' | 'database' | null
+  // Google's reason for rejecting the configured client at the last check (e.g. it was deleted)
+  oauth_client_error: string | null
   redirect_uri: string
   bq_sources_count: number
   has_data: boolean

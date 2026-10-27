@@ -42,6 +42,8 @@ os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ.setdefault("JWT_SECRET", "test-secret-that-is-at-least-32-characters-long")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "")
 os.environ.setdefault("GOOGLE_CLIENT_SECRET", "")
+os.environ.setdefault("ENCRYPTION_KEY", "")
+os.environ.setdefault("OAUTH_CHECK_INTERVAL_MINUTES", "0")  # no calls to Google from the startup watcher
 os.environ.setdefault("GOOGLE_CHAT_WEBHOOK_URL", "")
 os.environ.setdefault("FRONTEND_URL", "http://localhost:5173")
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")

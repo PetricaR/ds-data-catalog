@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -5,17 +6,23 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import auth, bq, datasets, notifications, schema_changes, search, setup, stats, tables, tags, users
 from .config import settings
+from .crypto import reencrypt_stored_secrets
 from .database import SessionLocal, init_db
 from .dependencies.auth import require_auth
-from .services.oauth_client import log_setup_token_if_unconfigured
+from .services.oauth_client import log_setup_token_if_unconfigured, watch_oauth_client
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     with SessionLocal() as db:
+        reencrypt_stored_secrets(db)
         log_setup_token_if_unconfigured(db)
+    interval = settings.oauth_check_interval_minutes
+    watcher = asyncio.create_task(watch_oauth_client(interval)) if interval > 0 else None
     yield
+    if watcher:
+        watcher.cancel()
 
 
 app = FastAPI(

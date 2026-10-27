@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import relationship
 
+from ..crypto import EncryptedText
 from ..database import Base
 
 
@@ -35,8 +36,8 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     last_login = Column(DateTime(timezone=True))
-    gcp_access_token = Column(Text)
-    gcp_refresh_token = Column(Text)
+    gcp_access_token = Column(EncryptedText)   # Google tokens, encrypted at rest (backend/crypto.py)
+    gcp_refresh_token = Column(EncryptedText)
     gcp_token_expiry = Column(DateTime(timezone=True))
 
 
@@ -188,6 +189,6 @@ class AppSetting(Base):
     __tablename__ = "app_settings"
 
     key = Column(String(100), primary_key=True)
-    value = Column(Text, nullable=False)        # secrets are stored encrypted, see services/oauth_client.py
+    value = Column(Text, nullable=False)        # secrets are encrypted by the code that stores them (backend/crypto.py)
     updated_at = Column(DateTime(timezone=True), default=utcnow)
     updated_by = Column(String(255))            # admin email or "setup token"

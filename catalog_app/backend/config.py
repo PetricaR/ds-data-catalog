@@ -24,10 +24,12 @@ class Settings(BaseSettings):
     gcp_project_id: str = ""
     bq_secret_name: str = ""        # Secret Manager secret name for the BQ service account key
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
-    # Google OAuth2
+    # Google OAuth2 (leave both empty to enter the client in the setup wizard)
     google_client_id: str = ""
     google_client_secret: str = ""
     frontend_url: str = "http://localhost:5173"
+    oauth_check_interval_minutes: int = 360  # how often to ask Google whether the client still works; 0 = never
+    log_setup_token: bool = True       # print the setup token at startup; if false, only `python -m backend.setup_token`
     google_chat_webhook_url: str = ""  # Google Chat space webhook URL
     gemini_api_key: str = ""           # Gemini API key (leave empty to use Vertex AI / ADC)
     # Access control (comma-separated lists, case-insensitive)
@@ -39,6 +41,8 @@ class Settings(BaseSettings):
     jwt_secret: str = ""               # required — at least 32 random characters
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
+    # Secrets stored in the database (comma-separated: the first encrypts, all decrypt). Empty = derived from JWT_SECRET
+    encryption_key: str = ""
 
     @field_validator("jwt_secret")
     @classmethod
@@ -49,6 +53,21 @@ class Settings(BaseSettings):
                 "(generate one with `openssl rand -hex 32`)"
             )
         return value
+
+    @field_validator("encryption_key")
+    @classmethod
+    def _encryption_keys_are_strong(cls, value: str) -> str:
+        for key in (k.strip() for k in value.split(",") if k.strip()):
+            if key in _PLACEHOLDER_SECRETS or len(key) < _MIN_SECRET_LENGTH:
+                raise ValueError(
+                    f"Each ENCRYPTION_KEY must be a random value of at least {_MIN_SECRET_LENGTH} characters "
+                    "(generate one with `openssl rand -hex 32`)"
+                )
+        return value
+
+    @property
+    def encryption_keys(self) -> list[str]:
+        return [k.strip() for k in self.encryption_key.split(",") if k.strip()]
 
     @field_validator("jwt_algorithm")
     @classmethod

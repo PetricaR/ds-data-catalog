@@ -1,5 +1,9 @@
 """Setup wizard status endpoint — public, so it must never leak configuration values."""
 
+import asyncio
+import dataclasses
+import logging
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -73,6 +77,14 @@ def _google_says(status_code: int, body: dict) -> MagicMock:
     resp = MagicMock(status_code=status_code)
     resp.json.return_value = body
     return MagicMock(return_value=resp)
+
+
+@pytest.fixture(autouse=True)
+def forget_client_health(monkeypatch):
+    monkeypatch.setattr(oauth_client, "_health", None)
+
+
+GOOGLE_DELETED = (401, {"error": "deleted_client", "error_description": "The OAuth client was deleted."})
 
 
 @pytest.fixture()
@@ -164,8 +176,7 @@ class TestOAuthClientSetup:
         assert client.get(STATUS_URL).json()["oauth_source"] == "environment"
 
     def test_client_rejected_by_google_is_not_saved(self, client, db, unconfigured):
-        post = _google_says(401, {"error": "deleted_client", "error_description": "The OAuth client was deleted."})
-        with patch("backend.services.oauth_client.httpx.post", post):
+        with patch("backend.services.oauth_client.httpx.post", _google_says(*GOOGLE_DELETED)):
             r = _put(client, oauth_client.setup_token(db))
         assert r.status_code == 400
         assert "deleted" in r.json()["detail"]
@@ -192,3 +203,78 @@ class TestOAuthClientSetup:
         assert client.get(STATUS_URL).json()["oauth_configured"] is False
         assert _put(client, oauth_client.setup_token(db)).status_code == 200
         assert oauth_client.get_oauth_client(db).client_secret == CLIENT["client_secret"]
+
+    def test_setup_token_can_stay_out_of_the_log(self, db, unconfigured, monkeypatch, caplog):
+        token = oauth_client.setup_token(db)
+        with caplog.at_level(logging.WARNING):
+            oauth_client.log_setup_token_if_unconfigured(db)
+        assert token in caplog.text
+        caplog.clear()
+        monkeypatch.setattr(unconfigured, "log_setup_token", False)
+        with caplog.at_level(logging.WARNING):
+            oauth_client.log_setup_token_if_unconfigured(db)
+        assert token not in caplog.text
+        assert "python -m backend.setup_token" in caplog.text
+
+
+# ── Health of the configured client ───────────────────────────────────────────
+
+def _check(db, status_code, body):
+    with patch("backend.services.oauth_client.httpx.post", _google_says(status_code, body)):
+        oauth_client.check_oauth_client(db)
+
+
+class TestOAuthClientHealth:
+    def test_rejected_client_is_reported(self, client, db, configured):
+        assert client.get(STATUS_URL).json()["oauth_client_error"] is None
+        _check(db, *GOOGLE_DELETED)
+        data = client.get(STATUS_URL).json()
+        assert data["oauth_configured"] is True
+        assert data["oauth_client_error"] == "The OAuth client was deleted. (deleted_client)"
+        assert "client-secret-value" not in client.get(STATUS_URL).text
+
+    def test_working_client_has_no_problem(self, client, db, configured):
+        _check(db, 400, {"error": "invalid_grant"})
+        assert client.get(STATUS_URL).json()["oauth_client_error"] is None
+
+    def test_unreachable_google_keeps_the_last_answer(self, client, db, configured):
+        _check(db, *GOOGLE_DELETED)
+        with patch("backend.services.oauth_client.httpx.post", MagicMock(side_effect=httpx.ConnectError("offline"))):
+            oauth_client.check_oauth_client(db)
+        assert "deleted" in client.get(STATUS_URL).json()["oauth_client_error"]
+
+    def test_rejected_client_is_checked_again_after_a_while(self, client, db, configured, monkeypatch):
+        _check(db, *GOOGLE_DELETED)
+        with patch("backend.services.oauth_client.httpx.post", _google_says(400, {"error": "invalid_grant"})) as post:
+            assert client.get(STATUS_URL).json()["oauth_client_error"] is not None
+            post.assert_not_called()  # checked moments ago
+            old = dataclasses.replace(oauth_client._health, checked_at=oauth_client._health.checked_at - timedelta(minutes=10))
+            monkeypatch.setattr(oauth_client, "_health", old)
+            assert client.get(STATUS_URL).json()["oauth_client_error"] is None  # restored at Google
+            post.assert_called_once()
+
+    def test_problem_belongs_to_the_client_it_was_found_for(self, client, db, configured, monkeypatch):
+        _check(db, *GOOGLE_DELETED)
+        monkeypatch.setattr(configured, "google_client_secret", "a-new-secret-value")
+        assert client.get(STATUS_URL).json()["oauth_client_error"] is None
+
+    def test_replacing_the_client_in_the_wizard_clears_the_problem(self, client, db, unconfigured, google_accepts):
+        assert _put(client, oauth_client.setup_token(db)).status_code == 200
+        _check(db, *GOOGLE_DELETED)
+        assert client.get(STATUS_URL).json()["oauth_client_error"] is not None
+        replacement = {"client_id": "456-new.apps.googleusercontent.com", "client_secret": "GOCSPX-replacement"}
+        assert _put(client, oauth_client.setup_token(db), body=replacement).status_code == 200
+        assert client.get(STATUS_URL).json()["oauth_client_error"] is None
+
+    def test_watcher_checks_the_client(self, configured):
+        async def run_until_checked():
+            task = asyncio.create_task(oauth_client.watch_oauth_client(60))
+            for _ in range(200):
+                if oauth_client._health:
+                    break
+                await asyncio.sleep(0.01)
+            task.cancel()
+
+        with patch("backend.services.oauth_client.httpx.post", _google_says(*GOOGLE_DELETED)):
+            asyncio.run(run_until_checked())
+        assert oauth_client._health.verdict.status == "rejected"

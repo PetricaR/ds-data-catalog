@@ -10,7 +10,6 @@ from ..database import get_db
 from ..dependencies.auth import get_current_user
 from ..models.catalog import Dataset, GCPSource
 from ..services import oauth_client
-from .auth import _redirect_uri
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
@@ -37,8 +36,10 @@ def setup_status(db: Session = Depends(get_db)):
         "oauth_configured": client is not None,
         # "environment" | "database" | null — the wizard can only change a client it stored itself
         "oauth_source": "environment" if oauth_client.env_managed() else client and client.source,
+        # Google's reason for rejecting the configured client (e.g. it was deleted), from the last check
+        "oauth_client_error": oauth_client.client_problem(client) if client else None,
         # Must be registered as an authorised redirect URI on the OAuth client; built from FRONTEND_URL
-        "redirect_uri": _redirect_uri(),
+        "redirect_uri": oauth_client.redirect_uri(),
         "bq_sources_count": bq_sources_count,
         "has_data": datasets_count > 0,
         "gemini_configured": bool(settings.gemini_api_key),
@@ -92,8 +93,11 @@ def save_oauth_client(
             detail="GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are set in the environment. "
                    "Change them there, or remove both and restart to manage the client here.",
         )
-    ok, error = oauth_client.verify_with_google(body.client_id, body.client_secret, _redirect_uri())
-    if not ok:
-        raise HTTPException(status_code=400, detail=error)
+    verdict = oauth_client.verify_with_google(body.client_id, body.client_secret)
+    if verdict.status == "rejected":
+        raise HTTPException(status_code=400, detail=f"Google rejected this OAuth client: {verdict.message}")
+    if verdict.status != "ok":
+        raise HTTPException(status_code=400, detail=verdict.message)
     oauth_client.save_oauth_client(db, body.client_id, body.client_secret, updated_by)
+    oauth_client.record_verdict(body.client_id, body.client_secret, verdict)
     return {"oauth_configured": True, "oauth_source": "database"}

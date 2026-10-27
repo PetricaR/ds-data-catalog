@@ -298,14 +298,45 @@ postgres_password() {
     echo "$value"
 }
 
+encryption_key() {
+    local value generated=0
+    # Secret Manager is the source of truth (put "new,old" there to rotate). Losing the key means users
+    # sign in again and an OAuth client stored by the setup wizard is entered again.
+    value=$(read_secret ds-catalog-encryption-key)
+    [ -n "$value" ] && { echo "$value"; return; }
+    value=$(kubectl get secret ds-catalog-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.ENCRYPTION_KEY}' 2>/dev/null | base64 --decode 2>/dev/null || true)
+    if [ -z "$value" ]; then
+        value=$(openssl rand -hex 32)
+        generated=1
+    fi
+    if printf '%s' "$value" | gcloud secrets create ds-catalog-encryption-key \
+        --data-file=- --project="$PROJECT_ID" >/dev/null 2>&1; then
+        if [ "$generated" == 1 ]; then
+            echo -e "${GREEN}[INFO]${NC} Generated an encryption key and stored it in Secret Manager (ds-catalog-encryption-key)" >&2
+        else
+            echo -e "${GREEN}[INFO]${NC} Copied the cluster's encryption key to Secret Manager (ds-catalog-encryption-key)" >&2
+        fi
+    elif [ "$generated" == 1 ]; then
+        # Most likely the secret exists but could not be read: never replace a key that is in use.
+        echo -e "${RED}[ERROR]${NC} Could not read or create the Secret Manager secret ds-catalog-encryption-key. Check access to it and re-run." >&2
+        return 1
+    else
+        echo -e "${YELLOW}[WARN]${NC} Could not store the encryption key in Secret Manager (ds-catalog-encryption-key); it exists only in the Kubernetes secret ds-catalog-secret" >&2
+    fi
+    echo "$value"
+}
+
 sync_secrets_from_secret_manager() {
     print_info "Syncing secrets from Secret Manager..."
 
-    local pg_password
+    local pg_password enc_key
     pg_password=$(postgres_password)
+    enc_key=$(encryption_key) || exit 1
     local kubectl_args=(
         "--from-literal=POSTGRES_PASSWORD=${pg_password}"
         "--from-literal=DATABASE_URL=postgresql://catalog:${pg_password}@ds-catalog-postgres:5432/ds_catalog"
+        "--from-literal=ENCRYPTION_KEY=${enc_key}"
     )
 
     local missing_required=()
@@ -352,6 +383,7 @@ apply_configmap() {
         --from-literal=ALLOWED_EMAIL_DOMAINS="${ALLOWED_EMAIL_DOMAINS:-}" \
         --from-literal=ALLOWED_EMAILS="${ALLOWED_EMAILS:-}" \
         --from-literal=DEFAULT_ROLE="${DEFAULT_ROLE:-viewer}" \
+        --from-literal=LOG_SETUP_TOKEN=false \
         --dry-run=client -o yaml | kubectl apply -n "$NAMESPACE" -f -
 }
 
