@@ -9,7 +9,7 @@ from ..config import settings
 from ..database import get_db
 from ..dependencies.auth import require_auth, require_editor
 from ..models.catalog import Dataset, MetadataChangeLog, Table, TableColumn
-from ..schemas.catalog import ColumnUpdate, ExampleQuery, ProjectUsage, QualityCheckResult, TableCreate, TableInsights, TableResponse, TableUpdate, ValidatePayload
+from ..schemas.catalog import ColumnUpdate, ExampleQuery, ProjectUsageIn, QualityCheckResult, TableCreate, TableInsights, TableResponse, TableUpdate, ValidatePayload
 from ..services import bq_preview, bq_lineage, bq_quality, bq_usage, dlp_scan, dataplex_quality, asset_inventory
 from ..services.gchat import notify_trusted, notify_revoked, notify_metadata_change, notify_pii_detected, notify_quality_score
 
@@ -88,11 +88,17 @@ def list_tables(
     sensitivity_label: Optional[str] = None,
     tags: Optional[list[str]] = Query(default=None),
     owner: Optional[str] = None,
+    validated: Optional[bool] = None,
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
 ):
-    q = db.query(Table).filter(Table.is_active == True)
+    # Tables of a deleted dataset are hidden with it
+    q = db.query(Table).join(Dataset, Table.dataset_id == Dataset.id).filter(
+        Table.is_active == True, Dataset.is_active == True
+    )
+    if validated is not None:
+        q = q.filter(Table.is_validated == validated)
     if dataset_id:
         q = q.filter(Table.dataset_id == dataset_id)
     if sensitivity_label:
@@ -142,6 +148,8 @@ def get_table(table_id: UUID, db: Session = Depends(get_db), current_user: dict 
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
+    if ds is not None and not ds.is_active:
+        raise HTTPException(status_code=404, detail="Table not found")
     restricted = t.sensitivity_label == "restricted" or (ds is not None and ds.sensitivity_label == "restricted")
     if restricted and current_user["role"] not in ("editor", "admin"):
         raise HTTPException(status_code=403, detail="This table is restricted. Admin or editor access required.")
@@ -195,7 +203,8 @@ def validate_table(
     if not t:
         raise HTTPException(status_code=404, detail="Table not found")
     was_validated = t.is_validated
-    if was_validated:
+    trust = (not was_validated) if payload.trusted is None else payload.trusted
+    if not trust:
         # Revoke
         t.is_validated = False
         t.validated_by = None
@@ -212,7 +221,9 @@ def validate_table(
     db.refresh(t)
     ds = db.query(Dataset).filter(Dataset.id == t.dataset_id).first()
     bq_path = f"{ds.project_id}.{ds.dataset_id}.{t.table_id}" if ds else t.table_id
-    if t.is_validated:
+    if t.is_validated == was_validated and not t.is_validated:
+        pass  # revoking a table that wasn't trusted: nothing to announce
+    elif t.is_validated:
         notify_trusted(
             table_name=t.display_name or t.table_id,
             table_bq_path=bq_path,
@@ -480,7 +491,7 @@ def generate_insights(
 @router.put("/{table_id}/projects", response_model=TableResponse, dependencies=[Depends(require_editor)])
 def update_table_projects(
     table_id: UUID,
-    payload: list[ProjectUsage],
+    payload: list[ProjectUsageIn],
     db: Session = Depends(get_db),
 ):
     """Replace the list of DS projects that use this table."""

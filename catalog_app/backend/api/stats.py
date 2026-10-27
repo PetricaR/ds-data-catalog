@@ -12,16 +12,25 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 @router.get("", response_model=CatalogStats)
 def get_stats(db: Session = Depends(get_db)):
     total_datasets = db.query(func.count(Dataset.id)).filter(Dataset.is_active == True).scalar() or 0
-    total_tables = db.query(func.count(Table.id)).filter(Table.is_active == True).scalar() or 0
+    # Tables of a deleted dataset don't count
+    active_tables = (Table.is_active == True, Dataset.is_active == True)
+    total_tables = (
+        db.query(func.count(Table.id))
+        .join(Dataset, Table.dataset_id == Dataset.id)
+        .filter(*active_tables)
+        .scalar() or 0
+    )
     total_columns = (
         db.query(func.count(TableColumn.id))
         .join(Table, TableColumn.table_id == Table.id)
-        .filter(Table.is_active == True)
+        .join(Dataset, Table.dataset_id == Dataset.id)
+        .filter(*active_tables)
         .scalar() or 0
     )
     documented_tables = (
         db.query(func.count(Table.id))
-        .filter(Table.is_active == True, Table.description.isnot(None), Table.description != "")
+        .join(Dataset, Table.dataset_id == Dataset.id)
+        .filter(*active_tables, Table.description.isnot(None), Table.description != "")
         .scalar() or 0
     )
     coverage = round((documented_tables / total_tables * 100) if total_tables > 0 else 0.0, 1)

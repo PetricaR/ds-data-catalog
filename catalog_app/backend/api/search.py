@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, or_, text
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -21,7 +21,7 @@ def search_columns(
         db.query(TableColumn, Table, Dataset)
         .join(Table, TableColumn.table_id == Table.id)
         .join(Dataset, Table.dataset_id == Dataset.id)
-        .filter(TableColumn.name.ilike(f"%{name}%"), Table.is_active == True)
+        .filter(TableColumn.name.ilike(f"%{name}%"), Table.is_active == True, Dataset.is_active == True)
         .order_by(TableColumn.name)
         .limit(50)
         .all()
@@ -98,6 +98,7 @@ def search(
     if entity_type in (None, "table") or dataset_id or force_table_search:
         tq = db.query(Table, Dataset).join(Dataset, Table.dataset_id == Dataset.id).filter(
             Table.is_active == True,
+            Dataset.is_active == True,
             Table.search_vector.op("@@")(ts_query),
         )
         if project_id:
@@ -109,10 +110,10 @@ def search(
         if tags:
             tq = tq.filter(Table.tags.overlap(tags))
         if column_name:
-            tq = tq.join(TableColumn, TableColumn.table_id == Table.id).filter(
-                TableColumn.name.ilike(f"%{column_name}%")
-            )
-            tq = tq.distinct()
+            # A subquery rather than a join + DISTINCT: Postgres rejects DISTINCT with an ORDER BY on ts_rank
+            tq = tq.filter(Table.id.in_(
+                db.query(TableColumn.table_id).filter(TableColumn.name.ilike(f"%{column_name}%"))
+            ))
         tq = tq.order_by(
             func.ts_rank(Table.search_vector, ts_query).desc()
         )

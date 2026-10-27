@@ -22,7 +22,7 @@ router = APIRouter(prefix="/bq", tags=["bigquery"])
 class SourceCreate(BaseModel):
     project_id: str
     display_name: Optional[str] = None
-    secret_name: Optional[str] = None   # omit to use Workload Identity / ADC
+    secret_name: Optional[str] = None   # omit to sync as the signed-in admin, else Workload Identity / ADC
 
 
 class SourceUpdate(BaseModel):
@@ -60,8 +60,14 @@ class SyncResponse(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_user_credentials(current_user: dict, db: Session):
-    """Return google.oauth2.credentials.Credentials for the current user, or None."""
+def _get_user_credentials(current_user: dict, db: Session, secret_name: Optional[str] = None):
+    """Return google.oauth2.credentials.Credentials for the current user, or None.
+
+    None as well when the source has its own service-account key: that key is what the admin configured
+    the source to sync with, so it wins over the admin's personal token.
+    """
+    if secret_name:
+        return None
     user = db.query(User).filter(User.id == UUID(current_user["id"])).first()
     if not user or not user.gcp_access_token:
         return None
@@ -92,8 +98,9 @@ def list_accessible_projects(
     List all GCP projects the logged-in user has access to,
     annotated with whether they're already added as sources.
     """
-    user = db.query(User).filter(User.id == UUID(current_user["id"])).first()
-    if not user or not user.gcp_access_token:
+    # The stored access token lasts an hour; this refreshes it with the refresh token when needed
+    creds = _get_user_credentials(current_user, db)
+    if creds is None or not creds.token:
         raise HTTPException(
             status_code=400,
             detail="No GCP credentials on file — please sign out and sign in again to grant access.",
@@ -102,14 +109,15 @@ def list_accessible_projects(
     try:
         resp = httpx.get(
             "https://cloudresourcemanager.googleapis.com/v1/projects",
-            headers={"Authorization": f"Bearer {user.gcp_access_token}"},
+            headers={"Authorization": f"Bearer {creds.token}"},
             params={"filter": "lifecycleState:ACTIVE"},
             timeout=15,
         )
         if resp.status_code == 401:
+            # Not 401: that would read as an expired catalog session and sign the user out
             raise HTTPException(
-                status_code=401,
-                detail="GCP token expired — please sign out and sign in again.",
+                status_code=400,
+                detail="Your Google token has expired — please sign out and sign in again.",
             )
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
@@ -209,7 +217,7 @@ def sync_one(
             detail="project_id required (set GCP_PROJECT_ID in config or pass in body)",
         )
 
-    user_creds = _get_user_credentials(current_user, db)
+    user_creds = _get_user_credentials(current_user, db, req.secret_name)
     result = sync_project(
         db=db,
         project_id=project_id,
@@ -237,8 +245,6 @@ def sync_all(
             detail="No active sources found. Add sources via POST /bq/sources first.",
         )
 
-    user_creds = _get_user_credentials(current_user, db)
-
     responses = []
     for source in sources:
         # Mark as running
@@ -250,7 +256,7 @@ def sync_all(
                 db=db,
                 project_id=source.project_id,
                 secret_name=source.secret_name,
-                user_credentials=user_creds,
+                user_credentials=_get_user_credentials(current_user, db, source.secret_name),
             )
             source.last_sync_status = "ok" if not result.errors else "partial"
             source.last_sync_summary = result.to_dict()
@@ -282,13 +288,12 @@ def sync_one_source(
     source.last_sync_status = "running"
     db.commit()
 
-    user_creds = _get_user_credentials(current_user, db)
     try:
         result = sync_project(
             db=db,
             project_id=source.project_id,
             secret_name=source.secret_name,
-            user_credentials=user_creds,
+            user_credentials=_get_user_credentials(current_user, db, source.secret_name),
         )
         source.last_sync_status = "ok" if not result.errors else "partial"
         source.last_sync_summary = result.to_dict()

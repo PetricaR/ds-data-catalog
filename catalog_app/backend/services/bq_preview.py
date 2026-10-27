@@ -9,7 +9,6 @@ Two-step flow:
 import logging
 
 from google.cloud import bigquery
-from .bq_sync import _get_credentials
 from .bq_safety import assert_read_only
 
 logger = logging.getLogger(__name__)

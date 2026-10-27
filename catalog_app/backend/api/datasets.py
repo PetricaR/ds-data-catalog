@@ -9,7 +9,7 @@ from ..config import settings
 from ..database import get_db
 from ..dependencies.auth import require_auth, require_editor
 from ..models.catalog import Dataset, MetadataChangeLog, Table
-from ..schemas.catalog import DatasetCreate, DatasetResponse, DatasetUpdate, ProjectUsage
+from ..schemas.catalog import DatasetCreate, DatasetResponse, DatasetUpdate, ProjectUsageIn
 from ..services.gchat import notify_metadata_change
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -169,7 +169,7 @@ def validate_dataset(
 @router.put("/{dataset_id}/projects", response_model=DatasetResponse, dependencies=[Depends(require_editor)])
 def update_dataset_projects(
     dataset_id: UUID,
-    payload: list[ProjectUsage],
+    payload: list[ProjectUsageIn],
     db: Session = Depends(get_db),
 ):
     """Replace the list of DS projects that use this dataset."""
@@ -188,6 +188,7 @@ def delete_dataset(dataset_id: UUID, db: Session = Depends(get_db)):
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
     ds.is_active = False
+    db.query(Table).filter(Table.dataset_id == ds.id).update({"is_active": False}, synchronize_session=False)
     db.commit()
 
 

@@ -15,7 +15,10 @@ def list_tags(db: Session = Depends(get_db)):
         db.query(func.unnest(Dataset.tags)).filter(Dataset.is_active == True).all()
     )
     table_tags = (
-        db.query(func.unnest(Table.tags)).filter(Table.is_active == True).all()
+        db.query(func.unnest(Table.tags))
+        .join(Dataset, Table.dataset_id == Dataset.id)
+        .filter(Table.is_active == True, Dataset.is_active == True)
+        .all()
     )
     all_tags = sorted({t[0] for t in dataset_tags + table_tags if t[0]})
     return all_tags

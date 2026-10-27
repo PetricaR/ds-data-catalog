@@ -30,6 +30,11 @@ _DANGEROUS_PATTERN = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
+# Backtick-quoted identifiers and string literals, scanned left to right so a backtick inside a
+# string (as in the usage service's regex literal) doesn't start an identifier. Text inside them
+# never executes, so a project called `data-load-prod` or a column called `update` is not a keyword.
+_QUOTED = re.compile(r"`[^`]*`|'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")
+
 
 def assert_read_only(sql: str) -> None:
     """
@@ -46,7 +51,7 @@ def assert_read_only(sql: str) -> None:
     Raises:
         ValueError: if a dangerous keyword is detected.
     """
-    match = _DANGEROUS_PATTERN.search(sql)
+    match = _DANGEROUS_PATTERN.search(_QUOTED.sub(" ", sql))
     if match:
         raise ValueError(
             f"Unsafe BigQuery operation blocked: keyword '{match.group(1).upper()}' "

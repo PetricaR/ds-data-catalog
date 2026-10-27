@@ -54,14 +54,17 @@ def _credentials_from_user_token(
     client_secret: str | None,
     token_expiry=None,
 ):
-    """Build google.oauth2.credentials.Credentials from a stored user OAuth token."""
+    """Build google.oauth2.credentials.Credentials from a stored user OAuth token.
+
+    No scopes are set: a refresh then returns a token with every scope granted at sign-in. Naming only
+    bigquery.readonly here would narrow the refreshed token and break the Resource Manager calls.
+    """
     creds = oauth2_credentials.Credentials(
         token=access_token,
         refresh_token=refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
         client_id=client_id,
         client_secret=client_secret,
-        scopes=["https://www.googleapis.com/auth/bigquery.readonly"],
     )
     if token_expiry:
         creds.expiry = token_expiry.replace(tzinfo=None)  # google-auth expects naive UTC
@@ -291,21 +294,28 @@ def sync_project(
                             ))
                             logger.info("Schema change — column removed: %s.%s.%s", ds_id, tbl_id, col_name)
 
-                # Replace columns, preserving user-edited descriptions and pk flags
-                db.query(TableColumn).filter(TableColumn.table_id == db_tbl.id).delete()
+                # Update columns in place, so user-edited descriptions, PK and PII flags, column stats
+                # and column ids survive a re-sync; drop only the columns BigQuery no longer has
+                for name in existing_names - new_names:
+                    db.delete(existing_cols[name])
                 for pos, field in enumerate(bq_tbl.schema):
-                    old = existing_cols.get(field.name)
-                    db.add(
-                        TableColumn(
+                    col = existing_cols.get(field.name)
+                    if col is None:
+                        db.add(TableColumn(
                             table_id=db_tbl.id,
                             name=field.name,
                             data_type=field.field_type,
-                            description=old.description if (old and old.description) else field.description,
+                            description=field.description,
                             is_nullable=(field.mode != "REQUIRED"),
-                            is_primary_key=old.is_primary_key if old else False,
+                            is_primary_key=False,
                             position=pos,
-                        )
-                    )
+                        ))
+                    else:
+                        col.data_type = field.field_type
+                        col.is_nullable = field.mode != "REQUIRED"
+                        col.position = pos
+                        if not col.description and field.description:
+                            col.description = field.description
                     result.columns_synced += 1
 
         db.commit()

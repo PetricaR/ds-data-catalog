@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 # ── Column ────────────────────────────────────────────────────────────────────
@@ -38,6 +38,21 @@ class ProjectUsage(BaseModel):
     project_name: str
     jira_id: Optional[str] = None
     repo_url: Optional[str] = None
+
+
+class ProjectUsageIn(ProjectUsage):
+    """A project link as entered by an editor. The repo URL is shown as a link to every viewer, so only
+    http(s) is accepted — a `javascript:` URL would run in their browser."""
+
+    @field_validator("repo_url")
+    @classmethod
+    def _http_url(cls, value: Optional[str]) -> Optional[str]:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if not value.lower().startswith(("https://", "http://")):
+            raise ValueError("repo_url must start with https:// or http://")
+        return value
 
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
@@ -117,6 +132,9 @@ class TableUpdate(BaseModel):
 
 class ValidatePayload(BaseModel):
     validated_columns: list[str] = []
+    # True to mark trusted, False to revoke. Omitted, the call toggles — which re-certifies a table
+    # someone else already revoked, so clients should say what they mean.
+    trusted: Optional[bool] = None
 
 
 class TableInsights(BaseModel):

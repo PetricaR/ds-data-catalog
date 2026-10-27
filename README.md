@@ -319,16 +319,16 @@ All endpoints are under `/api/v1` and expect `Authorization: Bearer <jwt>` unles
 | POST | `/datasets` | editor | Register a dataset |
 | GET | `/datasets/{id}` | any | Dataset detail (`restricted`: editor) |
 | PUT | `/datasets/{id}` | editor | Update metadata |
-| DELETE | `/datasets/{id}` | editor | Soft-delete |
+| DELETE | `/datasets/{id}` | editor | Soft-delete, with its tables |
 | PATCH | `/datasets/{id}/validate` | editor | Toggle validation |
 | PUT | `/datasets/{id}/projects` | editor | Replace linked projects |
 | GET | `/datasets/{id}/tables` | any | Tables in a dataset |
-| GET | `/tables` | any | List tables |
+| GET | `/tables` | any | List tables (`dataset_id`, `sensitivity_label`, `tags`, `owner`, `validated`, `skip`, `limit`) |
 | POST | `/tables` | editor | Register a table |
 | GET | `/tables/{id}` | any | Table detail with columns (`restricted`: editor) |
 | PUT | `/tables/{id}` | editor | Update metadata |
 | DELETE | `/tables/{id}` | editor | Soft-delete |
-| PATCH | `/tables/{id}/validate` | editor | Mark trusted / revoke |
+| PATCH | `/tables/{id}/validate` | editor | Mark trusted (`{"trusted": true, "validated_columns": [...]}`) or revoke (`{"trusted": false}`); without `trusted` it toggles |
 | PATCH | `/tables/{id}/columns` | editor | Column descriptions and primary keys |
 | PATCH | `/tables/{id}/columns/{column_id}/pii` | editor | Toggle a column's PII flag |
 | PATCH | `/tables/{id}/queries` | editor | Replace example queries |
