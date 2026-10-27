@@ -10,8 +10,9 @@ import GoogleIcon from '@mui/icons-material/Google'
 import SearchIcon from '@mui/icons-material/Search'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import CloudSyncIcon from '@mui/icons-material/CloudSync'
-import { useAuth } from '../contexts/AuthContext'
+import { isAdmin, useAuth } from '../contexts/AuthContext'
 import { authApi } from '../api/auth'
+import { setupApi } from '../api/setup'
 import type { User } from '../api/types'
 
 const FEATURES = [
@@ -20,30 +21,56 @@ const FEATURES = [
   { icon: <VerifiedIcon sx={{ fontSize: 20 }} />, text: 'Validate and certify trusted data sources' },
 ]
 
+// After sign-in: back to where the user started (e.g. the setup wizard), else the wizard for an admin
+// on a fresh install, else the catalog.
+async function landingPage(user: User): Promise<string> {
+  const returnTo = authApi.takeReturnTo()
+  if (returnTo) return returnTo
+  if (!isAdmin(user)) return '/browse'
+  try {
+    return (await setupApi.status()).is_fresh_install ? '/setup' : '/browse'
+  } catch {
+    return '/browse'
+  }
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const { setUser, user } = useAuth()
   const [error, setError] = useState<string | null>(null)
+  const [freshInstall, setFreshInstall] = useState(false)
 
   // The OAuth callback returns the token (or an error) in the URL fragment, which never reaches a server.
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.slice(1))
-    if (!params.toString()) return
-    window.history.replaceState(null, '', window.location.pathname)
+    if (params.toString()) window.history.replaceState(null, '', window.location.pathname)
     const token = params.get('token')
     const userParam = params.get('user')
     if (token && userParam) {
+      let parsedUser: User
       try {
-        const parsedUser: User = JSON.parse(userParam)
-        authApi.storeToken(token, parsedUser)
-        setUser(parsedUser)
-        navigate('/browse', { replace: true })
+        parsedUser = JSON.parse(userParam)
       } catch {
         setError('Sign-in failed. Please try again.')
+        return
       }
-    } else {
-      setError(params.get('error') || 'Sign-in failed. Please try again.')
+      authApi.storeToken(token, parsedUser)
+      landingPage(parsedUser).then((path) => {
+        setUser(parsedUser)
+        navigate(path, { replace: true })
+      })
+      return
     }
+    if (params.toString()) setError(params.get('error') || 'Sign-in failed. Please try again.')
+
+    // Sign-in can't work until OAuth and an admin are configured — the setup wizard explains what's missing.
+    if (user) return
+    setupApi.status()
+      .then((status) => {
+        if (!status.oauth_configured || !status.admin_configured) navigate('/setup', { replace: true })
+        else setFreshInstall(status.is_fresh_install)
+      })
+      .catch(() => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -116,7 +143,7 @@ export default function Login() {
           </Box>
 
           <Typography variant="h4" fontWeight={700} gutterBottom sx={{ color: '#1f1f1f' }}>
-            Welcome back
+            {freshInstall ? 'Welcome' : 'Welcome back'}
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mb: 4, lineHeight: 1.6 }}>
             Sign in with your Google Workspace account to access your organization's data catalog.
@@ -124,6 +151,11 @@ export default function Login() {
 
           {error && (
             <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>
+          )}
+          {freshInstall && (
+            <Alert severity="info" sx={{ mb: 3 }}>
+              First-time setup: sign in with an account listed in <code>ADMIN_EMAILS</code> to connect your BigQuery projects.
+            </Alert>
           )}
 
           <Button

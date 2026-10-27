@@ -1,50 +1,64 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Button, Chip, CircularProgress, Divider, Paper, Step,
+  Box, Button, Chip, CircularProgress, Collapse, Divider, Paper, Step,
   StepContent, StepLabel, Stepper, TextField, Typography,
 } from '@mui/material'
+import { useQueryClient } from '@tanstack/react-query'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty'
 import StorageIcon from '@mui/icons-material/Storage'
 import LockIcon from '@mui/icons-material/Lock'
 import CloudIcon from '@mui/icons-material/Cloud'
 import SyncIcon from '@mui/icons-material/Sync'
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch'
 import SchemaIcon from '@mui/icons-material/Schema'
-import client from '../api/client'
+import { authApi } from '../api/auth'
+import { bqApi, type ProjectInfo } from '../api/bq'
+import { setupApi, type SetupStatus } from '../api/setup'
+import type { GCPSource } from '../api/types'
+import ProjectPicker from '../components/ProjectPicker'
 import { isAdmin, useAuth } from '../contexts/AuthContext'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface SetupStatus {
-  database_connected: boolean
-  oauth_configured: boolean
-  bq_sources_count: number
-  has_data: boolean
-  gemini_configured: boolean
-  gchat_configured: boolean
-  admin_configured: boolean
-  is_fresh_install: boolean
+interface SyncRow {
+  source: GCPSource
+  state: 'pending' | 'running' | 'ok' | 'partial' | 'error'
+  message?: string
 }
 
-interface SyncResult {
-  project_id: string
-  result: {
-    tables_added: number
-    tables_updated: number
-    errors: string[]
-  }
+function errorDetail(e: unknown, fallback: string): string {
+  return (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || fallback
 }
 
 function SignInPrompt() {
+  const { user } = useAuth()
+  if (user) {
+    return (
+      <Box sx={{ bgcolor: '#fef7e0', borderRadius: 1, p: 1.5 }}>
+        <Typography variant="body2">
+          Signed in as <strong>{user.email}</strong> ({user.role}). Ask an admin to finish setup.
+        </Typography>
+      </Box>
+    )
+  }
   return (
     <Box sx={{ bgcolor: '#e8f0fe', borderRadius: 1, p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
       <Typography variant="body2" sx={{ flex: 1 }}>
         Sign in with an admin account (listed in <code>ADMIN_EMAILS</code>) to connect BigQuery projects.
       </Typography>
-      <Button size="small" variant="contained" onClick={() => { window.location.href = '/api/v1/auth/login' }} sx={{ textTransform: 'none' }}>
+      <Button
+        size="small"
+        variant="contained"
+        onClick={() => {
+          authApi.setReturnTo('/setup')
+          window.location.href = '/api/v1/auth/login'
+        }}
+        sx={{ textTransform: 'none' }}
+      >
         Sign in
       </Button>
     </Box>
@@ -94,42 +108,58 @@ function CodeBlock({ children }: { children: string }) {
   )
 }
 
+function SyncRowIcon({ state }: { state: SyncRow['state'] }) {
+  if (state === 'running') return <CircularProgress size={16} />
+  if (state === 'ok') return <CheckCircleIcon color="success" fontSize="small" />
+  if (state === 'partial') return <WarningAmberIcon color="warning" fontSize="small" />
+  if (state === 'error') return <ErrorIcon color="error" fontSize="small" />
+  return <HourglassEmptyIcon color="disabled" fontSize="small" />
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Setup() {
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const { user } = useAuth()
   const admin = isAdmin(user)
   const [activeStep, setActiveStep] = useState(0)
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(true)
 
-  // Step 2 — BQ source form
+  // Step 2 — BQ sources
+  const [selectedProjects, setSelectedProjects] = useState<ProjectInfo[]>([])
+  const [manualEntry, setManualEntry] = useState(false)
   const [projectId, setProjectId] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [secretName, setSecretName] = useState('')
   const [addingSource, setAddingSource] = useState(false)
-  const [sourceAdded, setSourceAdded] = useState(false)
+  const [addedProjects, setAddedProjects] = useState<string[]>([])
   const [sourceError, setSourceError] = useState('')
 
-  // Step 3 — Sync
+  // Step 3 — Sync, one source per request so each stays short
   const [syncing, setSyncing] = useState(false)
-  const [syncResults, setSyncResults] = useState<SyncResult[]>([])
+  const [syncRows, setSyncRows] = useState<SyncRow[]>([])
   const [syncError, setSyncError] = useState('')
   const [syncDone, setSyncDone] = useState(false)
+
+  const sourcesCount = status?.bq_sources_count ?? 0
+  const sourceAdded = addedProjects.length > 0
 
   // ── Load status ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    client.get('/setup/status')
-      .then(r => {
-        setStatus(r.data)
+    setupApi.status()
+      .then(s => {
+        setStatus(s)
         // Resume wizard at the right step for existing installs
-        if (!r.data.database_connected) {
+        if (!s.database_connected) {
           setActiveStep(0)
-        } else if (r.data.bq_sources_count === 0) {
+        } else if (!s.oauth_configured || !s.admin_configured) {
+          setActiveStep(1)
+        } else if (s.bq_sources_count === 0) {
           setActiveStep(2)
-        } else if (!r.data.has_data) {
+        } else if (!s.has_data) {
           setActiveStep(3)
         } else {
           setActiveStep(4) // already set up
@@ -141,38 +171,83 @@ export default function Setup() {
 
   // ── Step actions ─────────────────────────────────────────────────────────────
 
-  async function addSource() {
-    if (!projectId.trim()) return
+  async function addSources(sources: { project_id: string; display_name?: string; secret_name?: string }[]) {
     setAddingSource(true)
     setSourceError('')
+    const added: string[] = []
     try {
-      await client.post('/bq/sources', {
-        project_id: projectId.trim(),
-        display_name: displayName.trim() || projectId.trim(),
-        ...(secretName.trim() ? { secret_name: secretName.trim() } : {}),
-      })
-      setSourceAdded(true)
-      setStatus(s => s ? { ...s, bq_sources_count: s.bq_sources_count + 1 } : s)
-    } catch (e: any) {
-      setSourceError(e?.response?.data?.detail || 'Failed to add source. Check the project ID and try again.')
+      for (const source of sources) {
+        await bqApi.addSource(source)
+        added.push(source.project_id)
+      }
+    } catch (e) {
+      setSourceError(errorDetail(e, 'Failed to add source. Check the project ID and try again.'))
     } finally {
+      if (added.length) {
+        setAddedProjects(prev => [...prev, ...added])
+        setStatus(s => s ? { ...s, bq_sources_count: s.bq_sources_count + added.length } : s)
+        setSelectedProjects([])
+        qc.invalidateQueries({ queryKey: ['gcp-projects'] })
+        qc.invalidateQueries({ queryKey: ['bq-sources'] })
+      }
       setAddingSource(false)
     }
+  }
+
+  function addSelectedProjects() {
+    addSources(selectedProjects.map(p => ({ project_id: p.project_id, display_name: p.display_name })))
+  }
+
+  function addManualProject() {
+    if (!projectId.trim()) return
+    addSources([{
+      project_id: projectId.trim(),
+      display_name: displayName.trim() || projectId.trim(),
+      ...(secretName.trim() ? { secret_name: secretName.trim() } : {}),
+    }])
   }
 
   async function runSync() {
     setSyncing(true)
     setSyncError('')
+    let sources: GCPSource[]
     try {
-      const r = await client.post('/bq/sync/all')
-      setSyncResults(r.data)
-      setSyncDone(true)
-      setStatus(s => s ? { ...s, has_data: true } : s)
-    } catch (e: any) {
-      setSyncError(e?.response?.data?.detail || 'Sync failed. Check your GCP credentials and project configuration.')
-    } finally {
+      sources = (await bqApi.listSources()).filter(s => s.is_active)
+    } catch (e) {
+      setSyncError(errorDetail(e, 'Could not load the connected projects.'))
       setSyncing(false)
+      return
     }
+    if (!sources.length) {
+      setSyncError('No active BigQuery projects to sync. Add one in the previous step.')
+      setSyncing(false)
+      return
+    }
+
+    const update = (index: number, row: Partial<SyncRow>) =>
+      setSyncRows(rows => rows.map((r, i) => i === index ? { ...r, ...row } : r))
+    setSyncRows(sources.map(source => ({ source, state: 'pending' })))
+
+    for (const [index, source] of sources.entries()) {
+      update(index, { state: 'running' })
+      try {
+        const { result } = await bqApi.syncSource(source.id)
+        const tables = result.tables_added + result.tables_updated
+        update(index, result.errors.length
+          ? { state: tables ? 'partial' : 'error', message: result.errors.join('; ') }
+          : { state: 'ok', message: `${tables} table${tables === 1 ? '' : 's'} synced` })
+      } catch (e) {
+        update(index, {
+          state: 'error',
+          message: errorDetail(e, 'The request failed or timed out — a large project may still be syncing. Check GCP Sources in a few minutes.'),
+        })
+      }
+    }
+
+    setupApi.status().then(setStatus).catch(() => {})
+    qc.invalidateQueries({ queryKey: ['bq-sources'] })
+    setSyncDone(true)
+    setSyncing(false)
   }
 
   // ── Render ────────────────────────────────────────────────────────────────────
@@ -228,7 +303,7 @@ export default function Setup() {
                     Verifying that all core services are running.
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 0.5 }}>
-                    <StatusChip ok label="API reachable" />
+                    <StatusChip ok={status !== null} label="API reachable" />
                     <StatusChip ok={status?.database_connected ?? false} label="Database connected" />
                   </Box>
                   {!status?.database_connected && (
@@ -258,27 +333,41 @@ export default function Setup() {
               <StepContent>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <StatusChip ok={status?.oauth_configured ?? false} label={status?.oauth_configured ? 'OAuth configured' : 'OAuth not configured'} />
+                    <StatusChip ok={status?.oauth_configured ?? false} label={status?.oauth_configured ? 'OAuth client configured' : 'OAuth client not configured'} />
+                    <StatusChip ok={status?.admin_configured ?? false} label={status?.admin_configured ? 'Admin account set' : 'No admin account'} />
                   </Box>
 
                   {status?.oauth_configured && status?.admin_configured ? (
                     <Typography variant="body2" color="text.secondary">
-                      Google sign-in is configured and an admin account is set. Users from the allowed domains can sign in.
+                      Google sign-in is configured and an admin account is set.
                     </Typography>
                   ) : (
                     <>
                       <Typography variant="body2" color="text.secondary">
-                        Google sign-in is required — every page and API call needs a signed-in user. Create OAuth 2.0
-                        credentials in Google Cloud Console and set these environment variables on the backend:
+                        Google sign-in is required — every page and API call needs a signed-in user. Set these
+                        environment variables on the backend, then restart it:
                       </Typography>
-                      <CodeBlock>{`GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your-client-secret
-ADMIN_EMAILS=you@yourcompany.com
-ALLOWED_EMAIL_DOMAINS=yourcompany.com`}</CodeBlock>
+                      <CodeBlock>{[
+                        ...(status?.oauth_configured ? [] : [
+                          'GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com',
+                          'GOOGLE_CLIENT_SECRET=your-client-secret',
+                        ]),
+                        ...(status?.admin_configured ? [] : ['ADMIN_EMAILS=you@yourcompany.com']),
+                      ].join('\n')}</CodeBlock>
+                      {!status?.oauth_configured && (
+                        <Typography variant="body2" color="text.secondary">
+                          Create the client in Google Cloud Console → APIs & Services → Credentials → OAuth client ID
+                          (Web application).
+                        </Typography>
+                      )}
+                    </>
+                  )}
+                  {status?.redirect_uri && (
+                    <>
                       <Typography variant="body2" color="text.secondary">
-                        In Google Cloud Console → APIs & Services → Credentials, add this as an authorized redirect URI:
+                        The OAuth client must list this as an authorized redirect URI (it is built from <code>FRONTEND_URL</code>):
                       </Typography>
-                      <CodeBlock>{`${window.location.origin}/api/v1/auth/callback`}</CodeBlock>
+                      <CodeBlock>{status.redirect_uri}</CodeBlock>
                     </>
                   )}
                 </Box>
@@ -295,25 +384,25 @@ ALLOWED_EMAIL_DOMAINS=yourcompany.com`}</CodeBlock>
               </StepContent>
             </Step>
 
-            {/* ── Step 2: Add BQ Source ─────────────────────────────────────────── */}
-            <Step completed={activeStep > 2 || sourceAdded || (status?.bq_sources_count ?? 0) > 0}>
+            {/* ── Step 2: Add BQ Sources ────────────────────────────────────────── */}
+            <Step completed={activeStep > 2 || sourceAdded || sourcesCount > 0}>
               <StepLabel StepIconProps={{ icon: steps[2].icon }}>
                 <Typography fontWeight={600}>Connect BigQuery</Typography>
               </StepLabel>
               <StepContent>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
-                  {(status?.bq_sources_count ?? 0) > 0 && !sourceAdded ? (
+                  {sourcesCount > 0 && !sourceAdded ? (
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                       <CheckCircleIcon color="success" fontSize="small" />
                       <Typography variant="body2" color="success.main" fontWeight={500}>
-                        {status!.bq_sources_count} BigQuery source{status!.bq_sources_count > 1 ? 's' : ''} already connected.
+                        {sourcesCount} BigQuery source{sourcesCount > 1 ? 's' : ''} already connected.
                       </Typography>
                     </Box>
                   ) : sourceAdded ? (
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                       <CheckCircleIcon color="success" fontSize="small" />
                       <Typography variant="body2" color="success.main" fontWeight={500}>
-                        Project <strong>{projectId}</strong> added successfully!
+                        Added <strong>{addedProjects.join(', ')}</strong>.
                       </Typography>
                     </Box>
                   ) : !admin ? (
@@ -321,60 +410,83 @@ ALLOWED_EMAIL_DOMAINS=yourcompany.com`}</CodeBlock>
                   ) : (
                     <>
                       <Typography variant="body2" color="text.secondary">
-                        Add your first GCP project. Light Data Catalog will sync all BigQuery datasets and tables from this project.
+                        Pick the GCP projects to catalog. Light Data Catalog will sync all their BigQuery datasets and tables.
                       </Typography>
-                      <TextField
-                        label="GCP Project ID"
-                        placeholder="my-gcp-project"
-                        value={projectId}
-                        onChange={e => setProjectId(e.target.value)}
-                        size="small"
-                        fullWidth
-                        required
-                        helperText="The GCP project ID, e.g. my-company-data"
-                      />
-                      <TextField
-                        label="Display Name (optional)"
-                        placeholder="My Data Project"
-                        value={displayName}
-                        onChange={e => setDisplayName(e.target.value)}
-                        size="small"
-                        fullWidth
-                      />
-                      <TextField
-                        label="Service Account Secret Name (optional)"
-                        placeholder="bq-sa-key"
-                        value={secretName}
-                        onChange={e => setSecretName(e.target.value)}
-                        size="small"
-                        fullWidth
-                        helperText="Name of a Secret Manager secret in this project that holds a service account key JSON. Leave blank to use Workload Identity / ADC."
-                      />
-                      {sourceError && (
-                        <Typography variant="body2" color="error">{sourceError}</Typography>
-                      )}
+                      <ProjectPicker enabled={activeStep === 2} selected={selectedProjects} onChange={setSelectedProjects} />
                       <Button
                         variant="outlined"
-                        onClick={addSource}
-                        disabled={!projectId.trim() || addingSource}
-                        startIcon={addingSource ? <CircularProgress size={16} /> : <CloudIcon />}
+                        onClick={addSelectedProjects}
+                        disabled={selectedProjects.length === 0 || addingSource}
+                        startIcon={addingSource && !manualEntry ? <CircularProgress size={16} /> : <CloudIcon />}
                         sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
                       >
-                        {addingSource ? 'Adding…' : 'Add Project'}
+                        {`Add ${selectedProjects.length || ''} Project${selectedProjects.length === 1 ? '' : 's'}`}
                       </Button>
+
+                      <Button
+                        variant="text"
+                        size="small"
+                        onClick={() => setManualEntry(m => !m)}
+                        sx={{ textTransform: 'none', alignSelf: 'flex-start', color: 'text.secondary' }}
+                      >
+                        {manualEntry ? 'Hide manual entry' : 'Project not listed? Enter a project ID manually'}
+                      </Button>
+                      <Collapse in={manualEntry}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                          <TextField
+                            label="GCP Project ID"
+                            placeholder="my-gcp-project"
+                            value={projectId}
+                            onChange={e => setProjectId(e.target.value)}
+                            size="small"
+                            fullWidth
+                            required
+                            helperText="The GCP project ID, e.g. my-company-data"
+                          />
+                          <TextField
+                            label="Display Name (optional)"
+                            placeholder="My Data Project"
+                            value={displayName}
+                            onChange={e => setDisplayName(e.target.value)}
+                            size="small"
+                            fullWidth
+                          />
+                          <TextField
+                            label="Service Account Secret Name (optional)"
+                            placeholder="bq-sa-key"
+                            value={secretName}
+                            onChange={e => setSecretName(e.target.value)}
+                            size="small"
+                            fullWidth
+                            helperText="Name of a Secret Manager secret in this project that holds a service account key JSON. Leave blank to use Workload Identity / ADC."
+                          />
+                          <Button
+                            variant="outlined"
+                            onClick={addManualProject}
+                            disabled={!projectId.trim() || addingSource}
+                            startIcon={addingSource && manualEntry ? <CircularProgress size={16} /> : <CloudIcon />}
+                            sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
+                          >
+                            {addingSource && manualEntry ? 'Adding…' : 'Add Project'}
+                          </Button>
+                        </Box>
+                      </Collapse>
                     </>
+                  )}
+                  {sourceError && (
+                    <Typography variant="body2" color="error">{sourceError}</Typography>
                   )}
                 </Box>
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <Button
                     variant="contained"
-                    disabled={(status?.bq_sources_count ?? 0) === 0 && !sourceAdded}
+                    disabled={sourcesCount === 0 && !sourceAdded}
                     onClick={() => setActiveStep(3)}
                     sx={{ textTransform: 'none' }}
                   >
                     Continue
                   </Button>
-                  {(status?.bq_sources_count ?? 0) === 0 && !sourceAdded && (
+                  {sourcesCount === 0 && !sourceAdded && (
                     <Button variant="text" onClick={() => setActiveStep(3)} sx={{ textTransform: 'none', color: 'text.secondary' }}>
                       Skip
                     </Button>
@@ -390,26 +502,26 @@ ALLOWED_EMAIL_DOMAINS=yourcompany.com`}</CodeBlock>
               </StepLabel>
               <StepContent>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
-                  {status?.has_data && !syncDone ? (
+                  {status?.has_data && !syncRows.length ? (
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                       <CheckCircleIcon color="success" fontSize="small" />
                       <Typography variant="body2" color="success.main" fontWeight={500}>
                         Data is already synced. Your catalog has datasets and tables.
                       </Typography>
                     </Box>
-                  ) : syncDone ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                      <Typography variant="body2" fontWeight={500} color="success.main">Sync complete!</Typography>
-                      {syncResults.map(r => (
-                        <Box key={r.project_id} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                          {r.result.errors.length
-                            ? <ErrorIcon color="error" fontSize="small" />
-                            : <CheckCircleIcon color="success" fontSize="small" />
-                          }
+                  ) : syncRows.length ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                      {syncDone && (
+                        <Typography variant="body2" fontWeight={500}>Sync finished.</Typography>
+                      )}
+                      {syncRows.map(row => (
+                        <Box key={row.source.id} sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+                          <Box sx={{ pt: 0.25 }}><SyncRowIcon state={row.state} /></Box>
                           <Typography variant="body2">
-                            {r.project_id}: {r.result.errors.length
-                              ? r.result.errors.join('; ')
-                              : `${r.result.tables_added + r.result.tables_updated} tables synced`}
+                            <strong>{row.source.display_name || row.source.project_id}</strong>
+                            {row.state === 'pending' && ' — waiting'}
+                            {row.state === 'running' && ' — syncing…'}
+                            {row.message && ` — ${row.message}`}
                           </Typography>
                         </Box>
                       ))}
@@ -420,30 +532,31 @@ ALLOWED_EMAIL_DOMAINS=yourcompany.com`}</CodeBlock>
                     <>
                       <Typography variant="body2" color="text.secondary">
                         Sync will import all BigQuery datasets and tables from your connected GCP projects into the catalog.
-                        This may take a moment depending on the number of tables.
+                        Projects are synced one at a time; large projects can take a few minutes.
                       </Typography>
-                      {syncError && (
-                        <Typography variant="body2" color="error">{syncError}</Typography>
-                      )}
                       <Button
                         variant="outlined"
                         onClick={runSync}
-                        disabled={syncing || (status?.bq_sources_count ?? 0) === 0}
-                        startIcon={syncing ? <CircularProgress size={16} /> : <SyncIcon />}
+                        disabled={syncing || (sourcesCount === 0 && !sourceAdded)}
+                        startIcon={<SyncIcon />}
                         sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
                       >
-                        {syncing ? 'Syncing…' : 'Run First Sync'}
+                        Run First Sync
                       </Button>
-                      {(status?.bq_sources_count ?? 0) === 0 && (
+                      {sourcesCount === 0 && !sourceAdded && (
                         <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
                           Add a BigQuery project in the previous step to enable sync.
                         </Typography>
                       )}
                     </>
                   )}
+                  {syncError && (
+                    <Typography variant="body2" color="error">{syncError}</Typography>
+                  )}
                 </Box>
                 <Button
                   variant="contained"
+                  disabled={syncing}
                   onClick={() => setActiveStep(4)}
                   sx={{ textTransform: 'none' }}
                 >
@@ -466,16 +579,22 @@ ALLOWED_EMAIL_DOMAINS=yourcompany.com`}</CodeBlock>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <StatusChip ok={status?.database_connected ?? false} label="Database" />
                     <StatusChip ok={status?.oauth_configured ?? false} label="Google Login" />
-                    <StatusChip ok={(status?.bq_sources_count ?? 0) > 0} label="BigQuery" />
+                    <StatusChip ok={sourcesCount > 0} label="BigQuery" />
+                    <OptionalChip ok={status?.team_access_configured ?? false} label="Team access" />
                     <OptionalChip ok={status?.gemini_configured ?? false} label="Gemini API key" />
                     <OptionalChip ok={status?.gchat_configured ?? false} label="Google Chat" />
                   </Box>
 
-                  {(!status?.gemini_configured || !status?.gchat_configured) && (
+                  {(!status?.team_access_configured || !status?.gemini_configured || !status?.gchat_configured) && (
                     <>
                       <Divider />
-                      <Typography variant="body2" fontWeight={500}>Optional integrations you can configure later:</Typography>
+                      <Typography variant="body2" fontWeight={500}>Optional settings you can configure later:</Typography>
                       <Box component="ul" sx={{ m: 0, pl: 2.5, '& li': { mb: 0.5 } }}>
+                        {!status?.team_access_configured && (
+                          <li><Typography variant="body2">
+                            <strong>Team access</strong> — only <code>ADMIN_EMAILS</code> can sign in so far; set <code>ALLOWED_EMAIL_DOMAINS</code> (or <code>ALLOWED_EMAILS</code>) to let your team in
+                          </Typography></li>
+                        )}
                         {!status?.gemini_configured && (
                           <li><Typography variant="body2">
                             <strong>AI Insights</strong> — run on Vertex AI by default; set <code>GEMINI_API_KEY</code> to use the Gemini API instead

@@ -135,7 +135,7 @@ Prerequisites: Python 3.12, Node.js 20 and Docker (for PostgreSQL). For BigQuery
    ./start.sh
    ```
 
-Open http://localhost:5173, sign in with an account from `ADMIN_EMAILS`, and the setup wizard at `/setup` walks you through adding a BigQuery project and running the first sync.
+Open http://localhost:5173 and sign in with an account from `ADMIN_EMAILS`. On a fresh install you land in the setup wizard at `/setup`, which checks the configuration, lets you pick BigQuery projects from the ones your Google account can see, and runs the first sync project by project. If Google sign-in or `ADMIN_EMAILS` is not configured yet, `/login` sends you to the wizard, which names the missing settings and shows the OAuth redirect URI to register.
 
 ---
 
@@ -297,7 +297,7 @@ All endpoints are under `/api/v1` and expect `Authorization: Bearer <jwt>` unles
 | GET | `/auth/login` | public | Redirect to Google sign-in |
 | GET | `/auth/callback` | public | OAuth callback; redirects to `/login#token=…` |
 | GET | `/auth/me` | any | Current user profile and role |
-| GET | `/setup/status` | public | Setup wizard checks (booleans and counts only) |
+| GET | `/setup/status` | public | Setup wizard checks (booleans, counts and the OAuth redirect URI) |
 | GET | `/datasets` | any | List datasets (`project_id`, `sensitivity_label`, `tags`, `owner`, `validated`, `skip`, `limit`) |
 | POST | `/datasets` | editor | Register a dataset |
 | GET | `/datasets/{id}` | any | Dataset detail (`restricted`: editor) |

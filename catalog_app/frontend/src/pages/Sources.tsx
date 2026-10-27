@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
-  Alert, Box, Button, Chip, CircularProgress, Checkbox, Dialog, DialogActions,
-  DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, Paper,
+  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
+  DialogContent, DialogTitle, Divider, IconButton, Paper,
   Stack, Switch, Table, TableBody, TableCell, TableContainer, TableHead,
   TableRow, TextField, Tooltip, Typography,
 } from '@mui/material'
@@ -16,6 +16,7 @@ import PendingIcon from '@mui/icons-material/HourglassEmpty'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { bqApi, type ProjectInfo, type SourceCreate } from '../api/bq'
 import type { GCPSource } from '../api/types'
+import ProjectPicker from '../components/ProjectPicker'
 
 // ── Status chip ───────────────────────────────────────────────────────────────
 
@@ -98,95 +99,39 @@ function AddSourceDialog({ open, onClose }: { open: boolean; onClose: () => void
 
 function DiscoverDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-
-  const { data: projects = [], isLoading, error } = useQuery({
-    queryKey: ['gcp-projects'],
-    queryFn: bqApi.listAccessibleProjects,
-    enabled: open,
-    staleTime: 60_000,
-  })
+  const [selected, setSelected] = useState<ProjectInfo[]>([])
 
   const addMutation = useMutation({
-    mutationFn: async (projectIds: string[]) => {
-      for (const pid of projectIds) {
-        const proj = projects.find((p) => p.project_id === pid)
-        await bqApi.addSource({ project_id: pid, display_name: proj?.display_name })
+    mutationFn: async (projects: ProjectInfo[]) => {
+      for (const p of projects) {
+        await bqApi.addSource({ project_id: p.project_id, display_name: p.display_name })
       }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bq-sources'] })
-      setSelected(new Set())
+      qc.invalidateQueries({ queryKey: ['gcp-projects'] })
+      setSelected([])
       onClose()
     },
   })
-
-  const toggle = (pid: string) =>
-    setSelected((prev) => { const s = new Set(prev); s.has(pid) ? s.delete(pid) : s.add(pid); return s })
-
-  const available = projects.filter((p) => !p.already_added)
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>Discover GCP Projects</DialogTitle>
       <Divider />
       <DialogContent sx={{ pt: 2 }}>
-        {isLoading && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
-          </Box>
-        )}
-        {error && (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {String((error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to load projects')}
-          </Alert>
-        )}
-        {!isLoading && !error && (
-          <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-            {projects.filter((p) => p.already_added).map((p) => (
-              <Box key={p.project_id} sx={{
-                display: 'flex', alignItems: 'center', gap: 1.5, px: 1.5, py: 1,
-                borderRadius: 2, bgcolor: '#f8f9fa',
-              }}>
-                <CheckCircleIcon fontSize="small" color="success" />
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="body2" fontWeight={600}>{p.display_name}</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{p.project_id}</Typography>
-                </Box>
-                <Chip label="Added" size="small" color="success" variant="outlined" />
-              </Box>
-            ))}
-            {available.length === 0 && projects.length > 0 && (
-              <Box sx={{ py: 3, textAlign: 'center' }}>
-                <Typography variant="body2" color="text.secondary">All accessible projects are already added.</Typography>
-              </Box>
-            )}
-            {available.map((p) => (
-              <FormControlLabel
-                key={p.project_id}
-                control={<Checkbox size="small" checked={selected.has(p.project_id)} onChange={() => toggle(p.project_id)} />}
-                label={
-                  <Box>
-                    <Typography variant="body2" fontWeight={500}>{p.display_name}</Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{p.project_id}</Typography>
-                  </Box>
-                }
-                sx={{ mx: 0, px: 1, py: 0.5, borderRadius: 2, '&:hover': { bgcolor: 'action.hover' }, width: '100%' }}
-              />
-            ))}
-          </Stack>
-        )}
+        <ProjectPicker enabled={open} selected={selected} onChange={setSelected} />
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
         <Button onClick={onClose} variant="outlined">Cancel</Button>
         <Button
           variant="contained"
-          disabled={selected.size === 0 || addMutation.isPending}
-          onClick={() => addMutation.mutate([...selected])}
+          disabled={selected.length === 0 || addMutation.isPending}
+          onClick={() => addMutation.mutate(selected)}
         >
           {addMutation.isPending
             ? <CircularProgress size={18} color="inherit" />
-            : `Add ${selected.size > 0 ? selected.size : ''} Project${selected.size !== 1 ? 's' : ''}`
+            : `Add ${selected.length > 0 ? selected.length : ''} Project${selected.length !== 1 ? 's' : ''}`
           }
         </Button>
       </DialogActions>
