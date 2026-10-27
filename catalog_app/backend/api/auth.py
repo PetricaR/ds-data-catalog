@@ -16,6 +16,7 @@ from ..config import settings
 from ..database import get_db
 from ..dependencies.auth import create_token, require_auth
 from ..models.catalog import User
+from ..services.oauth_client import get_oauth_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -49,14 +50,15 @@ def _to_login_page(**fragment: str) -> RedirectResponse:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/login")
-def login():
+def login(db: Session = Depends(get_db)):
     """Redirect to Google OAuth2 consent screen."""
-    if not settings.google_client_id:
+    oauth = get_oauth_client(db)
+    if not oauth:
         raise HTTPException(status_code=501, detail="Google OAuth2 not configured")
     state = secrets.token_urlsafe(32)
     params = urlencode({
         "response_type": "code",
-        "client_id": settings.google_client_id,
+        "client_id": oauth.client_id,
         "redirect_uri": _redirect_uri(),
         "scope": SCOPES,
         "access_type": "offline",
@@ -85,7 +87,8 @@ def callback(
     db: Session = Depends(get_db),
 ):
     """Receive OAuth2 code, exchange for token, upsert user, return JWT."""
-    if not settings.google_client_id:
+    oauth = get_oauth_client(db)
+    if not oauth:
         raise HTTPException(status_code=501, detail="Google OAuth2 not configured")
     if error:
         return _to_login_page(error=f"Google sign-in did not complete ({error}).")
@@ -100,8 +103,8 @@ def callback(
                 GOOGLE_TOKEN_URL,
                 data={
                     "code": code,
-                    "client_id": settings.google_client_id,
-                    "client_secret": settings.google_client_secret,
+                    "client_id": oauth.client_id,
+                    "client_secret": oauth.client_secret,
                     "redirect_uri": _redirect_uri(),
                     "grant_type": "authorization_code",
                 },

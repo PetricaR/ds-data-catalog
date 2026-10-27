@@ -5,13 +5,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import auth, bq, datasets, notifications, schema_changes, search, setup, stats, tables, tags, users
 from .config import settings
-from .database import init_db
+from .database import SessionLocal, init_db
 from .dependencies.auth import require_auth
+from .services.oauth_client import log_setup_token_if_unconfigured
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    with SessionLocal() as db:
+        log_setup_token_if_unconfigured(db)
     yield
 
 

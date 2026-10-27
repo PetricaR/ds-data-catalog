@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Box, Button, Chip, CircularProgress, Collapse, Divider, Paper, Step,
@@ -31,7 +31,97 @@ interface SyncRow {
 }
 
 function errorDetail(e: unknown, fallback: string): string {
-  return (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || fallback
+  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  // Validation errors (422) carry a list, not a message
+  return typeof detail === 'string' && detail ? detail : fallback
+}
+
+const CLIENT_ID_SUFFIX = '.apps.googleusercontent.com'
+
+// The client is checked with Google before it is saved; the secret is stored encrypted and never shown again.
+function OAuthClientForm({ admin, onSaved }: { admin: boolean; onSaved: () => void }) {
+  const [clientId, setClientId] = useState('')
+  const [clientSecret, setClientSecret] = useState('')
+  const [setupToken, setSetupToken] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const badClientId = clientId.trim() !== '' && !clientId.trim().endsWith(CLIENT_ID_SUFFIX)
+  const ready = clientId.trim() && !badClientId && clientSecret.trim() && (admin || setupToken.trim())
+
+  async function save() {
+    setSaving(true)
+    setError('')
+    try {
+      await setupApi.saveOAuthClient(
+        { client_id: clientId.trim(), client_secret: clientSecret.trim() },
+        admin ? undefined : setupToken.trim(),
+      )
+      setClientSecret('')
+      onSaved()
+    } catch (e) {
+      setError(errorDetail(e, 'Could not save the OAuth client. Check the client ID and secret.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Box
+      component="form"
+      autoComplete="off"
+      onSubmit={(e: FormEvent) => { e.preventDefault(); if (ready) save() }}
+      sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}
+    >
+      <TextField
+        label="Client ID"
+        placeholder={`1234567890-abc${CLIENT_ID_SUFFIX}`}
+        value={clientId}
+        onChange={e => setClientId(e.target.value)}
+        error={badClientId}
+        helperText={badClientId ? `A Google client ID ends with ${CLIENT_ID_SUFFIX}` : undefined}
+        size="small"
+        fullWidth
+        required
+      />
+      <TextField
+        label="Client secret"
+        type="password"
+        autoComplete="new-password"
+        value={clientSecret}
+        onChange={e => setClientSecret(e.target.value)}
+        size="small"
+        fullWidth
+        required
+      />
+      {!admin && (
+        <TextField
+          label="Setup token"
+          type="password"
+          autoComplete="off"
+          value={setupToken}
+          onChange={e => setSetupToken(e.target.value)}
+          size="small"
+          fullWidth
+          required
+          helperText={<>
+            Printed in the backend log at startup, or run <code>python -m backend.setup_token</code> where the
+            backend runs. It proves you operate this server; an admin who is signed in doesn't need it.
+          </>}
+        />
+      )}
+      {error && <Typography variant="body2" color="error">{error}</Typography>}
+      <Button
+        type="submit"
+        variant="outlined"
+        disabled={!ready || saving}
+        startIcon={saving ? <CircularProgress size={16} /> : <LockIcon />}
+        sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
+      >
+        {saving ? 'Checking with Google…' : 'Verify and save'}
+      </Button>
+    </Box>
+  )
 }
 
 function SignInPrompt() {
@@ -127,6 +217,9 @@ export default function Setup() {
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(true)
 
+  // Step 1 — replace an OAuth client saved in the wizard
+  const [replacingOAuth, setReplacingOAuth] = useState(false)
+
   // Step 2 — BQ sources
   const [selectedProjects, setSelectedProjects] = useState<ProjectInfo[]>([])
   const [manualEntry, setManualEntry] = useState(false)
@@ -170,6 +263,11 @@ export default function Setup() {
   }, [])
 
   // ── Step actions ─────────────────────────────────────────────────────────────
+
+  function oauthSaved() {
+    setReplacingOAuth(false)
+    setupApi.status().then(setStatus).catch(() => {})
+  }
 
   async function addSources(sources: { project_id: string; display_name?: string; secret_name?: string }[]) {
     setAddingSource(true)
@@ -337,30 +435,24 @@ export default function Setup() {
                     <StatusChip ok={status?.admin_configured ?? false} label={status?.admin_configured ? 'Admin account set' : 'No admin account'} />
                   </Box>
 
-                  {status?.oauth_configured && status?.admin_configured ? (
+                  {status?.oauth_configured ? (
                     <Typography variant="body2" color="text.secondary">
-                      Google sign-in is configured and an admin account is set.
+                      {status.oauth_source === 'environment'
+                        ? <>Google sign-in uses the OAuth client from the <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> environment
+                            variables. To manage it here instead, remove both and restart the backend.</>
+                        : 'Google sign-in uses the OAuth client saved in this wizard. Its secret is stored encrypted.'}
+                    </Typography>
+                  ) : status?.oauth_source === 'environment' ? (
+                    <Typography variant="body2" color="text.secondary">
+                      Only one of <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> is set on the backend.
+                      Set both, or remove both to enter the client here, then restart the backend.
                     </Typography>
                   ) : (
-                    <>
-                      <Typography variant="body2" color="text.secondary">
-                        Google sign-in is required — every page and API call needs a signed-in user. Set these
-                        environment variables on the backend, then restart it:
-                      </Typography>
-                      <CodeBlock>{[
-                        ...(status?.oauth_configured ? [] : [
-                          'GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com',
-                          'GOOGLE_CLIENT_SECRET=your-client-secret',
-                        ]),
-                        ...(status?.admin_configured ? [] : ['ADMIN_EMAILS=you@yourcompany.com']),
-                      ].join('\n')}</CodeBlock>
-                      {!status?.oauth_configured && (
-                        <Typography variant="body2" color="text.secondary">
-                          Create the client in Google Cloud Console → APIs & Services → Credentials → OAuth client ID
-                          (Web application).
-                        </Typography>
-                      )}
-                    </>
+                    <Typography variant="body2" color="text.secondary">
+                      Google sign-in is required — every page and API call needs a signed-in user. Create an OAuth
+                      client in Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application),
+                      then enter its client ID and secret below.
+                    </Typography>
                   )}
                   {status?.redirect_uri && (
                     <>
@@ -368,6 +460,32 @@ export default function Setup() {
                         The OAuth client must list this as an authorized redirect URI (it is built from <code>FRONTEND_URL</code>):
                       </Typography>
                       <CodeBlock>{status.redirect_uri}</CodeBlock>
+                    </>
+                  )}
+                  {!status?.oauth_configured && status?.oauth_source !== 'environment' && (
+                    <OAuthClientForm admin={admin} onSaved={oauthSaved} />
+                  )}
+                  {status?.oauth_configured && status.oauth_source === 'database' && (
+                    <>
+                      <Button
+                        variant="text"
+                        size="small"
+                        onClick={() => setReplacingOAuth(r => !r)}
+                        sx={{ textTransform: 'none', alignSelf: 'flex-start', color: 'text.secondary' }}
+                      >
+                        {replacingOAuth ? 'Keep the current OAuth client' : 'Replace the OAuth client (e.g. after it was deleted in Google Cloud)'}
+                      </Button>
+                      <Collapse in={replacingOAuth} unmountOnExit>
+                        <OAuthClientForm admin={admin} onSaved={oauthSaved} />
+                      </Collapse>
+                    </>
+                  )}
+                  {!status?.admin_configured && (
+                    <>
+                      <Typography variant="body2" color="text.secondary">
+                        Name the admin accounts on the backend, then restart it:
+                      </Typography>
+                      <CodeBlock>ADMIN_EMAILS=you@yourcompany.com</CodeBlock>
                     </>
                   )}
                 </Box>

@@ -23,6 +23,11 @@ PUBLIC = {
     ("GET", "/api/v1/setup/status"),
 }
 
+# Reachable before anyone can sign in, guarded by the setup token or an admin sign-in (tests/test_setup.py).
+SETUP_TOKEN_OR_ADMIN = {
+    ("PUT", "/api/v1/setup/oauth"),
+}
+
 # GET routes that run BigQuery / AI jobs or expose query history — editor or above.
 EDITOR_ONLY_GETS = {
     "/api/v1/tables/{table_id}/preview",
@@ -48,14 +53,14 @@ def _call(client, method, path, headers=None):
     return client.request(method, _url(path), headers=headers or {}, json=None)
 
 
-PROTECTED = [r for r in _routes() if r not in PUBLIC]
+PROTECTED = [r for r in _routes() if r not in PUBLIC | SETUP_TOKEN_OR_ADMIN]
 WRITES = [r for r in PROTECTED if r[0] != "GET" or r[1] in EDITOR_ONLY_GETS]
 ADMIN_ONLY = [r for r in PROTECTED if r[1].startswith(ADMIN_PREFIXES)]
 
 
 def test_public_routes_exist():
     routes = set(_routes())
-    assert PUBLIC <= routes
+    assert PUBLIC | SETUP_TOKEN_OR_ADMIN <= routes
 
 
 @pytest.mark.parametrize("method,path", PROTECTED, ids=[f"{m} {p}" for m, p in PROTECTED])

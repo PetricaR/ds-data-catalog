@@ -18,7 +18,7 @@ if [ ! -f .env ]; then
   secret="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
   sed -i.bak "s/^JWT_SECRET=.*/JWT_SECRET=${secret}/" .env && rm -f .env.bak
   warn "Created .env from .env.example with a generated JWT_SECRET."
-  warn "Fill in GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and ADMIN_EMAILS, then re-run."
+  warn "Fill in ADMIN_EMAILS (and GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET, or enter them later at /setup), then re-run."
   exit 1
 fi
 

@@ -12,6 +12,7 @@ from ..database import get_db
 from ..dependencies.auth import require_admin
 from ..models.catalog import GCPSource, User
 from ..services.bq_sync import SyncResult, _credentials_from_user_token, sync_project
+from ..services.oauth_client import get_oauth_client
 
 router = APIRouter(prefix="/bq", tags=["bigquery"])
 
@@ -64,11 +65,12 @@ def _get_user_credentials(current_user: dict, db: Session):
     user = db.query(User).filter(User.id == UUID(current_user["id"])).first()
     if not user or not user.gcp_access_token:
         return None
+    oauth = get_oauth_client(db)
     return _credentials_from_user_token(
         access_token=user.gcp_access_token,
         refresh_token=user.gcp_refresh_token,
-        client_id=settings.google_client_id,
-        client_secret=settings.google_client_secret,
+        client_id=oauth.client_id if oauth else None,
+        client_secret=oauth.client_secret if oauth else None,
         token_expiry=user.gcp_token_expiry,
     )
 

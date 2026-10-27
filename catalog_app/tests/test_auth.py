@@ -93,6 +93,7 @@ class TestAuthLogin:
     def test_login_redirects_to_google_with_state(self, client, monkeypatch):
         from backend.config import settings
         monkeypatch.setattr(settings, "google_client_id", "fake-client-id")
+        monkeypatch.setattr(settings, "google_client_secret", "fake-secret")
         r = client.get("/api/v1/auth/login", follow_redirects=False)
         assert r.status_code in (302, 307)
         location = urlparse(r.headers["location"])

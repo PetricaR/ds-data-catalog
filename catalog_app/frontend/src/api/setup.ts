@@ -3,6 +3,8 @@ import client from './client'
 export interface SetupStatus {
   database_connected: boolean
   oauth_configured: boolean
+  // Where the OAuth client comes from; the wizard can only change one it stored itself
+  oauth_source: 'environment' | 'database' | null
   redirect_uri: string
   bq_sources_count: number
   has_data: boolean
@@ -13,8 +15,17 @@ export interface SetupStatus {
   is_fresh_install: boolean
 }
 
+export interface OAuthClientInput {
+  client_id: string
+  client_secret: string
+}
+
 export const setupApi = {
   // Public — works before anyone has signed in
   status: () =>
     client.get<SetupStatus>('/setup/status').then((r) => r.data),
+
+  // Admin, or anyone with the setup token from the backend log (before anyone can sign in)
+  saveOAuthClient: (input: OAuthClientInput, setupToken?: string) =>
+    client.put('/setup/oauth', input, setupToken ? { headers: { 'X-Setup-Token': setupToken } } : undefined),
 }

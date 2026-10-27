@@ -181,3 +181,13 @@ class GCPSource(Base):
     last_sync_summary = Column(JSONB)           # SyncResult dict from last run
     created_at = Column(DateTime(timezone=True), default=utcnow)
     created_by = Column(String(255))
+
+
+class AppSetting(Base):
+    """Settings entered in the app (e.g. the setup wizard) rather than in environment variables."""
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=False)        # secrets are stored encrypted, see services/oauth_client.py
+    updated_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_by = Column(String(255))            # admin email or "setup token"
