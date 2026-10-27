@@ -23,14 +23,14 @@ if [ ! -f .env ]; then
 fi
 
 # ── Python environment ────────────────────────────────────────────────────────
-VENV="${VENV:-$SCRIPT_DIR/../catalog_env}"
+VENV="${VENV:-$SCRIPT_DIR/../data_env}"
 if [ -x "$VENV/bin/uvicorn" ]; then
   UVICORN="$VENV/bin/uvicorn"
 elif command -v uvicorn >/dev/null 2>&1; then
   UVICORN="$(command -v uvicorn)"
 else
   error "uvicorn not found. Create a virtualenv first:"
-  error "  python3 -m venv ../catalog_env && ../catalog_env/bin/pip install -r requirements-dev.txt"
+  error "  python3 -m venv ../data_env && ../data_env/bin/pip install -r requirements-dev.txt"
   exit 1
 fi
 

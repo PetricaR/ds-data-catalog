@@ -130,8 +130,8 @@ Prerequisites: Python 3.12, Node.js 20 and Docker (for PostgreSQL). For BigQuery
 
    ```bash
    docker compose up -d db
-   python3 -m venv ../catalog_env
-   ../catalog_env/bin/pip install -r requirements-dev.txt
+   python3 -m venv ../data_env
+   ../data_env/bin/pip install -r requirements-dev.txt
    ./start.sh
    ```
 
