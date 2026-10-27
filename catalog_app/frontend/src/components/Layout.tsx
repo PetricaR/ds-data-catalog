@@ -4,7 +4,8 @@ import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
-import Chip from '@mui/material/Chip'
+import Button from '@mui/material/Button'
+import Divider from '@mui/material/Divider'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
@@ -17,38 +18,41 @@ import MenuItem from '@mui/material/MenuItem'
 import Toolbar from '@mui/material/Toolbar'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import Divider from '@mui/material/Divider'
-import Button from '@mui/material/Button'
-import SchemaIcon from '@mui/icons-material/Schema'
 import MenuIcon from '@mui/icons-material/Menu'
 import StorageIcon from '@mui/icons-material/Storage'
-import VerifiedIcon from '@mui/icons-material/Verified'
-import CloudSyncIcon from '@mui/icons-material/CloudSync'
-import SettingsIcon from '@mui/icons-material/Settings'
-import NotificationsIcon from '@mui/icons-material/Notifications'
-import PeopleIcon from '@mui/icons-material/People'
+import VerifiedOutlinedIcon from '@mui/icons-material/VerifiedOutlined'
+import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
+import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone'
+import PeopleOutlineIcon from '@mui/icons-material/PeopleOutline'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { canEdit, isAdmin, useAuth } from '../contexts/AuthContext'
 import { notificationsApi } from '../api/notifications'
+import { tokens } from '../theme'
+import { Wordmark } from './Brand'
 import SearchBar from './SearchBar'
+import { MetaPill, formatDate } from './ui'
 
-const DRAWER_WIDTH = 210
+const DRAWER_WIDTH = 232
+const HEADER_HEIGHT = 60
+const { inverse } = tokens
 
 type Section = { heading?: string; items: { label: string; path: string; icon: ReactNode }[] }
 
 const MAIN_SECTION: Section = {
+  heading: 'Catalog',
   items: [
     { label: 'Browse',       path: '/browse',  icon: <StorageIcon fontSize="small" /> },
-    { label: 'Trusted Data', path: '/trusted', icon: <VerifiedIcon fontSize="small" /> },
+    { label: 'Trusted data', path: '/trusted', icon: <VerifiedOutlinedIcon fontSize="small" /> },
   ],
 }
 
 const ADMIN_SECTION: Section = {
   heading: 'Admin',
   items: [
-    { label: 'GCP Sources', path: '/sources', icon: <CloudSyncIcon fontSize="small" /> },
-    { label: 'Users',       path: '/users',   icon: <PeopleIcon fontSize="small" /> },
-    { label: 'Setup',       path: '/setup',   icon: <SettingsIcon fontSize="small" /> },
+    { label: 'GCP sources', path: '/sources', icon: <CloudSyncOutlinedIcon fontSize="small" /> },
+    { label: 'Users',       path: '/users',   icon: <PeopleOutlineIcon fontSize="small" /> },
+    { label: 'Setup',       path: '/setup',   icon: <SettingsOutlinedIcon fontSize="small" /> },
   ],
 }
 
@@ -61,28 +65,26 @@ function NavItem({ label, path, icon, active, onClick }: {
         component={Link}
         to={path}
         selected={active}
+        aria-current={active ? 'page' : undefined}
         onClick={onClick}
         sx={{
-          mx: 1,
-          px: 1.5,
-          py: 0.875,
-          borderRadius: 2.5,
-          transition: 'background 0.12s',
+          mx: 1.5, px: 1.25, py: 0.75, position: 'relative',
+          color: tokens.ink2,
+          '& .MuiListItemIcon-root': { minWidth: 32, color: tokens.ink3 },
+          '&:hover': { bgcolor: tokens.paper2, color: tokens.ink },
           '&.Mui-selected': {
-            bgcolor: '#e8f0fe',
-            '& .MuiListItemIcon-root': { color: '#1a73e8' },
-            '& .MuiListItemText-primary': { color: '#1a73e8', fontWeight: 600 },
+            bgcolor: tokens.accentWash,
+            color: tokens.ink,
+            '& .MuiListItemIcon-root': { color: tokens.accent },
+            '&::before': {
+              content: '""', position: 'absolute', left: 0, top: 6, bottom: 6, width: 2,
+              borderRadius: 1, bgcolor: tokens.accent,
+            },
           },
-          '&:hover:not(.Mui-selected)': { bgcolor: 'rgba(0,0,0,0.04)' },
         }}
       >
-        <ListItemIcon sx={{ minWidth: 34, color: active ? '#1a73e8' : '#5f6368' }}>
-          {icon}
-        </ListItemIcon>
-        <ListItemText
-          primary={label}
-          primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: active ? 600 : 400 }}
-        />
+        <ListItemIcon>{icon}</ListItemIcon>
+        <ListItemText primary={label} primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: active ? 600 : 500 }} />
       </ListItemButton>
     </ListItem>
   )
@@ -98,7 +100,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const sections = isAdmin(user) ? [MAIN_SECTION, ADMIN_SECTION] : [MAIN_SECTION]
   const canDismiss = canEdit(user)
 
-  const { data: notifications } = useQuery({
+  const { data: notifications = [] } = useQuery({
     queryKey: ['notifications'],
     queryFn: () => notificationsApi.list(10),
     refetchInterval: 30_000,
@@ -117,21 +119,18 @@ export default function Layout({ children }: { children: ReactNode }) {
   const isActive = (path: string) => location.pathname.startsWith(path)
 
   const drawer = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', pt: 1, pb: 2 }}>
-      {sections.map((section, si) => (
-        <Box key={si}>
-          {section.heading && (
-            <Typography
-              variant="caption"
-              sx={{
-                display: 'block', px: 2.5, pt: 1.5, pb: 0.5,
-                color: '#9aa0a6', fontWeight: 700,
-                textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '0.65rem',
-              }}
-            >
-              {section.heading}
-            </Typography>
-          )}
+    <Box component="nav" aria-label="Primary" sx={{ display: 'flex', flexDirection: 'column', height: '100%', pt: 2, pb: 2 }}>
+      {sections.map((section) => (
+        <Box key={section.heading} sx={{ mb: 2 }}>
+          <Typography
+            component="h2"
+            sx={{
+              px: 3, pb: 0.75, color: tokens.ink3, fontWeight: 600, fontSize: '0.6875rem',
+              textTransform: 'uppercase', letterSpacing: '0.09em',
+            }}
+          >
+            {section.heading}
+          </Typography>
           <List dense disablePadding>
             {section.items.map((item) => (
               <NavItem
@@ -142,13 +141,11 @@ export default function Layout({ children }: { children: ReactNode }) {
               />
             ))}
           </List>
-          {si < sections.length - 1 && <Divider sx={{ mx: 2, my: 1.5 }} />}
         </Box>
       ))}
 
       <Box sx={{ flex: 1 }} />
-      <Divider sx={{ mx: 2, mb: 1.5 }} />
-      <Typography variant="caption" sx={{ px: 2.5, color: '#bdc1c6', fontSize: '0.7rem' }}>
+      <Typography variant="caption" sx={{ px: 3, color: tokens.ink3, fontFamily: tokens.fontMono, fontSize: '0.6875rem' }}>
         Light Data Catalog v1.0
       </Typography>
     </Box>
@@ -156,49 +153,65 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* AppBar */}
-      <AppBar position="fixed" sx={{ zIndex: (t) => t.zIndex.drawer + 1 }}>
-        <Toolbar sx={{ gap: 1, minHeight: '60px !important' }}>
+      <Box
+        component="a"
+        href="#main"
+        sx={{
+          position: 'fixed', left: 16, top: -60, zIndex: (t) => t.zIndex.tooltip,
+          px: 2, py: 1, bgcolor: tokens.surface, color: tokens.ink, borderRadius: `${tokens.radius}px`,
+          fontWeight: 600, fontSize: '0.875rem', textDecoration: 'none', boxShadow: 2,
+          '&:focus': { top: 10 },
+        }}
+      >
+        Skip to content
+      </Box>
+
+      <AppBar
+        position="fixed"
+        elevation={0}
+        sx={{
+          zIndex: (t) => t.zIndex.drawer + 1,
+          bgcolor: inverse.paper,
+          color: inverse.ink,
+          borderBottom: `1px solid ${inverse.rule}`,
+          colorScheme: 'dark',
+        }}
+      >
+        <Toolbar sx={{ gap: { xs: 1, sm: 2 }, minHeight: `${HEADER_HEIGHT}px !important`, px: { xs: 1.5, sm: 2.5 } }}>
           <IconButton
             edge="start"
+            aria-label={drawerOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={drawerOpen}
             onClick={() => setDrawerOpen(!drawerOpen)}
-            sx={{ color: '#5f6368', display: { sm: 'none' }, mr: 0.5 }}
+            sx={{ color: inverse.ink2, display: { md: 'none' }, '&:hover': { bgcolor: inverse.surface } }}
           >
             <MenuIcon />
           </IconButton>
 
-          {/* Logo */}
           <Box
             component={Link}
             to="/browse"
-            sx={{ display: 'flex', alignItems: 'center', gap: 1, textDecoration: 'none', mr: 2, flexShrink: 0 }}
+            aria-label="Light Data Catalog, home"
+            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', flexShrink: 0, borderRadius: `${tokens.radius}px` }}
           >
-            <Box sx={{
-              width: 32, height: 32, borderRadius: 2, bgcolor: '#1a73e8',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <SchemaIcon sx={{ color: '#fff', fontSize: 20 }} />
-            </Box>
-            <Typography
-              variant="subtitle1"
-              sx={{ color: '#1f1f1f', fontWeight: 700, display: { xs: 'none', sm: 'block' }, letterSpacing: '-0.01em' }}
-            >
-              Light Data Catalog
-            </Typography>
+            <Wordmark inverse />
           </Box>
 
-          {/* Search */}
-          <Box sx={{ flex: 1, maxWidth: 560 }}>
-            <SearchBar size="small" />
+          <Box sx={{ flex: 1, maxWidth: 560, ml: { md: 3 }, display: { xs: 'none', sm: 'block' } }}>
+            <SearchBar />
           </Box>
 
           <Box sx={{ flex: 1 }} />
 
-          {/* Notifications */}
           <Tooltip title="Notifications" arrow>
-            <IconButton onClick={(e) => setNotifAnchor(e.currentTarget)} sx={{ color: '#5f6368' }}>
-              <Badge badgeContent={notifications?.length ?? 0} color="error" max={9}>
-                <NotificationsIcon sx={{ fontSize: 22 }} />
+            <IconButton
+              aria-label={notifications.length ? `Notifications, ${notifications.length} new` : 'Notifications'}
+              aria-haspopup="menu"
+              onClick={(e) => setNotifAnchor(e.currentTarget)}
+              sx={{ color: inverse.ink2, '&:hover': { bgcolor: inverse.surface, color: inverse.ink } }}
+            >
+              <Badge badgeContent={notifications.length} color="primary" max={9}>
+                <NotificationsNoneIcon sx={{ fontSize: 22 }} />
               </Badge>
             </IconButton>
           </Tooltip>
@@ -207,72 +220,74 @@ export default function Layout({ children }: { children: ReactNode }) {
             anchorEl={notifAnchor}
             open={!!notifAnchor}
             onClose={() => setNotifAnchor(null)}
-            PaperProps={{ sx: { width: 360, maxHeight: 480, borderRadius: 3, mt: 1 } }}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            slotProps={{ paper: { sx: { width: 360, maxWidth: 'calc(100vw - 32px)', maxHeight: 480, mt: 1 } } }}
           >
-            <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="subtitle2" fontWeight={700} sx={{ flex: 1 }}>Notifications</Typography>
-              {canDismiss && (notifications?.length ?? 0) > 0 && (
-                <Button size="small" sx={{ fontSize: '0.75rem', color: '#1a73e8' }}
-                  onClick={() => { dismissAllMutation.mutate(); setNotifAnchor(null) }}>
-                  Clear all
+            <Box sx={{ px: 2, py: 1.25, display: 'flex', alignItems: 'center', borderBottom: `1px solid ${tokens.rule}` }}>
+              <Typography variant="subtitle2" sx={{ flex: 1 }}>Metadata changes</Typography>
+              {canDismiss && notifications.length > 0 && (
+                <Button size="small" onClick={() => { dismissAllMutation.mutate(); setNotifAnchor(null) }}>
+                  Dismiss all
                 </Button>
               )}
             </Box>
-            {!notifications?.length ? (
+            {notifications.length === 0 ? (
               <Box sx={{ px: 3, py: 4, textAlign: 'center' }}>
-                <NotificationsIcon sx={{ fontSize: 32, color: '#dadce0', mb: 1 }} />
-                <Typography variant="body2" color="text.secondary">No new notifications</Typography>
+                <NotificationsNoneIcon aria-hidden sx={{ fontSize: 32, color: tokens.ruleStrong, mb: 1 }} />
+                <Typography variant="body2" color="text.secondary">Nothing new</Typography>
               </Box>
             ) : (
               notifications.map((n) => (
                 <MenuItem
                   key={n.id}
-                  sx={{ alignItems: 'flex-start', gap: 1.5, py: 1.5, px: 2 }}
-                  onClick={() => { if (canDismiss) dismissMutation.mutate(n.id) }}
+                  sx={{ alignItems: 'flex-start', gap: 1.5, py: 1.25, px: 2, whiteSpace: 'normal' }}
+                  onClick={() => { if (canDismiss) dismissMutation.mutate(n.id); else setNotifAnchor(null) }}
                 >
-                  <Box sx={{
-                    width: 8, height: 8, borderRadius: '50%', bgcolor: '#1a73e8',
-                    flexShrink: 0, mt: 0.75,
-                  }} />
+                  <Box aria-hidden sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: tokens.accent, flexShrink: 0, mt: 1 }} />
                   <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography variant="body2" fontWeight={500} noWrap>
-                      {n.entity_name || n.entity_type}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap>
-                      {n.field_changed} changed{n.changed_by ? ` by ${n.changed_by}` : ''}
+                    <Typography variant="body2" fontWeight={600} noWrap>{n.entity_name || n.entity_type}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      {n.field_changed?.replace(/_/g, ' ')} changed{n.changed_by ? ` by ${n.changed_by}` : ''}
                     </Typography>
                   </Box>
-                  <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, mt: 0.25 }}>
-                    {new Date(n.changed_at).toLocaleDateString()}
-                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>{formatDate(n.changed_at)}</Typography>
                 </MenuItem>
               ))
             )}
+            {canDismiss && notifications.length > 0 && (
+              <Typography variant="caption" color="text.secondary" component="p" sx={{ px: 2, py: 1, borderTop: `1px solid ${tokens.rule}` }}>
+                Select a change to dismiss it.
+              </Typography>
+            )}
           </Menu>
 
-          {/* User menu */}
-          {user ? (
+          {user && (
             <>
               <Tooltip title={`${user.name || user.email} · ${user.role}`} arrow>
-                <IconButton onClick={(e) => setUserMenuAnchor(e.currentTarget)} sx={{ p: 0.5 }}>
-                  {user.picture
-                    ? <Avatar src={user.picture} sx={{ width: 32, height: 32 }} />
-                    : <Avatar sx={{ width: 32, height: 32, fontSize: '0.875rem', bgcolor: '#1a73e8', fontWeight: 600 }}>
-                        {(user.name || user.email)[0].toUpperCase()}
-                      </Avatar>
-                  }
+                <IconButton
+                  aria-label="Account"
+                  aria-haspopup="menu"
+                  onClick={(e) => setUserMenuAnchor(e.currentTarget)}
+                  sx={{ p: 0.5, '&:hover': { bgcolor: inverse.surface } }}
+                >
+                  <Avatar src={user.picture ?? undefined} alt="" sx={{ width: 30, height: 30, fontSize: '0.8125rem' }}>
+                    {(user.name || user.email)[0].toUpperCase()}
+                  </Avatar>
                 </IconButton>
               </Tooltip>
               <Menu
                 anchorEl={userMenuAnchor}
                 open={!!userMenuAnchor}
                 onClose={() => setUserMenuAnchor(null)}
-                PaperProps={{ sx: { width: 240, borderRadius: 3, mt: 1 } }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                slotProps={{ paper: { sx: { width: 260, mt: 1 } } }}
               >
                 <Box sx={{ px: 2, py: 1.5 }}>
                   <Typography variant="body2" fontWeight={600}>{user.name || user.email}</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{user.email}</Typography>
-                  <Chip label={user.role} size="small" sx={{ mt: 0.75, fontSize: '0.7rem', height: 20, bgcolor: '#e8f0fe', color: '#1a73e8' }} />
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>{user.email}</Typography>
+                  <Box sx={{ mt: 1 }}><MetaPill tone="accent">{user.role}</MetaPill></Box>
                 </Box>
                 <Divider />
                 <MenuItem onClick={() => { logout(); setUserMenuAnchor(null) }} sx={{ py: 1.25 }}>
@@ -280,15 +295,6 @@ export default function Layout({ children }: { children: ReactNode }) {
                 </MenuItem>
               </Menu>
             </>
-          ) : (
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => { window.location.href = '/api/v1/auth/login' }}
-              sx={{ fontSize: '0.8rem', ml: 1 }}
-            >
-              Sign in
-            </Button>
           )}
         </Toolbar>
       </AppBar>
@@ -299,37 +305,38 @@ export default function Layout({ children }: { children: ReactNode }) {
         sx={{
           width: DRAWER_WIDTH,
           flexShrink: 0,
-          display: { xs: 'none', sm: 'block' },
+          display: { xs: 'none', md: 'block' },
           '& .MuiDrawer-paper': {
             width: DRAWER_WIDTH,
             boxSizing: 'border-box',
-            top: 60,
-            height: 'calc(100% - 60px)',
-            borderRight: '1px solid #e8eaed',
-            bgcolor: '#f8f9fa',
+            top: HEADER_HEIGHT,
+            height: `calc(100% - ${HEADER_HEIGHT}px)`,
+            borderRight: `1px solid ${tokens.rule}`,
           },
         }}
       >
         {drawer}
       </Drawer>
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer: also carries the search, which the header has no room for */}
       <Drawer
         variant="temporary"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        sx={{
-          display: { xs: 'block', sm: 'none' },
-          '& .MuiDrawer-paper': { width: DRAWER_WIDTH },
-        }}
+        sx={{ display: { xs: 'block', md: 'none' }, '& .MuiDrawer-paper': { width: 280 } }}
       >
-        <Toolbar sx={{ minHeight: '60px !important' }} />
+        {/* The header stays above this drawer, so its menu button can close it */}
+        <Box sx={{ minHeight: HEADER_HEIGHT, bgcolor: inverse.paper }} />
+        <Box sx={{ p: 1.5, display: { sm: 'none' }, bgcolor: inverse.paper, colorScheme: 'dark' }} onSubmit={() => setDrawerOpen(false)}>
+          <SearchBar placeholder="Search the catalog…" />
+        </Box>
         {drawer}
       </Drawer>
 
-      {/* Main */}
-      <Box component="main" sx={{ flexGrow: 1, pt: '60px', minHeight: '100vh' }}>
-        <Box sx={{ p: { xs: 2, sm: 3 } }}>{children}</Box>
+      <Box component="main" id="main" tabIndex={-1} sx={{ flexGrow: 1, minWidth: 0, pt: `${HEADER_HEIGHT}px`, outline: 'none' }}>
+        <Box sx={{ maxWidth: 1280, mx: 'auto', px: { xs: 2, sm: 3, lg: 4 }, py: { xs: 2.5, sm: 3.5 } }}>
+          {children}
+        </Box>
       </Box>
     </Box>
   )

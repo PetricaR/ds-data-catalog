@@ -1,24 +1,28 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
-import Divider from '@mui/material/Divider'
-import SchemaIcon from '@mui/icons-material/Schema'
+import Link from '@mui/material/Link'
+import Typography from '@mui/material/Typography'
+import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
 import GoogleIcon from '@mui/icons-material/Google'
 import SearchIcon from '@mui/icons-material/Search'
-import VerifiedIcon from '@mui/icons-material/Verified'
-import CloudSyncIcon from '@mui/icons-material/CloudSync'
+import VerifiedOutlinedIcon from '@mui/icons-material/VerifiedOutlined'
 import { isAdmin, useAuth } from '../contexts/AuthContext'
 import { authApi } from '../api/auth'
 import { setupApi } from '../api/setup'
 import type { User } from '../api/types'
+import { Wordmark } from '../components/Brand'
+import { Eyebrow } from '../components/ui'
+import { tokens } from '../theme'
+
+const { inverse } = tokens
 
 const FEATURES = [
-  { icon: <SearchIcon sx={{ fontSize: 20 }} />, text: 'Search across all BigQuery datasets and tables' },
-  { icon: <CloudSyncIcon sx={{ fontSize: 20 }} />, text: 'Auto-sync metadata from multiple GCP projects' },
-  { icon: <VerifiedIcon sx={{ fontSize: 20 }} />, text: 'Validate and certify trusted data sources' },
+  { icon: <SearchIcon />, title: 'Find data fast', text: 'Search every BigQuery dataset, table and column in one place.' },
+  { icon: <CloudSyncOutlinedIcon />, title: 'Always current', text: 'Metadata syncs from all your GCP projects, keeping your own docs.' },
+  { icon: <VerifiedOutlinedIcon />, title: 'Know what to trust', text: 'Editors certify tables, so analysts reach for the right source.' },
 ]
 
 // After sign-in: back to where the user started (e.g. the setup wizard), else the wizard for an admin
@@ -40,6 +44,8 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const [freshInstall, setFreshInstall] = useState(false)
   const [clientError, setClientError] = useState<string | null>(null)
+  // Set while the OAuth callback picks a landing page, so the "already signed in" redirect doesn't override it
+  const completingSignIn = useRef(false)
 
   // The OAuth callback returns the token (or an error) in the URL fragment, which never reaches a server.
   useEffect(() => {
@@ -55,10 +61,11 @@ export default function Login() {
         setError('Sign-in failed. Please try again.')
         return
       }
+      completingSignIn.current = true
       authApi.storeToken(token, parsedUser)
       landingPage(parsedUser).then((path) => {
-        setUser(parsedUser)
         navigate(path, { replace: true })
+        setUser(parsedUser)
       })
       return
     }
@@ -78,88 +85,71 @@ export default function Login() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (user) navigate('/browse', { replace: true })
+    if (user && !completingSignIn.current) navigate('/browse', { replace: true })
   }, [user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', bgcolor: '#f0f4f9' }}>
-      {/* Left panel */}
+    <Box sx={{ minHeight: '100vh', display: 'flex', bgcolor: tokens.paper }}>
       <Box
+        component="aside"
         sx={{
           display: { xs: 'none', md: 'flex' },
           flexDirection: 'column',
-          justifyContent: 'center',
-          width: 480,
+          width: { md: 460, lg: 540 },
           flexShrink: 0,
-          background: 'linear-gradient(160deg, #1a73e8 0%, #0d5225 100%)',
-          px: 7,
+          px: { md: 6, lg: 8 },
           py: 6,
-          position: 'relative',
-          overflow: 'hidden',
+          bgcolor: inverse.paper,
+          color: inverse.ink,
+          colorScheme: 'dark',
+          // formare.dev's blueprint grid
+          backgroundImage: `linear-gradient(${inverse.gridLine} 1px, transparent 1px), linear-gradient(90deg, ${inverse.gridLine} 1px, transparent 1px)`,
+          backgroundSize: '48px 48px',
         }}
       >
-        {/* Decorative circles */}
-        <Box sx={{ position: 'absolute', top: -80, right: -80, width: 300, height: 300, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.06)' }} />
-        <Box sx={{ position: 'absolute', bottom: -60, left: -60, width: 240, height: 240, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.06)' }} />
-        <Box sx={{ position: 'absolute', top: '40%', right: -40, width: 160, height: 160, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.04)' }} />
-
-        <Box sx={{ position: 'relative', zIndex: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 5 }}>
-            <SchemaIcon sx={{ color: '#ffffff', fontSize: 32 }} />
-            <Typography variant="h6" sx={{ color: '#ffffff', fontWeight: 700, letterSpacing: '0.01em' }}>
-              Light Data Catalog
-            </Typography>
-          </Box>
-
-          <Typography variant="h3" sx={{ color: '#ffffff', fontWeight: 700, lineHeight: 1.2, mb: 2 }}>
-            Your data,<br />organized.
+        <Wordmark inverse size={28} />
+        <Box sx={{ my: 'auto', py: 6 }}>
+          <Eyebrow color={inverse.accent}>BigQuery data catalog</Eyebrow>
+          <Typography component="p" sx={{ fontSize: { md: '2.5rem', lg: '3rem' }, fontWeight: 600, letterSpacing: '-0.035em', lineHeight: 1.05, mt: 1.5, mb: 2.5 }}>
+            Your data, documented and easy to trust.
           </Typography>
-          <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.8)', mb: 5, lineHeight: 1.7 }}>
-            A single source of truth for all your organization's BigQuery datasets — documented, validated, and searchable.
+          <Typography sx={{ color: inverse.ink2, lineHeight: 1.65, maxWidth: 420 }}>
+            One place to find your organisation's BigQuery datasets and tables, read what they mean, and see which ones are certified.
           </Typography>
-
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {FEATURES.map(({ icon, text }) => (
-              <Box key={text} sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                <Box sx={{
-                  mt: 0.1, flexShrink: 0, width: 36, height: 36, borderRadius: '50%',
-                  bgcolor: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', color: '#ffffff',
-                }}>
+          <Box component="ul" sx={{ listStyle: 'none', p: 0, m: 0, mt: 5, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            {FEATURES.map(({ icon, title, text }) => (
+              <Box component="li" key={title} sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                <Box aria-hidden sx={{ width: 36, height: 36, flexShrink: 0, borderRadius: `${tokens.radius}px`, display: 'grid', placeItems: 'center', bgcolor: inverse.surface, border: `1px solid ${inverse.rule}`, color: inverse.accent, '& svg': { fontSize: 20 } }}>
                   {icon}
                 </Box>
-                <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.6, pt: 0.75 }}>
-                  {text}
-                </Typography>
+                <Box>
+                  <Typography sx={{ fontWeight: 600, fontSize: '0.9375rem' }}>{title}</Typography>
+                  <Typography sx={{ color: inverse.ink3, fontSize: '0.875rem', lineHeight: 1.55 }}>{text}</Typography>
+                </Box>
               </Box>
             ))}
           </Box>
         </Box>
+        <Typography sx={{ color: inverse.ink3, fontFamily: tokens.fontMono, fontSize: '0.75rem' }}>OAuth 2.0 · Google Workspace sign-in · BigQuery</Typography>
       </Box>
 
-      {/* Right panel */}
-      <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', px: 3 }}>
+      <Box component="main" sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', px: 3, py: 6 }}>
         <Box sx={{ width: '100%', maxWidth: 400 }}>
-          {/* Mobile logo */}
-          <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center', gap: 1.5, mb: 4, justifyContent: 'center' }}>
-            <SchemaIcon sx={{ color: '#1a73e8', fontSize: 32 }} />
-            <Typography variant="h5" fontWeight={700}>Light Data Catalog</Typography>
-          </Box>
+          <Box sx={{ display: { xs: 'flex', md: 'none' }, mb: 5 }}><Wordmark size={28} /></Box>
 
-          <Typography variant="h4" fontWeight={700} gutterBottom sx={{ color: '#1f1f1f' }}>
+          <Eyebrow>Sign in</Eyebrow>
+          <Typography variant="h4" component="h1" sx={{ mt: 0.75, mb: 1.5 }}>
             {freshInstall ? 'Welcome' : 'Welcome back'}
           </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, lineHeight: 1.6 }}>
-            Sign in with your Google Workspace account to access your organization's data catalog.
+          <Typography color="text.secondary" sx={{ mb: 4 }}>
+            Use your Google Workspace account to open your organisation's data catalog.
           </Typography>
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>
-          )}
+          {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
           {clientError && (
             <Alert severity="error" sx={{ mb: 3 }}>
               Google sign-in is not working: Google rejects this app's OAuth client ({clientError}). An administrator
-              needs to replace it — see <RouterLink to="/setup">setup</RouterLink>.
+              needs to replace it — see <Link component={RouterLink} to="/setup">setup</Link>.
             </Alert>
           )}
           {freshInstall && (
@@ -174,31 +164,12 @@ export default function Login() {
             size="large"
             startIcon={<GoogleIcon />}
             onClick={() => { window.location.href = '/api/v1/auth/login' }}
-            sx={{
-              borderRadius: 3,
-              py: 1.5,
-              fontSize: '1rem',
-              fontWeight: 600,
-              boxShadow: '0 2px 8px rgba(26,115,232,0.4)',
-              '&:hover': { boxShadow: '0 4px 12px rgba(26,115,232,0.5)' },
-            }}
           >
             Sign in with Google
           </Button>
-
-          <Divider sx={{ my: 3 }}>
-            <Typography variant="caption" color="text.disabled" sx={{ px: 1 }}>
-              SECURE ACCESS
-            </Typography>
-          </Divider>
-
-          <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center' }}>
-            {['OAuth 2.0', 'BigQuery', 'Workspace SSO'].map((label) => (
-              <Typography key={label} variant="caption" color="text.disabled" sx={{ fontWeight: 500 }}>
-                {label}
-              </Typography>
-            ))}
-          </Box>
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 2, textAlign: 'center' }}>
+            You'll be sent to Google and brought back here.
+          </Typography>
         </Box>
       </Box>
     </Box>

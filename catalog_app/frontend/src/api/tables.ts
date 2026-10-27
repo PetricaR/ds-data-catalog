@@ -21,6 +21,7 @@ export const tablesApi = {
     sensitivity_label?: string
     tags?: string[]
     owner?: string
+    validated?: boolean
     skip?: number
     limit?: number
   }) => client.get<Table[]>('/tables', { params }).then((r) => r.data),
@@ -33,7 +34,8 @@ export const tablesApi = {
   update: (id: string, data: TableUpdate) =>
     client.put<Table>(`/tables/${id}`, data).then((r) => r.data),
 
-  validate: (id: string, payload: { validated_columns: string[] }) =>
+  // `trusted` says what to do; without it the API toggles, which re-certifies a table someone else just revoked
+  validate: (id: string, payload: { trusted: boolean; validated_columns?: string[] }) =>
     client.patch<Table>(`/tables/${id}/validate`, payload).then((r) => r.data),
 
   patchColumns: (tableId: string, cols: { id: string; description?: string; is_primary_key?: boolean }[]) =>

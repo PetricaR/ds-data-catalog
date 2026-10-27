@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Snackbar from '@mui/material/Snackbar'
 import axios from 'axios'
+import { errorDetail } from '../api/client'
 
 const EVENT = 'catalog:error'
 
@@ -11,16 +12,11 @@ export function notifyError(message: string) {
 }
 
 export function errorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    if (error.response?.status === 403) {
-      return error.response.data?.detail
-        ? `Permission denied — ${error.response.data.detail}`
-        : 'You do not have permission to do this.'
-    }
-    const detail = error.response?.data?.detail
-    if (typeof detail === 'string') return detail
+  if (axios.isAxiosError(error) && error.response?.status === 403) {
+    const detail = errorDetail(error, '')
+    return detail ? `Permission denied — ${detail}` : 'You do not have permission to do this.'
   }
-  return 'Something went wrong. Please try again.'
+  return errorDetail(error, 'Something went wrong. Please try again.')
 }
 
 export default function Notifier() {

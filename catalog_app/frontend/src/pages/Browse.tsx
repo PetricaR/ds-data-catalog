@@ -1,252 +1,173 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import Collapse from '@mui/material/Collapse'
-import Grid from '@mui/material/Grid'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import List from '@mui/material/List'
-import ListItemIcon from '@mui/material/ListItemIcon'
-import ListItemText from '@mui/material/ListItemText'
-import ListItemButton from '@mui/material/ListItemButton'
-import Box from '@mui/material/Box'
-import Typography from '@mui/material/Typography'
-import Skeleton from '@mui/material/Skeleton'
-import Chip from '@mui/material/Chip'
-import Button from '@mui/material/Button'
-import IconButton from '@mui/material/IconButton'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
-import Alert from '@mui/material/Alert'
-import CircularProgress from '@mui/material/CircularProgress'
+import { Link as RouterLink } from 'react-router-dom'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import Accordion from '@mui/material/Accordion'
-import AccordionSummary from '@mui/material/AccordionSummary'
 import AccordionDetails from '@mui/material/AccordionDetails'
-import Divider from '@mui/material/Divider'
+import AccordionSummary from '@mui/material/AccordionSummary'
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import ButtonBase from '@mui/material/ButtonBase'
+import CircularProgress from '@mui/material/CircularProgress'
+import Collapse from '@mui/material/Collapse'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
+import IconButton from '@mui/material/IconButton'
+import Link from '@mui/material/Link'
+import List from '@mui/material/List'
+import ListItemButton from '@mui/material/ListItemButton'
+import Skeleton from '@mui/material/Skeleton'
 import Tooltip from '@mui/material/Tooltip'
-import CloudSyncIcon from '@mui/icons-material/CloudSync'       // Sync from BigQuery
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import Typography from '@mui/material/Typography'
+import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
-import AccountTreeIcon from '@mui/icons-material/AccountTree'      // GCP Project
-import FolderOpenIcon from '@mui/icons-material/FolderOpen'        // BQ Dataset
-import GridOnIcon from '@mui/icons-material/GridOn'                // table row item
-import ViewWeekIcon from '@mui/icons-material/ViewWeek'            // columns
+import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
+import GridOnIcon from '@mui/icons-material/GridOn'
+import LanguageIcon from '@mui/icons-material/Language'
+import NumbersIcon from '@mui/icons-material/Numbers'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'    // validated
-import VerifiedIcon from '@mui/icons-material/Verified'            // stat: documented
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline'
-import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline'
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
-import DoneAllIcon from '@mui/icons-material/DoneAll'
-import SdStorageIcon from '@mui/icons-material/SdStorage'          // storage size
-import UpdateIcon from '@mui/icons-material/Update'                // last modified
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday'  // created date
-import LanguageIcon from '@mui/icons-material/Language'            // BQ region / location
-import NumbersIcon from '@mui/icons-material/Numbers'              // row count
+import SdStorageOutlinedIcon from '@mui/icons-material/SdStorageOutlined'
+import StorageIcon from '@mui/icons-material/Storage'
+import UpdateIcon from '@mui/icons-material/Update'
+import VerifiedIcon from '@mui/icons-material/Verified'
+import ViewWeekOutlinedIcon from '@mui/icons-material/ViewWeekOutlined'
 import { datasetsApi } from '../api/datasets'
-import { tablesApi } from '../api/tables'
-import { bqApi } from '../api/bq'
 import { schemaChangesApi } from '../api/schemaChanges'
 import { searchApi } from '../api/search'
-import type { SyncResponse } from '../api/bq'
 import type { Dataset } from '../api/types'
+import SchemaChangesPanel from '../components/SchemaChangesPanel'
+import SensitivityChip from '../components/SensitivityChip'
+import { SyncProgressList, useSourceSync } from '../components/SourceSync'
+import {
+  EmptyState, MONO, MetaPill, PageHeader, StatTile, compactNumber, formatBytes, formatDate, plural,
+} from '../components/ui'
+import { canEdit, isAdmin, useAuth } from '../contexts/AuthContext'
+import { tokens } from '../theme'
 
 const INLINE_LIMIT = 15
+const PAGE_SIZE = 50
 
-function fmtBytes(bytes: number | null): string | null {
-  if (bytes == null) return null
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
-
-function TablesList({ datasetId, datasetDbId, bqLocation, onNavigate, onOpenDataset }: { datasetId: string; datasetDbId: string; bqLocation?: string | null; onNavigate: (tableId: string) => void; onOpenDataset: () => void }) {
+function TablesList({ dataset }: { dataset: Dataset }) {
+  // Same query as the dataset page, so both share one cache entry
   const { data: tables, isLoading } = useQuery({
-    queryKey: ['dataset', datasetDbId, 'tables'],
-    queryFn: () => tablesApi.list({ dataset_id: datasetDbId }),
+    queryKey: ['dataset', dataset.id, 'tables'],
+    queryFn: () => datasetsApi.listTables(dataset.id),
   })
 
   if (isLoading) {
     return (
       <Box sx={{ px: 3, py: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-        <CircularProgress size={12} />
+        <CircularProgress size={14} />
         <Typography variant="caption" color="text.secondary">Loading tables…</Typography>
       </Box>
     )
   }
-
   if (!tables?.length) {
-    return (
-      <Box sx={{ px: 3, py: 1.5 }}>
-        <Typography variant="caption" color="text.secondary">No tables found.</Typography>
-      </Box>
-    )
+    return <Typography variant="body2" color="text.secondary" sx={{ px: 3, py: 1.5 }}>No tables in this dataset.</Typography>
   }
 
   const visible = tables.slice(0, INLINE_LIMIT)
-  const overflow = tables.length - INLINE_LIMIT
+  const overflow = tables.length - visible.length
 
   return (
     <>
-      <List dense disablePadding>
+      <List dense disablePadding aria-label={`Tables in ${dataset.dataset_id}`}>
         {visible.map((t) => (
           <ListItemButton
             key={t.id}
-            onClick={() => onNavigate(t.id)}
-            sx={{ pl: 9, pr: 2, py: 1, alignItems: 'flex-start', '&:hover': { bgcolor: '#f8faff' } }}
+            component={RouterLink}
+            to={`/datasets/${dataset.id}/tables/${t.id}`}
+            sx={{ pl: { xs: 3, sm: 7 }, pr: 2, py: 1, gap: 1.25, alignItems: 'flex-start', borderRadius: 0, '&:hover': { bgcolor: tokens.paper } }}
           >
-            <ListItemIcon sx={{ minWidth: 28, mt: '3px' }}>
-              {t.is_validated
-                ? <VerifiedUserIcon sx={{ fontSize: 15, color: '#137333' }} />
-                : <GridOnIcon sx={{ fontSize: 15, color: '#9aa0a6' }} />
-              }
-            </ListItemIcon>
-
-            {/* Table name (row 1) + meta pills (row 2) */}
-            <Box sx={{ flex: 1, minWidth: 0, mr: 1 }}>
-              {/* Row 1: table name */}
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.82rem', fontWeight: 600, color: '#202124' }}>
-                {t.table_id}
-              </Typography>
-              {/* Row 2: pills — only rendered when at least one exists */}
-              {(t.row_count != null || (t.columns?.length ?? 0) > 0 || fmtBytes(t.size_bytes) || bqLocation || t.bq_created_at || t.bq_last_modified) && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
-                  {t.row_count != null && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
-                      <NumbersIcon sx={{ fontSize: 11, color: '#5f6368' }} />
-                      <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
-                        {t.row_count.toLocaleString()} rows
-                      </Typography>
-                    </Box>
-                  )}
-                  {(t.columns?.length ?? 0) > 0 && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
-                      <ViewWeekIcon sx={{ fontSize: 11, color: '#5f6368' }} />
-                      <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
-                        {t.columns.length} cols
-                      </Typography>
-                    </Box>
-                  )}
-                  {fmtBytes(t.size_bytes) && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#f1f3f4' }}>
-                      <SdStorageIcon sx={{ fontSize: 11, color: '#5f6368' }} />
-                      <Typography sx={{ fontSize: '0.68rem', color: '#3c4043', fontWeight: 500, lineHeight: 1 }}>
-                        {fmtBytes(t.size_bytes)}
-                      </Typography>
-                    </Box>
-                  )}
-                  {bqLocation && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#e8f0fe' }}>
-                      <LanguageIcon sx={{ fontSize: 11, color: '#1a73e8' }} />
-                      <Typography sx={{ fontSize: '0.68rem', color: '#1a73e8', fontWeight: 500, lineHeight: 1 }}>
-                        {bqLocation}
-                      </Typography>
-                    </Box>
-                  )}
-                  {t.bq_created_at && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#fce8e6' }}>
-                      <CalendarTodayIcon sx={{ fontSize: 11, color: '#c5221f' }} />
-                      <Typography sx={{ fontSize: '0.68rem', color: '#c5221f', fontWeight: 500, lineHeight: 1 }}>
-                        {new Date(t.bq_created_at).toLocaleDateString()}
-                      </Typography>
-                    </Box>
-                  )}
-                  {t.bq_last_modified && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.9, py: 0.25, borderRadius: '6px', bgcolor: '#e6f4ea' }}>
-                      <UpdateIcon sx={{ fontSize: 11, color: '#137333' }} />
-                      <Typography sx={{ fontSize: '0.68rem', color: '#137333', fontWeight: 500, lineHeight: 1 }}>
-                        {new Date(t.bq_last_modified).toLocaleDateString()}
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-              )}
+            {t.is_validated
+              ? <VerifiedIcon titleAccess="Trusted source" sx={{ fontSize: 16, color: tokens.success, mt: '2px' }} />
+              : <GridOnIcon aria-hidden sx={{ fontSize: 16, color: tokens.ink3, mt: '2px' }} />}
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ ...MONO, fontWeight: 500, color: tokens.ink, overflowWrap: 'anywhere' }}>{t.table_id}</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+                {t.row_count != null && <MetaPill icon={<NumbersIcon />}>{compactNumber(t.row_count)} rows</MetaPill>}
+                {t.columns.length > 0 && <MetaPill icon={<ViewWeekOutlinedIcon />}>{t.columns.length} cols</MetaPill>}
+                {t.size_bytes != null && <MetaPill icon={<SdStorageOutlinedIcon />}>{formatBytes(t.size_bytes)}</MetaPill>}
+                {t.bq_last_modified && <MetaPill icon={<UpdateIcon />} title="Last modified in BigQuery">{formatDate(t.bq_last_modified)}</MetaPill>}
+                <SensitivityChip label={t.sensitivity_label} />
+              </Box>
             </Box>
-
-            <ChevronRightIcon sx={{ fontSize: 14, color: '#dadce0', flexShrink: 0, mt: '3px' }} />
+            <ChevronRightIcon aria-hidden sx={{ fontSize: 18, color: tokens.ruleStrong, mt: '2px' }} />
           </ListItemButton>
         ))}
       </List>
       {overflow > 0 && (
-        <Box
-          sx={{
-            pl: 7, pr: 2, py: 1, display: 'flex', alignItems: 'center', gap: 1,
-            borderTop: '1px solid', borderColor: 'divider',
-          }}
-        >
-          <Typography variant="caption" color="text.secondary">
-            +{overflow} more table{overflow !== 1 ? 's' : ''}
-          </Typography>
-          <Button
-            size="small"
-            endIcon={<OpenInNewIcon sx={{ fontSize: '13px !important' }} />}
-            onClick={onOpenDataset}
-            sx={{ fontSize: '0.75rem', ml: 0.5 }}
-          >
-            View all in dataset page
-          </Button>
+        <Box sx={{ pl: { xs: 3, sm: 7 }, pr: 2, py: 1, borderTop: `1px solid ${tokens.rule}` }}>
+          <Link component={RouterLink} to={`/datasets/${dataset.id}`} variant="body2">
+            View all {plural(tables.length, 'table')} in {dataset.display_name || dataset.dataset_id}
+          </Link>
         </Box>
       )}
     </>
   )
 }
 
+function DatasetRow({ ds }: { ds: Dataset }) {
+  const [open, setOpen] = useState(false)
+  const name = ds.display_name || ds.dataset_id
+  const listId = `tables-${ds.id}`
+  return (
+    <Box sx={{ borderTop: `1px solid ${tokens.rule}`, boxShadow: ds.is_validated ? `inset 3px 0 0 ${tokens.success}` : undefined }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', pr: 1.5, '&:hover': { bgcolor: tokens.paper } }}>
+        <ButtonBase
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls={listId}
+          sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', gap: 1.25, pl: { xs: 2, sm: 3 }, pr: 1, py: 1.25, textAlign: 'left' }}
+        >
+          <ExpandMoreIcon aria-hidden sx={{ fontSize: 18, color: tokens.ink3, transition: 'transform .2s', transform: open ? 'none' : 'rotate(-90deg)' }} />
+          <FolderOutlinedIcon aria-hidden sx={{ fontSize: 18, color: tokens.ink3 }} />
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography variant="body2" fontWeight={600} noWrap>{name}</Typography>
+            {name !== ds.dataset_id && <Typography sx={{ ...MONO, fontSize: '0.75rem', color: tokens.ink3 }} noWrap>{ds.dataset_id}</Typography>}
+          </Box>
+          <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 0.5, alignItems: 'center', flexShrink: 0 }}>
+            {ds.is_validated && <MetaPill tone="success" icon={<VerifiedIcon />}>Validated</MetaPill>}
+            <SensitivityChip label={ds.sensitivity_label} />
+            {ds.bq_location && <MetaPill icon={<LanguageIcon />} title="BigQuery location">{ds.bq_location}</MetaPill>}
+            {ds.bq_last_modified && <MetaPill icon={<UpdateIcon />} title="Last modified in BigQuery">{formatDate(ds.bq_last_modified)}</MetaPill>}
+          </Box>
+          <MetaPill>{plural(ds.table_count ?? 0, 'table')}</MetaPill>
+        </ButtonBase>
+        <Tooltip title="Open dataset">
+          <IconButton component={RouterLink} to={`/datasets/${ds.id}`} size="small" aria-label={`Open dataset ${name}`}>
+            <OpenInNewIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
+      <Collapse in={open} unmountOnExit>
+        <Box id={listId} sx={{ borderTop: `1px solid ${tokens.rule}`, bgcolor: tokens.surface }}>
+          <TablesList dataset={ds} />
+        </Box>
+      </Collapse>
+    </Box>
+  )
+}
 
 export default function Browse() {
-  const navigate = useNavigate()
-  const [syncDialog, setSyncDialog] = useState(false)
-  const [expandedValidated, setExpandedValidated] = useState<Set<string>>(new Set())
-  const [syncResult, setSyncResult] = useState<SyncResponse | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
-  const qc = useQueryClient()
+  const { user } = useAuth()
+  const admin = isAdmin(user)
+  const sync = useSourceSync()
+  const [syncOpen, setSyncOpen] = useState(false)
 
-  const toggleValidated = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setExpandedValidated((prev) => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
-
-  const syncMutation = useMutation({
-    mutationFn: () => bqApi.sync(),
-    onSuccess: (data) => {
-      setSyncResult(data)
-      setSyncDialog(true)
-      qc.invalidateQueries({ queryKey: ['datasets'] })
-      qc.invalidateQueries({ queryKey: ['stats'] })
-      qc.invalidateQueries({ queryKey: ['schema-changes'] })
-    },
-    onError: (err: any) => {
-      setSyncError(err.response?.data?.detail ?? 'Sync failed.')
-      setSyncDialog(true)
-    },
-  })
-
-  const PAGE_SIZE = 50
-  const {
-    data: datasetsPages,
-    isLoading,
-    hasNextPage,
-    fetchNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery({
+  const { data: datasetsPages, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ['datasets'],
-    queryFn: ({ pageParam = 0 }) => datasetsApi.list({ skip: pageParam as number, limit: PAGE_SIZE }),
-    getNextPageParam: (lastPage, pages) =>
-      lastPage.length === PAGE_SIZE ? pages.length * PAGE_SIZE : undefined,
+    queryFn: ({ pageParam }) => datasetsApi.list({ skip: pageParam, limit: PAGE_SIZE }),
+    getNextPageParam: (lastPage, pages) => (lastPage.length === PAGE_SIZE ? pages.length * PAGE_SIZE : undefined),
     initialPageParam: 0,
   })
-  const datasets = datasetsPages?.pages.flat()
+  const datasets = datasetsPages?.pages.flat() ?? []
 
-  const { data: stats } = useQuery({
-    queryKey: ['stats'],
-    queryFn: searchApi.stats,
-  })
+  const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: searchApi.stats })
 
   const { data: schemaChanges = [] } = useQuery({
     queryKey: ['schema-changes'],
@@ -254,254 +175,107 @@ export default function Browse() {
     refetchInterval: 60_000,
   })
 
-  const ackMutation = useMutation({
-    mutationFn: (id: string) => schemaChangesApi.acknowledge(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['schema-changes'] }),
-  })
-
-  const ackAllMutation = useMutation({
-    mutationFn: () => schemaChangesApi.acknowledgeAll(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['schema-changes'] }),
-  })
-
-  const grouped = (datasets ?? []).reduce<Record<string, Dataset[]>>((acc, ds) => {
-    if (!acc[ds.project_id]) acc[ds.project_id] = []
-    acc[ds.project_id].push(ds)
+  const grouped = datasets.reduce<Record<string, Dataset[]>>((acc, ds) => {
+    ;(acc[ds.project_id] ??= []).push(ds)
     return acc
   }, {})
+  const projects = Object.entries(grouped)
+
+  const startSync = () => {
+    setSyncOpen(true)
+    sync.run()
+  }
+
+  const syncButton = admin && (
+    <Button
+      variant="contained"
+      startIcon={sync.running ? <CircularProgress size={16} color="inherit" /> : <CloudSyncOutlinedIcon />}
+      onClick={startSync}
+      disabled={sync.running}
+    >
+      {sync.running ? 'Syncing…' : 'Sync all sources'}
+    </Button>
+  )
 
   return (
     <Box>
-      {/* Schema change alerts */}
-      <Collapse in={schemaChanges.length > 0}>
-        <Box sx={{ mb: 3, border: '1px solid #f9a825', borderRadius: 2, overflow: 'hidden' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2.5, py: 1.25, bgcolor: '#fffde7', borderBottom: '1px solid #f9a825' }}>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ flex: 1, color: '#e65100' }}>
-              Schema Changes Detected
-              <Chip label={schemaChanges.length} size="small" sx={{ ml: 1, height: 18, fontSize: '0.65rem', bgcolor: '#e65100', color: 'white' }} />
-            </Typography>
-            <Typography variant="caption" color="text.secondary">Detected on last sync</Typography>
-            <Button
-              size="small"
-              startIcon={<DoneAllIcon sx={{ fontSize: '14px !important' }} />}
-              onClick={() => ackAllMutation.mutate()}
-              disabled={ackAllMutation.isPending}
-              sx={{ fontSize: '0.72rem', textTransform: 'none', color: '#e65100' }}
-            >
-              Acknowledge all
-            </Button>
-          </Box>
-          {schemaChanges.slice(0, 8).map((c) => (
-            <Box
-              key={c.id}
-              sx={{
-                display: 'flex', alignItems: 'center', gap: 2, px: 2.5, py: 0.9,
-                borderBottom: '1px solid', borderColor: 'divider',
-                '&:last-child': { borderBottom: 'none' },
-                '&:hover': { bgcolor: '#fafafa' },
-              }}
-            >
-              {c.change_type === 'column_added'
-                ? <AddCircleOutlineIcon sx={{ fontSize: 15, color: '#2e7d32', flexShrink: 0 }} />
-                : <RemoveCircleOutlineIcon sx={{ fontSize: 15, color: '#c62828', flexShrink: 0 }} />}
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography
-                    variant="body2" fontWeight={500}
-                    sx={{ fontFamily: 'monospace', cursor: 'pointer', '&:hover': { color: '#1a73e8' } }}
-                    onClick={() => navigate(`/datasets/${c.dataset_uuid}/tables/${c.table_id}`)}
-                  >
-                    {c.project_id}.{c.dataset_id_str}.{c.table_table_id}
-                  </Typography>
-                  <Chip
-                    label={c.change_type === 'column_added' ? 'added' : 'removed'}
-                    size="small"
-                    sx={{ height: 16, fontSize: '0.6rem', bgcolor: c.change_type === 'column_added' ? '#e8f5e9' : '#ffebee', color: c.change_type === 'column_added' ? '#2e7d32' : '#c62828' }}
-                  />
-                </Box>
-                <Typography variant="caption" color="text.secondary">
-                  Column <strong style={{ fontFamily: 'monospace' }}>{c.column_name}</strong>
-                  {' · '}{new Date(c.detected_at).toLocaleString()}
-                </Typography>
-              </Box>
-              <IconButton size="small" onClick={() => ackMutation.mutate(c.id)} disabled={ackMutation.isPending} sx={{ color: 'text.disabled', '&:hover': { color: 'success.main' } }}>
-                <CheckCircleOutlineIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Box>
-          ))}
-          {schemaChanges.length > 8 && (
-            <Box sx={{ px: 2.5, py: 0.75, bgcolor: '#fffde7' }}>
-              <Typography variant="caption" color="text.secondary">+ {schemaChanges.length - 8} more</Typography>
-            </Box>
-          )}
-        </Box>
-      </Collapse>
+      <PageHeader
+        eyebrow="Catalog"
+        title="Browse"
+        subtitle="Every BigQuery project, dataset and table synced into the catalog."
+        actions={syncButton}
+      />
 
-      {/* Header row */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="h6" fontWeight={700}>Browse Catalog</Typography>
-        <Button
-          variant="contained"
-          startIcon={syncMutation.isPending ? <CircularProgress size={15} color="inherit" /> : <CloudSyncIcon />}
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          sx={{ borderRadius: 2, px: 2.5, py: 1, fontWeight: 600, textTransform: 'none', boxShadow: 'none', '&:hover': { boxShadow: 1 } }}
-        >
-          {syncMutation.isPending ? 'Syncing…' : 'Sync from BigQuery'}
-        </Button>
+      <SchemaChangesPanel changes={schemaChanges} canAck={canEdit(user)} />
+
+      <Box component="section" aria-label="Catalog totals" sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' }, gap: 2, mb: 4 }}>
+        {stats ? (
+          <>
+            <StatTile label="Datasets" value={compactNumber(stats.total_datasets)} />
+            <StatTile label="Tables" value={compactNumber(stats.total_tables)} />
+            <StatTile label="Columns" value={compactNumber(stats.total_columns)} />
+            <StatTile
+              label="Documented tables"
+              value={`${stats.documentation_coverage}%`}
+              meter={stats.documentation_coverage}
+              hint={`${stats.documented_tables.toLocaleString()} of ${plural(stats.total_tables, 'table')} described`}
+            />
+          </>
+        ) : (
+          [0, 1, 2, 3].map((i) => <Skeleton key={i} variant="rounded" height={104} />)
+        )}
       </Box>
 
-      {/* Stats */}
-      {stats && (
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          {[
-            { icon: <FolderOpenIcon />, value: stats.total_datasets, label: 'Datasets', color: '#1a73e8' },
-            { icon: <GridOnIcon />, value: stats.total_tables, label: 'Tables', color: '#137333' },
-            { icon: <ViewWeekIcon />, value: stats.total_columns, label: 'Columns', color: '#e37400' },
-            { icon: <VerifiedIcon />, value: `${stats.documentation_coverage}%`, label: 'Documented', color: '#9334e6' },
-          ].map(({ icon, value, label, color }) => (
-            <Grid item xs={6} sm={3} key={label}>
-              <Card sx={{ height: '100%' }}>
-                <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                  <Box sx={{ p: 1, borderRadius: 2, backgroundColor: `${color}18`, color }}>{icon}</Box>
-                  <Box>
-                    <Typography variant="h5" fontWeight={700} sx={{ lineHeight: 1.2 }}>{value}</Typography>
-                    <Typography variant="caption" color="text.secondary">{label}</Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-      )}
+      <Typography variant="h6" component="h2" sx={{ mb: 1.5 }}>Projects</Typography>
 
-      {/* Loading skeletons */}
       {isLoading && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {[0, 1].map((i) => <Skeleton key={i} variant="rounded" height={64} />)}
         </Box>
       )}
 
-      {/* Projects → Datasets */}
-      {!isLoading && Object.entries(grouped).map(([projectId, projectDatasets]) => {
-        const totalTables = projectDatasets.reduce((s, d) => s + (d.table_count ?? 0), 0)
-        const validatedDatasets = projectDatasets.filter((d) => d.is_validated).length
+      {!isLoading && projects.length === 0 && (
+        <EmptyState
+          icon={<StorageIcon />}
+          title="No datasets yet"
+          action={admin && (
+            <>
+              {syncButton}
+              <Button component={RouterLink} to="/sources" variant="outlined">Manage GCP sources</Button>
+            </>
+          )}
+        >
+          {admin
+            ? 'Connect a GCP project under GCP sources, then sync it to discover its datasets and tables.'
+            : 'An admin has to connect and sync a GCP project before anything shows up here.'}
+        </EmptyState>
+      )}
 
+      {projects.map(([projectId, projectDatasets]) => {
+        const totalTables = projectDatasets.reduce((s, d) => s + (d.table_count ?? 0), 0)
+        const validated = projectDatasets.filter((d) => d.is_validated).length
         return (
-          <Accordion
-            key={projectId}
-            disableGutters
-            elevation={0}
-            sx={{ border: '1px solid', borderColor: 'divider', mb: 2, borderRadius: '10px !important', '&:before': { display: 'none' } }}
-          >
-            {/* Project header */}
-            <AccordionSummary
-              expandIcon={<ExpandMoreIcon />}
-              sx={{ px: 2.5, py: 1, bgcolor: '#f8f9fa', borderRadius: '10px', minHeight: 52 }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1, mr: 1 }}>
-                <AccountTreeIcon sx={{ color: '#1a73e8', fontSize: 20 }} />
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.3 }}>
+          <Accordion key={projectId} defaultExpanded={projects.length === 1} sx={{ mb: 1.5 }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: { xs: 2, sm: 2.5 }, minHeight: 60 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+                <AccountTreeOutlinedIcon aria-hidden sx={{ color: tokens.accent, fontSize: 20 }} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="subtitle1" component="h3" sx={{ ...MONO, fontSize: '0.9375rem', fontWeight: 600, overflowWrap: 'anywhere' }}>
                     {projectId}
                   </Typography>
-                  <Box sx={{ display: 'flex', gap: 2, mt: 0.25 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      {projectDatasets.length} dataset{projectDatasets.length !== 1 ? 's' : ''}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {totalTables} table{totalTables !== 1 ? 's' : ''}
-                    </Typography>
-                    {validatedDatasets > 0 && (
-                      <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 500 }}>
-                        {validatedDatasets} validated
-                      </Typography>
-                    )}
-                  </Box>
+                  <Typography variant="caption" color="text.secondary">
+                    {plural(projectDatasets.length, 'dataset')} · {plural(totalTables, 'table')}
+                    {validated > 0 && ` · ${validated} validated`}
+                  </Typography>
                 </Box>
               </Box>
             </AccordionSummary>
-
             <AccordionDetails sx={{ p: 0 }}>
-              {projectDatasets.map((ds, idx) => (
-                <Box key={ds.id}>
-                  {idx > 0 && <Divider />}
-
-                  {/* Dataset row */}
-                  <Box
-                    sx={{
-                      pl: 5.5, pr: 2, py: 1.25,
-                      display: 'flex', alignItems: 'center', gap: 1,
-                      borderLeft: ds.is_validated ? '3px solid #137333' : '3px solid transparent',
-                      '&:hover': { bgcolor: '#f8faff' },
-                      transition: 'background 0.12s',
-                      cursor: 'pointer',
-                    }}
-                    onClick={(e) => toggleValidated(ds.id, e)}
-                  >
-                    <FolderOpenIcon sx={{ color: '#9aa0a6', fontSize: 15, flexShrink: 0 }} />
-                    <Typography variant="body2" fontWeight={600} noWrap sx={{ flex: 1, minWidth: 0 }}>
-                      {ds.display_name || ds.dataset_id}
-                    </Typography>
-                    <Chip
-                      label={`${ds.table_count ?? 0} tables`}
-                      size="small"
-                      sx={{ fontSize: '0.7rem', height: 18, bgcolor: '#f1f3f4', color: '#5f6368', flexShrink: 0 }}
-                    />
-                    {ds.bq_location && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.8, py: 0.2, borderRadius: '6px', bgcolor: '#e8f0fe', flexShrink: 0 }}>
-                        <LanguageIcon sx={{ fontSize: 11, color: '#1a73e8' }} />
-                        <Typography sx={{ fontSize: '0.68rem', color: '#1a73e8', fontWeight: 500, lineHeight: 1 }}>{ds.bq_location}</Typography>
-                      </Box>
-                    )}
-                    {ds.bq_last_modified && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, px: 0.8, py: 0.2, borderRadius: '6px', bgcolor: '#e6f4ea', flexShrink: 0 }}>
-                        <UpdateIcon sx={{ fontSize: 11, color: '#137333' }} />
-                        <Typography sx={{ fontSize: '0.68rem', color: '#137333', fontWeight: 500, lineHeight: 1 }}>
-                          {new Date(ds.bq_last_modified).toLocaleDateString()}
-                        </Typography>
-                      </Box>
-                    )}
-                    {ds.is_validated && (
-                      <VerifiedIcon sx={{ fontSize: 14, color: '#137333', flexShrink: 0 }} />
-                    )}
-                    <Tooltip title="Open dataset">
-                      <IconButton
-                        size="small"
-                        onClick={(e) => { e.stopPropagation(); navigate(`/datasets/${ds.id}`) }}
-                        sx={{ color: 'text.disabled', '&:hover': { color: '#1a73e8' }, flexShrink: 0 }}
-                      >
-                        <OpenInNewIcon sx={{ fontSize: 14 }} />
-                      </IconButton>
-                    </Tooltip>
-                    <ExpandMoreIcon sx={{
-                      fontSize: 16, color: '#9aa0a6', flexShrink: 0,
-                      transition: 'transform 0.2s',
-                      transform: expandedValidated.has(ds.id) ? 'rotate(180deg)' : 'none',
-                    }} />
-                  </Box>
-
-                  {/* Tables list */}
-                  <Collapse in={expandedValidated.has(ds.id)} unmountOnExit>
-                    <Divider />
-                    <TablesList
-                      datasetId={ds.dataset_id}
-                      datasetDbId={ds.id}
-                      bqLocation={ds.bq_location}
-                      onNavigate={(tableId) => navigate(`/datasets/${ds.id}/tables/${tableId}`)}
-                      onOpenDataset={() => navigate(`/datasets/${ds.id}`)}
-                    />
-                  </Collapse>
-                </Box>
-              ))}
+              {projectDatasets.map((ds) => <DatasetRow key={ds.id} ds={ds} />)}
             </AccordionDetails>
           </Accordion>
         )
       })}
-
-      {!isLoading && Object.keys(grouped).length === 0 && (
-        <Alert severity="info">No datasets found. Run a BigQuery sync to discover your data.</Alert>
-      )}
 
       {hasNextPage && (
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
@@ -516,49 +290,19 @@ export default function Browse() {
         </Box>
       )}
 
-      {/* Sync result dialog */}
-      <Dialog
-        open={syncDialog}
-        onClose={() => { setSyncDialog(false); setSyncResult(null); setSyncError(null) }}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>{syncError ? 'Sync Failed' : 'BigQuery Sync Complete'}</DialogTitle>
+      <Dialog open={syncOpen} onClose={() => setSyncOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>{sync.running ? 'Syncing from BigQuery…' : 'BigQuery sync'}</DialogTitle>
         <DialogContent>
-          {syncError ? (
-            <Alert severity="error">{syncError}</Alert>
-          ) : syncResult ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <Alert severity="success">
-                Successfully synced from <strong>{syncResult.project_id}</strong>
-              </Alert>
-              {[
-                { label: 'Datasets added', value: syncResult.result.datasets_added },
-                { label: 'Datasets updated', value: syncResult.result.datasets_updated },
-                { label: 'Tables added', value: syncResult.result.tables_added },
-                { label: 'Tables updated', value: syncResult.result.tables_updated },
-                { label: 'Columns synced', value: syncResult.result.columns_synced },
-              ].map(({ label, value }) => (
-                <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', px: 1 }}>
-                  <Typography variant="body2" color="text.secondary">{label}</Typography>
-                  <Typography variant="body2" fontWeight={600}>{value}</Typography>
-                </Box>
-              ))}
-              {syncResult.result.errors.length > 0 && (
-                <Alert severity="warning" sx={{ mt: 1 }}>
-                  {syncResult.result.errors.length} warning(s):
-                  <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
-                    {syncResult.result.errors.slice(0, 5).map((e, i) => (
-                      <li key={i}><Typography variant="caption">{e}</Typography></li>
-                    ))}
-                  </ul>
-                </Alert>
-              )}
-            </Box>
-          ) : null}
+          {sync.error && <Alert severity="error">{sync.error}</Alert>}
+          {sync.rows.length > 0 && <SyncProgressList rows={sync.rows} />}
+          {sync.running && (
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 2 }}>
+              Projects sync one at a time. You can close this window; the sync keeps running while this page is open.
+            </Typography>
+          )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setSyncDialog(false); setSyncResult(null); setSyncError(null) }}>Close</Button>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setSyncOpen(false)}>{sync.running ? 'Hide' : 'Close'}</Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -1,257 +1,213 @@
-import { useState } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
 import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Typography from '@mui/material/Typography'
-import Skeleton from '@mui/material/Skeleton'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
+import Skeleton from '@mui/material/Skeleton'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
-import Alert from '@mui/material/Alert'
-import Stack from '@mui/material/Stack'
-import FolderOpenIcon from '@mui/icons-material/FolderOpen'
+import Typography from '@mui/material/Typography'
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import GridOnIcon from '@mui/icons-material/GridOn'
-import ViewColumnIcon from '@mui/icons-material/ViewColumn'
-import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight'
+import SearchIcon from '@mui/icons-material/Search'
+import ViewWeekOutlinedIcon from '@mui/icons-material/ViewWeekOutlined'
+import { searchApi } from '../api/search'
+import type { ColumnSearchResult, SearchResult } from '../api/types'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
-import { searchApi } from '../api/search'
-import type { SensitivityLabel } from '../api/types'
-import { MONO_PATH } from '../design'
+import { CardLink, EmptyState, MONO, MetaPill, PATH_SX, PageHeader, formatDate, linkCardSx, plural } from '../components/ui'
+import { tokens } from '../theme'
+
+const PAGE = 20
+type Mode = 'entities' | 'columns'
+
+function ResultIcon({ dataset }: { dataset: boolean }) {
+  return (
+    <Box aria-hidden sx={{ width: 36, height: 36, flexShrink: 0, borderRadius: `${tokens.radius}px`, display: 'grid', placeItems: 'center', bgcolor: tokens.accentWash, color: tokens.accent, '& svg': { fontSize: 20 } }}>
+      {dataset ? <FolderOutlinedIcon /> : <GridOnIcon />}
+    </Box>
+  )
+}
+
+function EntityCard({ r }: { r: SearchResult }) {
+  const dataset = r.entity_type === 'dataset'
+  const to = dataset ? `/datasets/${r.id}` : `/datasets/${r.dataset_uuid}/tables/${r.id}`
+  return (
+    <Card component="article" sx={linkCardSx}>
+      <Box sx={{ display: 'flex', gap: 2, px: 2.5, py: 2, alignItems: 'flex-start' }}>
+        <ResultIcon dataset={dataset} />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography variant="subtitle1" component="h2" sx={{ overflowWrap: 'anywhere' }}>
+              <CardLink to={to}>{r.name}</CardLink>
+            </Typography>
+            <MetaPill tone="accent">{dataset ? 'Dataset' : 'Table'}</MetaPill>
+            <SensitivityChip label={r.sensitivity_label} />
+            <Box sx={{ flex: 1 }} />
+            <Typography variant="caption" color="text.secondary">Updated {formatDate(r.updated_at)}</Typography>
+          </Box>
+          <Typography sx={{ ...PATH_SX, fontSize: '0.75rem', mt: 0.25 }}>
+            {r.project_id}.{r.dataset_id}{r.table_id ? `.${r.table_id}` : ''}
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{ mt: 0.75, color: r.description ? tokens.ink2 : tokens.ink3, fontStyle: r.description ? 'normal' : 'italic', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+          >
+            {r.description || 'No description'}
+          </Typography>
+          {r.tags.length > 0 && (
+            <Box sx={{ display: 'flex', gap: 0.5, mt: 1, flexWrap: 'wrap' }}>
+              {r.tags.map((t) => <TagChip key={t} tag={t} />)}
+            </Box>
+          )}
+        </Box>
+      </Box>
+    </Card>
+  )
+}
+
+function ColumnCard({ col }: { col: ColumnSearchResult }) {
+  return (
+    <Card component="article" sx={linkCardSx}>
+      <Box sx={{ display: 'flex', gap: 2, px: 2.5, py: 1.75, alignItems: 'center' }}>
+        <Box aria-hidden sx={{ width: 36, height: 36, flexShrink: 0, borderRadius: `${tokens.radius}px`, display: 'grid', placeItems: 'center', bgcolor: tokens.paper2, color: tokens.ink2 }}>
+          <ViewWeekOutlinedIcon sx={{ fontSize: 20 }} />
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography component="h2" sx={{ ...MONO, fontSize: '0.9375rem', fontWeight: 600 }}>
+              <CardLink to={`/datasets/${col.dataset_id}/tables/${col.table_id}`}>{col.column_name}</CardLink>
+            </Typography>
+            {col.data_type && <MetaPill mono>{col.data_type}</MetaPill>}
+            {col.is_pii && <MetaPill tone="danger">PII</MetaPill>}
+          </Box>
+          <Typography sx={{ ...PATH_SX, fontSize: '0.75rem', mt: 0.25 }}>
+            {col.project_id}.{col.dataset_bq_id}.{col.table_bq_id}
+          </Typography>
+        </Box>
+      </Box>
+    </Card>
+  )
+}
 
 export default function SearchResults() {
   const [params, setParams] = useSearchParams()
-  const navigate = useNavigate()
-  const q = params.get('q') ?? ''
+  const q = params.get('q')?.trim() ?? ''
+  const mode: Mode = params.get('mode') === 'columns' ? 'columns' : 'entities'
   const entityType = (params.get('type') as 'dataset' | 'table' | null) ?? undefined
   const datasetId = params.get('dataset_id') ?? undefined
-  const [searchMode, setSearchMode] = useState<'entities' | 'columns'>('entities')
+  const projectId = params.get('project_id') ?? undefined
 
-  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['search', q, entityType, datasetId],
-    queryFn: ({ pageParam = 0 }) =>
-      searchApi.search({ q, entity_type: entityType, dataset_id: datasetId, skip: pageParam as number, limit: 20 }),
-    getNextPageParam: (lastPage, pages) =>
-      lastPage.results.length === 20 ? pages.length * 20 : undefined,
-    initialPageParam: 0,
-    enabled: !!q,
-  })
-
-  const allResults = data?.pages.flatMap((p) => p.results) ?? []
-  const total = data?.pages[0]?.total ?? 0
-
-  const { data: columnResults, isLoading: colLoading } = useQuery({
-    queryKey: ['search-columns', q],
-    queryFn: () => searchApi.searchColumns(q),
-    enabled: !!q && searchMode === 'columns',
-  })
-
-  const setType = (_: React.MouseEvent, val: string | null) => {
+  const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params)
-    if (val) next.set('type', val)
-    else next.delete('type')
-    setParams(next)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    setParams(next, { replace: true })
   }
 
-  const handleResultClick = (r: { entity_type: string; id: string; dataset_uuid: string | null; dataset_id: string }) => {
-    if (r.entity_type === 'dataset') navigate(`/datasets/${r.id}`)
-    else navigate(`/datasets/${r.dataset_uuid ?? r.dataset_id}/tables/${r.id}`)
+  const entities = useInfiniteQuery({
+    queryKey: ['search', q, entityType, datasetId, projectId],
+    queryFn: ({ pageParam }) =>
+      searchApi.search({ q, entity_type: entityType, dataset_id: datasetId, project_id: projectId, skip: pageParam, limit: PAGE }),
+    getNextPageParam: (last, pages) => (last.results.length === PAGE ? pages.length * PAGE : undefined),
+    initialPageParam: 0,
+    enabled: !!q && mode === 'entities',
+  })
+  const results = entities.data?.pages.flatMap((p) => p.results) ?? []
+  const total = entities.data?.pages[0]?.total ?? 0
+
+  const columns = useQuery({
+    queryKey: ['search-columns', q],
+    queryFn: () => searchApi.searchColumns(q),
+    enabled: !!q && mode === 'columns',
+  })
+
+  const loading = mode === 'entities' ? entities.isLoading : columns.isLoading
+  const count = mode === 'entities' ? total : columns.data?.length ?? 0
+  const noun = mode === 'entities' ? 'result' : 'column'
+
+  if (!q) {
+    return (
+      <Box>
+        <PageHeader eyebrow="Search" title="Search the catalog" />
+        <EmptyState icon={<SearchIcon />} title="Type a search above">
+          Find datasets, tables and columns by name, description or tag.
+        </EmptyState>
+      </Box>
+    )
   }
 
   return (
     <Box>
-      {/* Page header */}
-      <Box sx={{ mb: 3 }}>
-        {q && (
-          <Typography variant="h5" fontWeight={700} gutterBottom>
-            {isLoading ? 'Searching…' : `${total.toLocaleString()} result${total !== 1 ? 's' : ''}`}
-          </Typography>
-        )}
-        <Typography variant="body2" color="text.secondary">
-          {q ? <>for <strong>"{q}"</strong></> : 'Enter a search term above to find datasets and tables.'}
-        </Typography>
-      </Box>
+      <PageHeader
+        eyebrow="Search"
+        title={<>Results for “{q}”</>}
+        subtitle={loading ? 'Searching…' : `${plural(count, noun)}${mode === 'columns' && count === 50 ? ' (first 50)' : ''}`}
+      />
 
-      {/* Filters row */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-        <ToggleButtonGroup
-          value={searchMode} exclusive
-          onChange={(_, v) => v && setSearchMode(v)}
-          size="small"
-        >
-          <ToggleButton value="entities">Datasets &amp; Tables</ToggleButton>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3, flexWrap: 'wrap' }}>
+        <ToggleButtonGroup value={mode} exclusive size="small" aria-label="What to search" onChange={(_, v: Mode | null) => v && setParam('mode', v === 'columns' ? 'columns' : null)}>
+          <ToggleButton value="entities">Datasets &amp; tables</ToggleButton>
           <ToggleButton value="columns">Columns</ToggleButton>
         </ToggleButtonGroup>
 
-        {searchMode === 'entities' && (
-          <ToggleButtonGroup value={entityType ?? ''} exclusive onChange={setType} size="small">
-            <ToggleButton value="">All types</ToggleButton>
+        {mode === 'entities' && (
+          <ToggleButtonGroup value={entityType ?? ''} exclusive size="small" aria-label="Result type" onChange={(_, v: string | null) => v !== null && setParam('type', v || null)}>
+            <ToggleButton value="">All</ToggleButton>
             <ToggleButton value="dataset">Datasets</ToggleButton>
             <ToggleButton value="table">Tables</ToggleButton>
           </ToggleButtonGroup>
         )}
 
-        {datasetId && (
+        {mode === 'entities' && datasetId && (
           <Chip
-            label={`Dataset: ${datasetId}`}
-            size="small"
+            label={`In ${projectId ? `${projectId}.` : ''}${datasetId}`}
             onDelete={() => {
               const next = new URLSearchParams(params)
               next.delete('dataset_id')
-              setParams(next)
+              next.delete('project_id')
+              setParams(next, { replace: true })
             }}
-            sx={{ bgcolor: '#e8f0fe', color: '#1557b0', fontWeight: 500 }}
+            sx={{ ...MONO, bgcolor: tokens.accentWash, color: tokens.ink }}
           />
         )}
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>Search failed. Please try again.</Alert>}
-
-      {!q && (
-        <Box sx={{ textAlign: 'center', py: 8 }}>
-          <FolderOpenIcon sx={{ fontSize: 48, color: '#dadce0', mb: 2 }} />
-          <Typography variant="h6" color="text.secondary" gutterBottom>Start searching</Typography>
-          <Typography variant="body2" color="text.disabled">
-            Type in the search bar above to find datasets, tables, and columns.
-          </Typography>
-        </Box>
+      {(mode === 'entities' ? entities.isError : columns.isError) && (
+        <Alert severity="error" sx={{ mb: 2 }}>Search failed. Please try again.</Alert>
       )}
 
-      {/* Column search results */}
-      {searchMode === 'columns' && q && (
-        <Stack spacing={1.5}>
-          {colLoading
-            ? [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={76} />)
-            : columnResults?.length === 0
-            ? (
-              <Box sx={{ textAlign: 'center', py: 6 }}>
-                <ViewColumnIcon sx={{ fontSize: 40, color: '#dadce0', mb: 1.5 }} />
-                <Typography variant="h6" color="text.secondary">No columns found</Typography>
-              </Box>
-            )
-            : columnResults?.map((col) => (
-              <Card
-                key={col.column_id}
-                sx={{ cursor: 'pointer' }}
-                onClick={() => navigate(`/datasets/${col.dataset_id}/tables/${col.table_id}`)}
-              >
-                <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
-                  <Box sx={{ p: 1, borderRadius: 2, bgcolor: '#f3e8ff' }}>
-                    <ViewColumnIcon sx={{ color: '#9334e6', fontSize: 20 }} />
-                  </Box>
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-                      <Typography variant="subtitle2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                        {col.column_name}
-                      </Typography>
-                      {col.data_type && (
-                        <Chip label={col.data_type} size="small" sx={{ bgcolor: '#f1f3f4', fontFamily: 'monospace', fontSize: '0.7rem' }} />
-                      )}
-                      {col.is_pii && (
-                        <Chip label="PII" size="small" sx={{ bgcolor: '#fce8e6', color: '#c62828', fontWeight: 600 }} />
-                      )}
-                    </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                      {col.project_id}.{col.dataset_bq_id}.{col.table_bq_id}
-                    </Typography>
-                  </Box>
-                  <KeyboardArrowRightIcon sx={{ color: '#dadce0' }} />
-                </CardContent>
-              </Card>
-            ))
-          }
-        </Stack>
-      )}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        {loading ? (
+          [0, 1, 2, 3].map((i) => <Skeleton key={i} variant="rounded" height={96} />)
+        ) : count === 0 ? (
+          <EmptyState icon={mode === 'entities' ? <GridOnIcon /> : <ViewWeekOutlinedIcon />} title={`No ${noun}s found`}>
+            {mode === 'entities'
+              ? 'Try other words, remove a filter, or search column names instead.'
+              : 'No column name contains that text.'}
+          </EmptyState>
+        ) : mode === 'entities' ? (
+          results.map((r) => <EntityCard key={`${r.entity_type}-${r.id}`} r={r} />)
+        ) : (
+          columns.data?.map((c) => <ColumnCard key={c.column_id} col={c} />)
+        )}
 
-      {/* Entity search results */}
-      {searchMode === 'entities' && q && (
-        <Stack spacing={1.5}>
-          {isLoading
-            ? [0, 1, 2, 3].map((i) => <Skeleton key={i} variant="rounded" height={100} />)
-            : allResults.length === 0 && !isLoading
-            ? (
-              <Box sx={{ textAlign: 'center', py: 8 }}>
-                <GridOnIcon sx={{ fontSize: 48, color: '#dadce0', mb: 2 }} />
-                <Typography variant="h6" color="text.secondary" gutterBottom>No results found</Typography>
-                <Typography variant="body2" color="text.disabled">
-                  Try different keywords or remove filters.
-                </Typography>
-              </Box>
-            )
-            : allResults.map((result) => {
-              const isDataset = result.entity_type === 'dataset'
-              return (
-                <Card
-                  key={result.id}
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => handleResultClick(result)}
-                >
-                  <CardContent sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, py: 2, '&:last-child': { pb: 2 } }}>
-                    <Box sx={{
-                      p: 1.25, borderRadius: 2, flexShrink: 0,
-                      bgcolor: isDataset ? '#e8f0fe' : '#e6f4ea',
-                    }}>
-                      {isDataset
-                        ? <FolderOpenIcon sx={{ color: '#1a73e8', fontSize: 20 }} />
-                        : <GridOnIcon sx={{ color: '#137333', fontSize: 20 }} />
-                      }
-                    </Box>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexWrap: 'wrap' }}>
-                        <Typography variant="subtitle1" fontWeight={600}>{result.name}</Typography>
-                        <Chip
-                          label={result.entity_type}
-                          size="small"
-                          sx={{
-                            bgcolor: isDataset ? '#e8f0fe' : '#e6f4ea',
-                            color: isDataset ? '#1557b0' : '#0d5225',
-                            fontWeight: 500,
-                          }}
-                        />
-                        <SensitivityChip label={result.sensitivity_label as SensitivityLabel} />
-                      </Box>
-                      <Typography variant="caption" sx={{ ...MONO_PATH, display: 'block', mb: 0.5 }}>
-                        {result.project_id}.{result.dataset_id}{result.table_id ? `.${result.table_id}` : ''}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" noWrap>
-                        {result.description || 'No description available'}
-                      </Typography>
-                      {result.tags.length > 0 && (
-                        <Box sx={{ display: 'flex', gap: 0.5, mt: 0.75, flexWrap: 'wrap' }}>
-                          {result.tags.map((t) => <TagChip key={t} tag={t} />)}
-                        </Box>
-                      )}
-                    </Box>
-                    <Box sx={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
-                      <Typography variant="caption" color="text.disabled">
-                        {new Date(result.updated_at).toLocaleDateString()}
-                      </Typography>
-                      <KeyboardArrowRightIcon sx={{ color: '#dadce0' }} />
-                    </Box>
-                  </CardContent>
-                </Card>
-              )
-            })
-          }
-
-          {hasNextPage && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', pt: 1 }}>
-              <Button
-                variant="outlined"
-                onClick={() => fetchNextPage()}
-                disabled={isFetchingNextPage}
-                startIcon={isFetchingNextPage ? <CircularProgress size={14} /> : undefined}
-              >
-                {isFetchingNextPage ? 'Loading…' : 'Load more'}
-              </Button>
-            </Box>
-          )}
-        </Stack>
-      )}
+        {mode === 'entities' && entities.hasNextPage && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', pt: 1 }}>
+            <Button
+              variant="outlined"
+              onClick={() => entities.fetchNextPage()}
+              disabled={entities.isFetchingNextPage}
+              startIcon={entities.isFetchingNextPage ? <CircularProgress size={14} /> : undefined}
+            >
+              {entities.isFetchingNextPage ? 'Loading…' : 'Load more'}
+            </Button>
+          </Box>
+        )}
+      </Box>
     </Box>
   )
 }

@@ -1,34 +1,25 @@
-import Chip from '@mui/material/Chip'
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
+import PublicIcon from '@mui/icons-material/Public'
+import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
+import type { ReactElement } from 'react'
 import type { SensitivityLabel } from '../api/types'
+import type { Tone } from '../theme'
+import { MetaPill } from './ui'
 
-const config: Record<SensitivityLabel, { label: string; color: string; bg: string }> = {
-  public:       { label: 'Public',       color: '#137333', bg: '#e6f4ea' },
-  internal:     { label: 'Internal',     color: '#1a73e8', bg: '#e8f0fe' },
-  confidential: { label: 'Confidential', color: '#e37400', bg: '#fef7e0' },
-  restricted:   { label: 'Restricted',   color: '#d93025', bg: '#fce8e6' },
+const config: Record<SensitivityLabel, { label: string; tone: Tone; icon?: ReactElement }> = {
+  public:       { label: 'Public',       tone: 'success', icon: <PublicIcon /> },
+  internal:     { label: 'Internal',     tone: 'neutral' },
+  confidential: { label: 'Confidential', tone: 'warning', icon: <ShieldOutlinedIcon /> },
+  restricted:   { label: 'Restricted',   tone: 'danger',  icon: <LockOutlinedIcon /> },
 }
 
-export default function SensitivityChip({
-  label,
-  size = 'small',
-}: {
-  label: SensitivityLabel
-  size?: 'small' | 'medium'
-}) {
+// Internal is the default label, so it isn't shown unless asked for
+export default function SensitivityChip({ label, showInternal = false }: { label: SensitivityLabel; showInternal?: boolean }) {
   const cfg = config[label]
-  if (!cfg || label === 'internal') return null
-  const { label: text, color, bg } = cfg
+  if (!cfg || (label === 'internal' && !showInternal)) return null
   return (
-    <Chip
-      label={text}
-      size={size}
-      sx={{
-        color,
-        backgroundColor: bg,
-        fontWeight: 500,
-        fontSize: '0.7rem',
-        height: size === 'small' ? 22 : 28,
-      }}
-    />
+    <MetaPill tone={cfg.tone} icon={cfg.icon} title={`Sensitivity: ${cfg.label}`}>
+      {cfg.label}
+    </MetaPill>
   )
 }

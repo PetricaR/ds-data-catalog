@@ -1,384 +1,219 @@
-import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, type ReactNode } from 'react'
+import { Link as RouterLink, useParams } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Typography from '@mui/material/Typography'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
+import Card from '@mui/material/Card'
+import InputAdornment from '@mui/material/InputAdornment'
 import Link from '@mui/material/Link'
 import Skeleton from '@mui/material/Skeleton'
-import Chip from '@mui/material/Chip'
-import Alert from '@mui/material/Alert'
-import Button from '@mui/material/Button'
-import Tooltip from '@mui/material/Tooltip'
-import InputAdornment from '@mui/material/InputAdornment'
 import TextField from '@mui/material/TextField'
-import IconButton from '@mui/material/IconButton'
+import Typography from '@mui/material/Typography'
 import GridOnIcon from '@mui/icons-material/GridOn'
-import EditNoteIcon from '@mui/icons-material/EditNote'
-import LanguageIcon from '@mui/icons-material/Language'
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
-import PersonIcon from '@mui/icons-material/Person'
-import VerifiedIcon from '@mui/icons-material/Verified'
-import UpdateIcon from '@mui/icons-material/Update'
-import SearchIcon from '@mui/icons-material/Search'
-import FolderSpecialIcon from '@mui/icons-material/FolderSpecial'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import AddIcon from '@mui/icons-material/Add'
-import DeleteIcon from '@mui/icons-material/Delete'
 import NumbersIcon from '@mui/icons-material/Numbers'
-import ViewWeekIcon from '@mui/icons-material/ViewWeek'
-import SdStorageIcon from '@mui/icons-material/SdStorage'
+import SdStorageOutlinedIcon from '@mui/icons-material/SdStorageOutlined'
+import SearchIcon from '@mui/icons-material/Search'
+import VerifiedIcon from '@mui/icons-material/Verified'
+import ViewWeekOutlinedIcon from '@mui/icons-material/ViewWeekOutlined'
+import { datasetsApi } from '../api/datasets'
+import type { ProjectUsage, Table } from '../api/types'
+import ProjectsEditor from '../components/ProjectsEditor'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
-import { datasetsApi } from '../api/datasets'
-import type { ProjectUsage, SensitivityLabel } from '../api/types'
-import { pill, pillIcon, pillText, MONO_PATH, CARD_CONTENT_SX, CARD_ROW_MB } from '../design'
+import {
+  CardLink, EmptyState, LoadError, MONO, MetaPill, PATH_SX, PageHeader, compactNumber, formatBytes, formatDate,
+  linkCardSx, plural,
+} from '../components/ui'
+import { canEdit, useAuth } from '../contexts/AuthContext'
+import { tokens } from '../theme'
+
+function qualityTone(score: number) {
+  return score >= 80 ? 'success' : score >= 50 ? 'warning' : 'danger'
+}
+
+function TableCard({ datasetId, t }: { datasetId: string; t: Table }) {
+  return (
+    <Card component="article" sx={linkCardSx}>
+      <Box sx={{ px: 2.5, py: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
+          <Typography variant="subtitle1" component="h3" sx={{ overflowWrap: 'anywhere' }}>
+            <CardLink to={`/datasets/${datasetId}/tables/${t.id}`}>{t.display_name || t.table_id}</CardLink>
+          </Typography>
+          {t.display_name && t.display_name !== t.table_id && (
+            <Typography component="span" sx={{ ...MONO, fontSize: '0.75rem', color: tokens.ink3 }}>{t.table_id}</Typography>
+          )}
+          <Box sx={{ flex: 1 }} />
+          <Typography variant="caption" color="text.secondary">Updated {formatDate(t.updated_at)}</Typography>
+        </Box>
+        <Typography
+          variant="body2"
+          color={t.description ? 'text.secondary' : tokens.ink3}
+          sx={{ mt: 0.5, fontStyle: t.description ? 'normal' : 'italic', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+        >
+          {t.description || 'No description yet'}
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 0.5, mt: 1.25, flexWrap: 'wrap', alignItems: 'center' }}>
+          {t.is_validated && (
+            <MetaPill tone="success" icon={<VerifiedIcon />} title={t.validated_by ? `Validated by ${t.validated_by}` : undefined}>
+              {t.validated_columns.length > 0 ? `Trusted · ${t.validated_columns.length} cols` : 'Trusted'}
+            </MetaPill>
+          )}
+          <SensitivityChip label={t.sensitivity_label} />
+          {t.columns.length > 0 && <MetaPill icon={<ViewWeekOutlinedIcon />}>{t.columns.length} cols</MetaPill>}
+          {t.row_count != null && <MetaPill icon={<NumbersIcon />}>{compactNumber(t.row_count)} rows</MetaPill>}
+          {t.size_bytes != null && <MetaPill icon={<SdStorageOutlinedIcon />}>{formatBytes(t.size_bytes)}</MetaPill>}
+          {t.quality_score != null && (
+            <MetaPill tone={qualityTone(t.quality_score)} title="Documentation score: description, column docs, validation, tags, example queries">
+              Docs {Math.round(t.quality_score)}%
+            </MetaPill>
+          )}
+          {t.tags.slice(0, 3).map((tag) => <TagChip key={tag} tag={tag} />)}
+        </Box>
+      </Box>
+    </Card>
+  )
+}
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, py: 0.875, borderBottom: `1px solid ${tokens.rule}`, '&:last-of-type': { borderBottom: 'none' } }}>
+      <Typography component="dt" variant="body2" color="text.secondary">{label}</Typography>
+      <Typography component="dd" variant="body2" sx={{ m: 0, textAlign: 'right', overflowWrap: 'anywhere' }}>{children}</Typography>
+    </Box>
+  )
+}
 
 export default function DatasetDetail() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const qc = useQueryClient()
-  const emptyProject = (): ProjectUsage => ({ project_name: '', jira_id: '', repo_url: '' })
-  const [searchQuery, setSearchQuery] = useState('')
-  const [editingProjects, setEditingProjects] = useState(false)
-  const [projectsDraft, setProjectsDraft] = useState<ProjectUsage[]>([emptyProject()])
+  const { user } = useAuth()
+  const editor = canEdit(user)
+  const [filter, setFilter] = useState('')
 
-  const { data: dataset, isLoading: dsLoading } = useQuery({
+  const { data: dataset, isLoading, error } = useQuery({
     queryKey: ['dataset', id],
     queryFn: () => datasetsApi.get(id!),
     enabled: !!id,
-  })
-
-  const projectsMutation = useMutation({
-    mutationFn: (projects: ProjectUsage[]) => datasetsApi.updateProjects(id!, projects),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['dataset', id] })
-      setEditingProjects(false)
-    },
+    retry: false,
   })
 
   const { data: tables, isLoading: tablesLoading } = useQuery({
     queryKey: ['dataset', id, 'tables'],
     queryFn: () => datasetsApi.listTables(id!),
-    enabled: !!id,
+    enabled: !!dataset,
   })
 
-  if (dsLoading) {
+  const projectsMutation = useMutation({
+    mutationFn: (projects: ProjectUsage[]) => datasetsApi.updateProjects(id!, projects),
+    onSuccess: (updated) => qc.setQueryData(['dataset', id], updated),
+  })
+
+  if (isLoading) {
     return (
       <Box>
-        <Skeleton width={300} height={32} sx={{ mb: 2 }} />
-        <Skeleton variant="rounded" height={200} sx={{ mb: 2 }} />
-        <Skeleton variant="rounded" height={300} />
+        <Skeleton width={260} height={20} sx={{ mb: 2 }} />
+        <Skeleton width={360} height={44} sx={{ mb: 3 }} />
+        <Skeleton variant="rounded" height={320} />
       </Box>
     )
   }
+  if (!dataset) return <LoadError error={error} what="dataset" />
 
-  if (!dataset) return <Alert severity="error">Dataset not found.</Alert>
+  const name = dataset.display_name || dataset.dataset_id
+  const needle = filter.trim().toLowerCase()
+  const shown = (tables ?? []).filter((t) =>
+    !needle
+    || t.table_id.toLowerCase().includes(needle)
+    || (t.display_name ?? '').toLowerCase().includes(needle)
+    || (t.description ?? '').toLowerCase().includes(needle)
+    || t.columns.some((c) => c.name.toLowerCase().includes(needle)),
+  )
 
   return (
     <Box>
-      {/* Breadcrumb */}
       <Breadcrumbs sx={{ mb: 2 }}>
-        <Link underline="hover" color="inherit" sx={{ cursor: 'pointer' }} onClick={() => navigate('/browse')}>
-          Catalog
-        </Link>
-        <Link underline="hover" color="inherit" sx={{ cursor: 'pointer' }} onClick={() => navigate('/browse')}>
-          {dataset.project_id}
-        </Link>
-        <Typography color="text.primary">{dataset.display_name || dataset.dataset_id}</Typography>
+        <Link component={RouterLink} to="/browse" color="inherit">Browse</Link>
+        <Typography component="span" sx={{ ...MONO, fontSize: 'inherit', color: tokens.ink3 }}>{dataset.project_id}</Typography>
+        <Typography component="span" color="text.primary" fontSize="inherit" aria-current="page">{name}</Typography>
       </Breadcrumbs>
 
-      {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: CARD_ROW_MB }}>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="h5" fontWeight={700}>
-              {dataset.display_name || dataset.dataset_id}
-            </Typography>
-            <Typography variant="body2" sx={{ ...MONO_PATH, mt: 0.25 }}>
-              {dataset.project_id}.{dataset.dataset_id}
-            </Typography>
-          </Box>
-          <SensitivityChip label={dataset.sensitivity_label as SensitivityLabel} size="medium" />
-        </Box>
-
-        {dataset.description && (
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            {dataset.description}
-          </Typography>
-        )}
-
-        {/* Inline metadata row */}
-        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', alignItems: 'center' }}>
-          {dataset.bq_location && (
-            <Box sx={pill('blue')}><LanguageIcon sx={pillIcon('blue')} /><Typography sx={{ ...pillText, color: '#1a73e8' }}>{dataset.bq_location}</Typography></Box>
-          )}
-          {dataset.bq_created_at && (
-            <Box sx={pill('gray')}><CalendarTodayIcon sx={pillIcon('gray')} /><Typography sx={{ ...pillText, color: '#3c4043' }}>{new Date(dataset.bq_created_at).toLocaleDateString()}</Typography></Box>
-          )}
-          {dataset.owner && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 0.5 }}>
-              <PersonIcon sx={{ fontSize: 13, color: 'text.disabled' }} />
-              <Typography variant="caption" color="text.secondary">{dataset.owner}</Typography>
-            </Box>
-          )}
-          {dataset.data_steward && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <PersonIcon sx={{ fontSize: 13, color: 'text.disabled' }} />
-              <Typography variant="caption" color="text.secondary">Steward: {dataset.data_steward}</Typography>
-            </Box>
-          )}
+      <PageHeader
+        eyebrow="Dataset"
+        title={name}
+        subtitle={
+          <>
+            <Box component="span" sx={{ ...PATH_SX, display: 'block' }}>{dataset.project_id}.{dataset.dataset_id}</Box>
+            {dataset.description && <Box component="span" sx={{ display: 'block', mt: 1, color: tokens.ink2, whiteSpace: 'pre-wrap' }}>{dataset.description}</Box>}
+          </>
+        }
+      >
+        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 1.5 }}>
+          {dataset.is_validated && <MetaPill tone="success" icon={<VerifiedIcon />}>Validated</MetaPill>}
+          <SensitivityChip label={dataset.sensitivity_label} showInternal />
           {dataset.tags.map((t) => <TagChip key={t} tag={t} />)}
         </Box>
-      </Box>
+      </PageHeader>
 
-      {/* Tables header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
-        <Typography variant="h6" fontWeight={600}>
-          Tables ({tables?.length ?? 0})
-        </Typography>
-        <TextField
-          size="small"
-          placeholder={`Search in ${dataset.dataset_id}…`}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && searchQuery.trim()) {
-              navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}&dataset_id=${encodeURIComponent(dataset.dataset_id)}`)
-            }
-          }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon sx={{ fontSize: 18, color: 'text.disabled' }} />
-              </InputAdornment>
-            ),
-          }}
-          sx={{ minWidth: 240, '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: '0.85rem' } }}
-        />
-      </Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) 320px' }, gap: 3, alignItems: 'start' }}>
+        <Box component="section" aria-labelledby="tables-heading" sx={{ minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5, flexWrap: 'wrap' }}>
+            <Typography id="tables-heading" variant="h6" component="h2" sx={{ flex: 1 }}>
+              Tables <Box component="span" sx={{ ...MONO, color: tokens.ink3, fontWeight: 400 }}>{tables?.length ?? ''}</Box>
+            </Typography>
+            <TextField
+              size="small"
+              type="search"
+              placeholder="Filter by name, description or column"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              inputProps={{ 'aria-label': `Filter tables in ${name}` }}
+              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18 }} /></InputAdornment> }}
+              sx={{ width: { xs: '100%', sm: 320 }, '& input': { fontSize: '0.875rem' } }}
+            />
+          </Box>
 
-      {/* Used in DS Projects */}
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <FolderSpecialIcon sx={{ color: 'text.secondary' }} />
-          <Typography variant="h6" fontWeight={600}>Used in DS Projects</Typography>
-          <Chip label={(dataset.used_in_projects ?? []).length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
-          <Box sx={{ flex: 1 }} />
-          {!editingProjects && (
-            <Button
-              size="small" variant="outlined" startIcon={<EditNoteIcon />}
-              onClick={() => {
-                setProjectsDraft(
-                  dataset.used_in_projects?.length ? [...dataset.used_in_projects] : [emptyProject()]
-                )
-                setEditingProjects(true)
-              }}
-            >
-              Edit
-            </Button>
+          {tablesLoading ? (
+            [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={96} sx={{ mb: 1.5 }} />)
+          ) : !tables?.length ? (
+            <EmptyState icon={<GridOnIcon />} title="No tables in this dataset">
+              Tables appear here after the next BigQuery sync of {dataset.project_id}.
+            </EmptyState>
+          ) : shown.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>No table matches “{filter.trim()}”.</Typography>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {shown.map((t) => <TableCard key={t.id} datasetId={dataset.id} t={t} />)}
+            </Box>
           )}
         </Box>
 
-        {editingProjects ? (
-          <Box>
-            {projectsDraft.map((p, i) => (
-              <Card key={i} variant="outlined" sx={{ mb: 1.5, p: 1.5 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
-                  <IconButton
-                    size="small"
-                    onClick={() => setProjectsDraft(d => d.filter((_, idx) => idx !== i))}
-                    sx={{ color: 'text.disabled' }}
-                  >
-                    <DeleteIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <TextField
-                    size="small" label="Project name *" fullWidth required
-                    value={p.project_name}
-                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, project_name: e.target.value } : x))}
-                  />
-                  <TextField
-                    size="small" label="JIRA IIB" fullWidth
-                    placeholder="IIB-1234"
-                    value={p.jira_id ?? ''}
-                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, jira_id: e.target.value } : x))}
-                  />
-                  <TextField
-                    size="small" label="Repo URL" fullWidth
-                    placeholder="https://github.com/org/repo"
-                    value={p.repo_url ?? ''}
-                    onChange={(e) => setProjectsDraft(d => d.map((x, idx) => idx === i ? { ...x, repo_url: e.target.value } : x))}
-                  />
-                </Box>
-              </Card>
-            ))}
-            <Button
-              size="small" startIcon={<AddIcon />}
-              onClick={() => setProjectsDraft(d => [...d, emptyProject()])}
-              sx={{ mb: 2 }}
-            >
-              Add project
-            </Button>
-            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-              <Button size="small" onClick={() => setEditingProjects(false)}>Cancel</Button>
-              <Button
-                size="small" variant="contained"
-                disabled={projectsMutation.isPending || projectsDraft.some(p => !p.project_name.trim())}
-                onClick={() => projectsMutation.mutate(projectsDraft.filter(p => p.project_name.trim()))}
-              >
-                Save
-              </Button>
+        <Box component="aside" aria-label="Dataset details" sx={{ minWidth: 0 }}>
+          <Box component="section" sx={{ border: `1px solid ${tokens.rule}`, borderRadius: `${tokens.radiusLg}px`, bgcolor: tokens.surface, px: 2, py: 1.5, mb: 2 }}>
+            <Typography variant="h6" component="h2" sx={{ mb: 0.5 }}>About</Typography>
+            <Box component="dl" sx={{ m: 0 }}>
+              <Fact label="Owner">{dataset.owner || '—'}</Fact>
+              <Fact label="Data steward">{dataset.data_steward || '—'}</Fact>
+              <Fact label="Location">{dataset.bq_location || '—'}</Fact>
+              <Fact label="Created in BigQuery">{formatDate(dataset.bq_created_at)}</Fact>
+              <Fact label="Modified in BigQuery">{formatDate(dataset.bq_last_modified)}</Fact>
+              <Fact label="Tables">{plural(dataset.table_count, 'table')}</Fact>
+              {dataset.is_validated && (
+                <Fact label="Validated">
+                  {dataset.validated_by ?? '—'}
+                  {dataset.validated_at && <Box component="span" sx={{ display: 'block', color: tokens.ink3 }}>{formatDate(dataset.validated_at)}</Box>}
+                </Fact>
+              )}
             </Box>
           </Box>
-        ) : (dataset.used_in_projects ?? []).length === 0 ? (
-          <Alert severity="info" icon={<FolderSpecialIcon />}>
-            No DS projects linked yet. Click <strong>Edit</strong> to add projects that use this dataset.
-          </Alert>
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {(dataset.used_in_projects ?? []).map((p, i) => (
-              <Card key={i} variant="outlined" sx={{ px: 2, py: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                  <FolderSpecialIcon sx={{ fontSize: 18, color: 'primary.main', mt: 0.25 }} />
-                  <Box sx={{ flex: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                      <Typography variant="subtitle2" fontWeight={600}>{p.project_name}</Typography>
-                      {p.jira_id && (
-                        <Chip label={p.jira_id} size="small" sx={{ fontSize: '0.65rem', height: 20, bgcolor: '#e8f0fe', color: '#1a73e8', fontFamily: 'monospace' }} />
-                      )}
-                      {p.repo_url && (
-                        <Tooltip title={p.repo_url}>
-                          <Chip
-                            icon={<OpenInNewIcon sx={{ fontSize: '12px !important' }} />}
-                            label="Repo"
-                            size="small"
-                            clickable
-                            component="a"
-                            href={p.repo_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            sx={{ fontSize: '0.65rem', height: 20 }}
-                          />
-                        </Tooltip>
-                      )}
-                    </Box>
-                  </Box>
-                </Box>
-              </Card>
-            ))}
-          </Box>
-        )}
+          <ProjectsEditor
+            projects={dataset.used_in_projects ?? []}
+            what="dataset"
+            canEdit={editor}
+            saving={projectsMutation.isPending}
+            onSave={projectsMutation.mutateAsync}
+          />
+        </Box>
       </Box>
-
-      {tablesLoading ? (
-        [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={80} sx={{ mb: 1 }} />)
-      ) : tables?.length === 0 ? (
-        <Alert severity="info">No tables registered yet.</Alert>
-      ) : (
-        tables?.map((t) => (
-          <Card
-            key={t.id}
-            sx={{ mb: 1.5, cursor: 'pointer', '&:hover': { boxShadow: 2 } }}
-            onClick={() => navigate(`/datasets/${id}/tables/${t.id}`)}
-          >
-            <CardContent sx={CARD_CONTENT_SX}>
-              {/* Row 1: icon + name + validated + sensitivity + doc button */}
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: CARD_ROW_MB }}>
-                <GridOnIcon sx={{ fontSize: 18, color: t.is_validated ? '#2e7d32' : '#137333', flexShrink: 0 }} />
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                    <Typography variant="subtitle2" fontWeight={600}>
-                      {t.display_name || t.table_id}
-                    </Typography>
-                    {t.display_name && (
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.disabled' }}>
-                        {t.table_id}
-                      </Typography>
-                    )}
-                    {t.is_validated && (
-                      <Tooltip title={`Validated${t.validated_by ? ` by ${t.validated_by}` : ''}${t.validated_at ? ` · ${new Date(t.validated_at).toLocaleDateString()}` : ''}`}>
-                        <Chip
-                          icon={<VerifiedIcon sx={{ fontSize: '11px !important' }} />}
-                          label={t.validated_columns.length > 0 ? `${t.validated_columns.length} cols validated` : 'Validated'}
-                          size="small"
-                          color="success"
-                          variant="outlined"
-                          sx={{ fontSize: '0.6rem', height: 18 }}
-                        />
-                      </Tooltip>
-                    )}
-                  </Box>
-                </Box>
-                <SensitivityChip label={t.sensitivity_label as SensitivityLabel} />
-                <Tooltip title={t.description ? 'View & edit table' : 'Open table to add docs'}>
-                  <Button
-                    size="small"
-                    variant={t.description ? 'text' : 'outlined'}
-                    startIcon={<EditNoteIcon sx={{ fontSize: '14px !important' }} />}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      navigate(`/datasets/${id}/tables/${t.id}`)
-                    }}
-                    sx={{ fontSize: '0.7rem', py: 0.3, minWidth: 0, flexShrink: 0, color: t.description ? 'text.secondary' : 'primary.main' }}
-                  >
-                    {t.description ? 'Edit docs' : 'Document'}
-                  </Button>
-                </Tooltip>
-              </Box>
-
-              {/* Row 2: description */}
-              <Typography variant="body2" color="text.secondary" sx={{ ml: 3.5, mb: CARD_ROW_MB }} noWrap>
-                {t.description || <em style={{ color: '#aaa' }}>No description — open table to add</em>}
-              </Typography>
-
-              {/* Row 3: stats pills + owner + updated */}
-              <Box sx={{ display: 'flex', gap: 0.75, ml: 3.5, alignItems: 'center', flexWrap: 'wrap' }}>
-                {t.columns.length > 0 && (
-                  <Box sx={pill('gray')}><ViewWeekIcon sx={pillIcon('gray')} /><Typography sx={{ ...pillText, color: '#3c4043' }}>{t.columns.length} cols</Typography></Box>
-                )}
-                {t.row_count != null && (
-                  <Box sx={pill('gray')}><NumbersIcon sx={pillIcon('gray')} /><Typography sx={{ ...pillText, color: '#3c4043' }}>{t.row_count.toLocaleString()} rows</Typography></Box>
-                )}
-                {t.size_bytes != null && (
-                  <Box sx={pill('gray')}><SdStorageIcon sx={pillIcon('gray')} /><Typography sx={{ ...pillText, color: '#3c4043' }}>
-                    {t.size_bytes >= 1e9 ? `${(t.size_bytes / 1e9).toFixed(1)} GB`
-                      : t.size_bytes >= 1e6 ? `${(t.size_bytes / 1e6).toFixed(1)} MB`
-                      : t.size_bytes >= 1e3 ? `${(t.size_bytes / 1e3).toFixed(1)} KB`
-                      : `${t.size_bytes} B`}
-                  </Typography></Box>
-                )}
-                {t.tags.slice(0, 3).map((tag) => <TagChip key={tag} tag={tag} />)}
-                {t.quality_score != null && (
-                  <Tooltip title="Data quality score (0–100): description, column docs, validation, tags, example queries">
-                    <Box sx={pill(t.quality_score >= 80 ? 'green' : t.quality_score >= 50 ? 'amber' : 'red')}>
-                      <Typography sx={{ ...pillText, color: t.quality_score >= 80 ? '#137333' : t.quality_score >= 50 ? '#b06000' : '#c5221f', fontWeight: 600 }}>
-                        Q: {t.quality_score}%
-                      </Typography>
-                    </Box>
-                  </Tooltip>
-                )}
-                <Box sx={{ flex: 1 }} />
-                {t.owner && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                    <PersonIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
-                    <Typography variant="caption" color="text.disabled">{t.owner}</Typography>
-                  </Box>
-                )}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                  <UpdateIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
-                  <Typography variant="caption" color="text.disabled">
-                    {new Date(t.updated_at).toLocaleDateString()}
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        ))
-      )}
     </Box>
   )
 }

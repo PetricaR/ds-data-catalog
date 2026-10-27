@@ -1,101 +1,118 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import {
-  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
-  DialogContent, DialogTitle, Divider, IconButton, Paper,
-  Stack, Switch, Table, TableBody, TableCell, TableContainer, TableHead,
-  TableRow, TextField, Tooltip, Typography,
+  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
+  Skeleton, Stack, Switch, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField,
+  Tooltip, Typography,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
-import DeleteIcon from '@mui/icons-material/Delete'
-import SyncIcon from '@mui/icons-material/Sync'
-import CloudSyncIcon from '@mui/icons-material/CloudSync'
-import SearchIcon from '@mui/icons-material/ManageSearch'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import ErrorIcon from '@mui/icons-material/Error'
-import PendingIcon from '@mui/icons-material/HourglassEmpty'
+import ManageSearchIcon from '@mui/icons-material/ManageSearch'
+import SyncIcon from '@mui/icons-material/Sync'
+import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { bqApi, type ProjectInfo, type SourceCreate } from '../api/bq'
+import { errorDetail } from '../api/client'
 import type { GCPSource } from '../api/types'
 import ProjectPicker from '../components/ProjectPicker'
+import { SyncProgressList, useSourceSync } from '../components/SourceSync'
+import { EmptyState, MONO, MetaPill, PageHeader, formatDateTime } from '../components/ui'
+import { tokens } from '../theme'
 
-// ── Status chip ───────────────────────────────────────────────────────────────
+function SyncStatus({ source }: { source: GCPSource }) {
+  const status = source.last_sync_status
+  if (!status) return <MetaPill>Never synced</MetaPill>
+  const pill = {
+    ok: <MetaPill tone="success" icon={<CheckCircleIcon />}>Synced</MetaPill>,
+    partial: <MetaPill tone="warning" icon={<WarningAmberIcon />}>Partial</MetaPill>,
+    error: <MetaPill tone="danger" icon={<ErrorIcon />}>Failed</MetaPill>,
+    running: <MetaPill tone="accent" icon={<CircularProgress size={10} color="inherit" />}>Running</MetaPill>,
+  }[status] ?? <MetaPill>{status}</MetaPill>
 
-function StatusChip({ status }: { status: GCPSource['last_sync_status'] }) {
-  if (!status) return <Chip label="Never synced" size="small" variant="outlined" sx={{ color: 'text.disabled', borderColor: 'divider' }} />
-  const map: Record<string, { color: 'success' | 'error' | 'warning' | 'default'; icon: React.ReactElement }> = {
-    ok:      { color: 'success', icon: <CheckCircleIcon fontSize="small" /> },
-    partial: { color: 'warning', icon: <PendingIcon fontSize="small" /> },
-    error:   { color: 'error',   icon: <ErrorIcon fontSize="small" /> },
-    running: { color: 'default', icon: <CircularProgress size={12} /> },
-  }
-  const { color, icon } = map[status] ?? { color: 'default', icon: <PendingIcon fontSize="small" /> }
-  return <Chip label={status} size="small" color={color} icon={icon} />
+  const s = source.last_sync_summary as { datasets_added?: number; tables_added?: number; tables_updated?: number; columns_synced?: number; errors?: unknown[] } | null
+  const errors = Array.isArray(s?.errors) ? s.errors.length : 0
+  return (
+    <Box>
+      {pill}
+      {s && status !== 'running' && (
+        <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5 }}>
+          {[
+            s.datasets_added ? `+${s.datasets_added} datasets` : null,
+            `${((s.tables_added ?? 0) + (s.tables_updated ?? 0)).toLocaleString()} tables`,
+            s.columns_synced != null ? `${s.columns_synced.toLocaleString()} columns` : null,
+            errors ? `${errors} error${errors === 1 ? '' : 's'}` : null,
+          ].filter(Boolean).join(' · ')}
+        </Typography>
+      )}
+    </Box>
+  )
 }
-
-// ── Add source dialog ─────────────────────────────────────────────────────────
 
 function AddSourceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState<SourceCreate>({ project_id: '', display_name: '', secret_name: '' })
-  const [error, setError] = useState('')
+  const empty: SourceCreate = { project_id: '', display_name: '', secret_name: '' }
+  const [form, setForm] = useState<SourceCreate>(empty)
 
   const mutation = useMutation({
     mutationFn: bqApi.addSource,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bq-sources'] })
-      setForm({ project_id: '', display_name: '', secret_name: '' })
-      setError('')
+      qc.invalidateQueries({ queryKey: ['gcp-projects'] })
+      setForm(empty)
       onClose()
     },
-    onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(msg ?? 'Failed to add source')
-    },
+    onError: () => {},
   })
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!form.project_id.trim()) return
+    mutation.mutate({
+      project_id: form.project_id.trim(),
+      display_name: form.display_name?.trim() || undefined,
+      secret_name: form.secret_name?.trim() || undefined,
+    })
+  }
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Add GCP Project Source</DialogTitle>
-      <Divider />
-      <DialogContent sx={{ pt: 2.5 }}>
-        <Stack spacing={2}>
-          {error && <Alert severity="error">{error}</Alert>}
-          <TextField
-            label="GCP Project ID" placeholder="my-gcp-project-123"
-            value={form.project_id}
-            onChange={(e) => setForm({ ...form, project_id: e.target.value })}
-            required fullWidth
-          />
-          <TextField
-            label="Display Name" placeholder="Analytics Prod"
-            value={form.display_name}
-            onChange={(e) => setForm({ ...form, display_name: e.target.value })}
-            fullWidth
-          />
-          <TextField
-            label="Secret Manager Secret Name" placeholder="bq-service-account-key"
-            helperText="Leave empty to use your signed-in Google account credentials"
-            value={form.secret_name}
-            onChange={(e) => setForm({ ...form, secret_name: e.target.value })}
-            fullWidth
-          />
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
-        <Button onClick={onClose} variant="outlined">Cancel</Button>
-        <Button
-          variant="contained"
-          disabled={!form.project_id || mutation.isPending}
-          onClick={() => mutation.mutate({ ...form, secret_name: form.secret_name || undefined, display_name: form.display_name || undefined })}
-        >
-          {mutation.isPending ? <CircularProgress size={18} color="inherit" /> : 'Add Source'}
-        </Button>
-      </DialogActions>
+      <form onSubmit={submit}>
+        <DialogTitle>Add a GCP project</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            {mutation.isError && <Alert severity="error">{errorDetail(mutation.error, 'Could not add the project.')}</Alert>}
+            <TextField
+              label="GCP project ID" placeholder="my-gcp-project-123" required autoFocus fullWidth
+              value={form.project_id}
+              onChange={(e) => setForm({ ...form, project_id: e.target.value })}
+              InputProps={{ sx: MONO }}
+            />
+            <TextField
+              label="Display name" placeholder="Analytics prod" fullWidth
+              value={form.display_name}
+              onChange={(e) => setForm({ ...form, display_name: e.target.value })}
+            />
+            <TextField
+              label="Service-account key secret (optional)" placeholder="bq-service-account-key" fullWidth
+              helperText="A Secret Manager secret in this project that holds a service-account key. Leave empty to sync with your own Google account, or the catalog's Workload Identity when no Google token is on file."
+              value={form.secret_name}
+              onChange={(e) => setForm({ ...form, secret_name: e.target.value })}
+              InputProps={{ sx: MONO }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="contained" disabled={!form.project_id.trim() || mutation.isPending}>
+            {mutation.isPending ? <CircularProgress size={18} color="inherit" /> : 'Add project'}
+          </Button>
+        </DialogActions>
+      </form>
     </Dialog>
   )
 }
-
-// ── Discover dialog ───────────────────────────────────────────────────────────
 
 function DiscoverDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
@@ -108,284 +125,182 @@ function DiscoverDialog({ open, onClose }: { open: boolean; onClose: () => void 
       }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bq-sources'] })
-      qc.invalidateQueries({ queryKey: ['gcp-projects'] })
       setSelected([])
       onClose()
     },
+    // Some may have been added before one failed
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['bq-sources'] })
+      qc.invalidateQueries({ queryKey: ['gcp-projects'] })
+    },
+    onError: () => {},
   })
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Discover GCP Projects</DialogTitle>
-      <Divider />
-      <DialogContent sx={{ pt: 2 }}>
+      <DialogTitle>Discover GCP projects</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>Projects your Google account can see. Pick the ones to catalog.</Typography>
+        {addMutation.isError && <Alert severity="error" sx={{ mb: 1.5 }}>{errorDetail(addMutation.error, 'Could not add every project.')}</Alert>}
         <ProjectPicker enabled={open} selected={selected} onChange={setSelected} />
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
-        <Button onClick={onClose} variant="outlined">Cancel</Button>
-        <Button
-          variant="contained"
-          disabled={selected.length === 0 || addMutation.isPending}
-          onClick={() => addMutation.mutate(selected)}
-        >
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="contained" disabled={selected.length === 0 || addMutation.isPending} onClick={() => addMutation.mutate(selected)}>
           {addMutation.isPending
             ? <CircularProgress size={18} color="inherit" />
-            : `Add ${selected.length > 0 ? selected.length : ''} Project${selected.length !== 1 ? 's' : ''}`
-          }
+            : `Add ${selected.length || ''} project${selected.length === 1 ? '' : 's'}`}
         </Button>
       </DialogActions>
     </Dialog>
   )
 }
 
-// ── Sync result dialog ────────────────────────────────────────────────────────
-
-function SyncResultDialog({ results, onClose }: { results: { project_id: string; result: Record<string, unknown> }[]; onClose: () => void }) {
-  return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Sync Results</DialogTitle>
-      <Divider />
-      <DialogContent sx={{ pt: 2 }}>
-        <Stack spacing={2}>
-          {results.map((r) => (
-            <Box key={r.project_id}>
-              <Typography variant="subtitle2" fontWeight={600} gutterBottom>{r.project_id}</Typography>
-              <Box component="pre" sx={{ fontSize: 12, bgcolor: '#f8f9fa', p: 1.5, borderRadius: 2, overflowX: 'auto', m: 0 }}>
-                {JSON.stringify(r.result, null, 2)}
-              </Box>
-            </Box>
-          ))}
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button onClick={onClose} variant="outlined">Close</Button>
-      </DialogActions>
-    </Dialog>
-  )
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
-
 export default function Sources() {
   const qc = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
   const [discoverOpen, setDiscoverOpen] = useState(false)
-  const [syncResults, setSyncResults] = useState<{ project_id: string; result: Record<string, unknown> }[] | null>(null)
+  const [syncOpen, setSyncOpen] = useState(false)
+  const sync = useSourceSync()
 
-  const { data: sources = [], isLoading } = useQuery({
-    queryKey: ['bq-sources'],
-    queryFn: bqApi.listSources,
-  })
+  const { data: sources = [], isLoading } = useQuery({ queryKey: ['bq-sources'], queryFn: bqApi.listSources })
 
   const deleteMutation = useMutation({
     mutationFn: bqApi.deleteSource,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['bq-sources'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bq-sources'] })
+      qc.invalidateQueries({ queryKey: ['gcp-projects'] })
+    },
   })
-
   const toggleMutation = useMutation({
-    mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) =>
-      bqApi.updateSource(id, { is_active }),
+    mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) => bqApi.updateSource(id, { is_active }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['bq-sources'] }),
   })
 
-  const syncOneMutation = useMutation({
-    mutationFn: bqApi.syncSource,
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['bq-sources'] })
-      setSyncResults([{ project_id: data.project_id, result: data.result as unknown as Record<string, unknown> }])
-    },
-  })
-
-  const syncAllMutation = useMutation({
-    mutationFn: bqApi.syncAll,
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['bq-sources'] })
-      setSyncResults(data.map((d) => ({ project_id: d.project_id, result: d.result as unknown as Record<string, unknown> })))
-    },
-  })
-
-  const isBusy = syncAllMutation.isPending || syncOneMutation.isPending
+  const activeCount = sources.filter((s) => s.is_active).length
+  const startSync = (only?: GCPSource[]) => {
+    setSyncOpen(true)
+    sync.run(only)
+  }
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Box sx={{ p: 1.25, borderRadius: 2.5, bgcolor: '#e8f0fe' }}>
-            <CloudSyncIcon sx={{ color: '#1a73e8', fontSize: 28 }} />
-          </Box>
-          <Box>
-            <Typography variant="h5" fontWeight={700}>GCP Sources</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Manage BigQuery projects to sync metadata from
-            </Typography>
-          </Box>
-        </Box>
-        <Stack direction="row" spacing={1}>
-          <Button
-            variant="outlined"
-            startIcon={isBusy ? <CircularProgress size={16} /> : <CloudSyncIcon />}
-            disabled={isBusy || sources.filter((s) => s.is_active).length === 0}
-            onClick={() => syncAllMutation.mutate()}
-          >
-            Sync All
-          </Button>
-          <Button variant="outlined" startIcon={<SearchIcon />} onClick={() => setDiscoverOpen(true)}>
-            Discover
-          </Button>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>
-            Add Manually
-          </Button>
-        </Stack>
-      </Box>
-
-      {syncAllMutation.isError && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {String((syncAllMutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Sync failed')}
-        </Alert>
-      )}
-
-      {/* Empty state */}
-      {!isLoading && sources.length === 0 && (
-        <Box sx={{
-          textAlign: 'center', py: 10, px: 4,
-          border: '2px dashed #e8eaed', borderRadius: 3,
-        }}>
-          <CloudSyncIcon sx={{ fontSize: 52, color: '#dadce0', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>No GCP sources configured</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>
-            Connect a GCP project to start syncing BigQuery datasets and tables into the catalog.
-          </Typography>
-          <Stack direction="row" spacing={1.5} justifyContent="center">
-            <Button variant="contained" startIcon={<SearchIcon />} onClick={() => setDiscoverOpen(true)}>
-              Discover Projects
+      <PageHeader
+        eyebrow="Admin"
+        title="GCP sources"
+        subtitle="The Google Cloud projects whose BigQuery metadata is synced into the catalog."
+        actions={
+          <>
+            <Button
+              variant="outlined"
+              startIcon={sync.running ? <CircularProgress size={16} /> : <CloudSyncOutlinedIcon />}
+              disabled={sync.running || activeCount === 0}
+              onClick={() => startSync()}
+            >
+              Sync all
             </Button>
-            <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>
-              Add Manually
-            </Button>
-          </Stack>
-        </Box>
-      )}
+            <Button variant="outlined" startIcon={<ManageSearchIcon />} onClick={() => setDiscoverOpen(true)}>Discover</Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>Add project</Button>
+          </>
+        }
+      />
 
-      {/* Sources table */}
-      {sources.length > 0 && (
-        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e8eaed', borderRadius: 2 }}>
-          <Table>
+      {isLoading ? (
+        <Skeleton variant="rounded" height={160} />
+      ) : sources.length === 0 ? (
+        <EmptyState
+          icon={<CloudSyncOutlinedIcon />}
+          title="No GCP projects connected"
+          action={
+            <>
+              <Button variant="contained" startIcon={<ManageSearchIcon />} onClick={() => setDiscoverOpen(true)}>Discover projects</Button>
+              <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>Add by ID</Button>
+            </>
+          }
+        >
+          Connect a project to sync its BigQuery datasets and tables into the catalog.
+        </EmptyState>
+      ) : (
+        <TableContainer sx={{ border: `1px solid ${tokens.rule}`, borderRadius: `${tokens.radiusLg}px`, bgcolor: tokens.surface }}>
+          <Table aria-label="GCP sources">
             <TableHead>
               <TableRow>
                 <TableCell>Project</TableCell>
-                <TableCell>Auth Method</TableCell>
-                <TableCell>Last Sync</TableCell>
+                <TableCell>Credentials</TableCell>
+                <TableCell>Last sync</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="center">Active</TableCell>
-                <TableCell align="right" sx={{ width: 100 }}>Actions</TableCell>
+                <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {sources.map((src) => (
-                <TableRow key={src.id}>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight={600}>{src.display_name || src.project_id}</Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                      {src.project_id}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    {src.secret_name
-                      ? <Chip label={src.secret_name} size="small" variant="outlined" sx={{ fontFamily: 'monospace' }} />
-                      : <Chip label="User OAuth" size="small" color="info" variant="outlined" />
-                    }
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary">
-                      {src.last_synced_at ? new Date(src.last_synced_at).toLocaleString() : '—'}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <StatusChip status={src.last_sync_status} />
-                  </TableCell>
-                  <TableCell align="center">
-                    <Switch
-                      size="small"
-                      checked={src.is_active}
-                      onChange={(_, checked) => toggleMutation.mutate({ id: src.id, is_active: checked })}
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                      <Tooltip title="Sync this project" arrow>
+              {sources.map((src) => {
+                const name = src.display_name || src.project_id
+                return (
+                  <TableRow key={src.id} sx={{ opacity: src.is_active ? 1 : 0.65 }}>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={600}>{name}</Typography>
+                      <Typography sx={{ ...MONO, fontSize: '0.75rem', color: tokens.ink3 }}>{src.project_id}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      {src.secret_name
+                        ? <MetaPill mono title="Service-account key from Secret Manager">{src.secret_name}</MetaPill>
+                        : <MetaPill title="Synced with the signed-in admin's Google account, or Workload Identity">Admin's Google account</MetaPill>}
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap', color: tokens.ink3 }}>{formatDateTime(src.last_synced_at)}</TableCell>
+                    <TableCell sx={{ minWidth: 200 }}><SyncStatus source={src} /></TableCell>
+                    <TableCell align="center">
+                      <Switch
+                        size="small"
+                        checked={src.is_active}
+                        inputProps={{ 'aria-label': `Include ${name} in Sync all` }}
+                        onChange={(_, checked) => toggleMutation.mutate({ id: src.id, is_active: checked })}
+                      />
+                    </TableCell>
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                      <Tooltip title="Sync this project">
                         <span>
-                          <IconButton
-                            size="small"
-                            disabled={isBusy}
-                            onClick={() => syncOneMutation.mutate(src.id)}
-                            sx={{ color: 'text.secondary', '&:hover': { color: '#1a73e8' } }}
-                          >
+                          <IconButton size="small" aria-label={`Sync ${name}`} disabled={sync.running} onClick={() => startSync([src])}>
                             <SyncIcon fontSize="small" />
                           </IconButton>
                         </span>
                       </Tooltip>
-                      <Tooltip title="Remove source" arrow>
+                      <Tooltip title="Remove project">
                         <span>
                           <IconButton
                             size="small"
-                            color="error"
+                            aria-label={`Remove ${name}`}
                             disabled={deleteMutation.isPending}
                             onClick={() => {
-                              if (confirm(`Remove "${src.display_name || src.project_id}"? Synced data is kept.`))
-                                deleteMutation.mutate(src.id)
+                              if (confirm(`Remove "${name}"? Its synced datasets and tables stay in the catalog.`)) deleteMutation.mutate(src.id)
                             }}
+                            sx={{ '&:hover': { color: tokens.danger } }}
                           >
-                            <DeleteIcon fontSize="small" />
+                            <DeleteOutlineIcon fontSize="small" />
                           </IconButton>
                         </span>
                       </Tooltip>
-                    </Stack>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </TableContainer>
       )}
 
-      {/* Last sync summary */}
-      {sources.some((s) => s.last_sync_summary) && (
-        <Box mt={3}>
-          <Divider sx={{ mb: 2.5 }} />
-          <Typography variant="subtitle2" color="text.secondary" gutterBottom fontWeight={600}>
-            Last sync summary
-          </Typography>
-          <Stack spacing={1.5}>
-            {sources.filter((s) => s.last_sync_summary).map((src) => {
-              const s = src.last_sync_summary as Record<string, number>
-              return (
-                <Box key={src.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                  <Typography variant="body2" fontWeight={600} sx={{ minWidth: 160, color: 'text.primary' }}>
-                    {src.display_name || src.project_id}
-                  </Typography>
-                  {[
-                    { label: `+${s.datasets_added} datasets`, color: 'success' },
-                    { label: `~${s.datasets_updated} updated`, color: 'default' },
-                    { label: `+${s.tables_added} tables`, color: 'success' },
-                    { label: `${s.columns_synced} columns`, color: 'info' },
-                  ].map(({ label, color }) => (
-                    <Chip key={label} label={label} size="small" color={color as 'success' | 'default' | 'info'} variant="outlined" />
-                  ))}
-                  {Array.isArray(s.errors) && (s.errors as unknown[]).length > 0 && (
-                    <Chip label={`${(s.errors as unknown[]).length} errors`} size="small" color="error" variant="outlined" />
-                  )}
-                </Box>
-              )
-            })}
-          </Stack>
-        </Box>
-      )}
-
       <AddSourceDialog open={addOpen} onClose={() => setAddOpen(false)} />
       <DiscoverDialog open={discoverOpen} onClose={() => setDiscoverOpen(false)} />
-      {syncResults && <SyncResultDialog results={syncResults} onClose={() => setSyncResults(null)} />}
+      <Dialog open={syncOpen} onClose={() => setSyncOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>{sync.running ? 'Syncing from BigQuery…' : 'BigQuery sync'}</DialogTitle>
+        <DialogContent>
+          {sync.error && <Alert severity="error">{sync.error}</Alert>}
+          <SyncProgressList rows={sync.rows} />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setSyncOpen(false)}>{sync.running ? 'Hide' : 'Close'}</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

@@ -1,80 +1,61 @@
-import { useState, type KeyboardEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import InputBase from '@mui/material/InputBase'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
-import Paper from '@mui/material/Paper'
-import SearchIcon from '@mui/icons-material/Search'
+import InputBase from '@mui/material/InputBase'
 import ClearIcon from '@mui/icons-material/Clear'
+import SearchIcon from '@mui/icons-material/Search'
+import { tokens } from '../theme'
 
-interface SearchBarProps {
-  defaultValue?: string
-  placeholder?: string
-  size?: 'small' | 'large'
-  onSearch?: (q: string) => void
-}
+const { inverse } = tokens
 
-export default function SearchBar({
-  defaultValue = '',
-  placeholder = 'Search datasets, tables, columns…',
-  size = 'large',
-  onSearch,
-}: SearchBarProps) {
-  const [value, setValue] = useState(defaultValue)
+/** The header search box. It mirrors the query of the results page, so it always shows what was searched. */
+export default function SearchBar({ placeholder = 'Search datasets, tables, columns…' }: { placeholder?: string }) {
+  const location = useLocation()
   const navigate = useNavigate()
+  const urlQuery = location.pathname === '/search' ? new URLSearchParams(location.search).get('q') ?? '' : ''
+  const [value, setValue] = useState(urlQuery)
 
-  const handleSearch = () => {
-    if (!value.trim()) return
-    if (onSearch) {
-      onSearch(value.trim())
-    } else {
-      navigate(`/search?q=${encodeURIComponent(value.trim())}`)
-    }
+  useEffect(() => setValue(urlQuery), [urlQuery])
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    const q = value.trim()
+    if (q) navigate(`/search?q=${encodeURIComponent(q)}`)
   }
-
-  const handleKey = (e: KeyboardEvent) => {
-    if (e.key === 'Enter') handleSearch()
-  }
-
-  const isLarge = size === 'large'
 
   return (
-    <Paper
-      elevation={0}
+    <Box
+      component="form"
+      role="search"
+      onSubmit={submit}
       sx={{
-        display: 'flex',
-        alignItems: 'center',
-        width: '100%',
-        border: '1px solid #dadce0',
-        borderRadius: isLarge ? '24px' : '8px',
-        px: isLarge ? 2 : 1,
-        py: isLarge ? 0.75 : 0.25,
-        '&:hover': { boxShadow: '0 1px 6px rgba(32,33,36,.28)', borderColor: 'rgba(223,225,229,0)' },
-        '&:focus-within': { boxShadow: '0 1px 6px rgba(32,33,36,.28)', borderColor: 'rgba(223,225,229,0)' },
-        transition: 'box-shadow 0.2s, border-color 0.2s',
+        display: 'flex', alignItems: 'center', width: '100%', height: 38, pl: 1.25, pr: 0.5,
+        bgcolor: inverse.surface, border: `1px solid ${inverse.rule}`, borderRadius: `${tokens.radius}px`,
+        transition: 'border-color .15s',
+        '&:hover': { borderColor: inverse.ruleStrong },
+        '&:focus-within': { borderColor: inverse.accent, outline: `1px solid ${inverse.accent}` },
       }}
     >
-      <SearchIcon sx={{ color: '#9aa0a6', mr: 1, fontSize: isLarge ? 24 : 20 }} />
+      <SearchIcon aria-hidden sx={{ color: inverse.ink3, fontSize: 20, mr: 1 }} />
       <InputBase
         fullWidth
+        type="search"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        onKeyDown={handleKey}
         placeholder={placeholder}
-        inputProps={{ 'aria-label': 'search catalog' }}
-        sx={{ fontSize: isLarge ? '1rem' : '0.875rem' }}
+        inputProps={{ 'aria-label': 'Search the catalog', enterKeyHint: 'search' }}
+        sx={{
+          color: inverse.ink, fontSize: '0.875rem',
+          '& input::placeholder': { color: inverse.ink3, opacity: 1 },
+          '& input::-webkit-search-cancel-button': { display: 'none' },
+        }}
       />
       {value && (
-        <IconButton size="small" onClick={() => setValue('')} sx={{ color: '#9aa0a6' }}>
+        <IconButton size="small" aria-label="Clear search" onClick={() => setValue('')} sx={{ color: inverse.ink3, '&:hover': { color: inverse.ink, bgcolor: 'transparent' } }}>
           <ClearIcon fontSize="small" />
         </IconButton>
       )}
-      <IconButton
-        onClick={handleSearch}
-        size={isLarge ? 'medium' : 'small'}
-        sx={{ color: '#1a73e8', ml: 0.5 }}
-      >
-        <SearchIcon fontSize={isLarge ? 'medium' : 'small'} />
-      </IconButton>
-    </Paper>
+    </Box>
   )
 }

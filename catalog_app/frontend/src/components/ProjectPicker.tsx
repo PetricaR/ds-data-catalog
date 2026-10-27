@@ -1,7 +1,10 @@
-import { Alert, Box, Checkbox, Chip, CircularProgress, FormControlLabel, Stack, Typography } from '@mui/material'
+import { Alert, Box, Checkbox, CircularProgress, FormControlLabel, Stack, Typography } from '@mui/material'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import { useQuery } from '@tanstack/react-query'
 import { bqApi, type ProjectInfo } from '../api/bq'
+import { errorDetail } from '../api/client'
+import { tokens } from '../theme'
+import { MONO, MetaPill } from './ui'
 
 // Lists the GCP projects the signed-in admin can see; projects already added as sources are shown but not selectable.
 export default function ProjectPicker({ enabled = true, selected, onChange }: {
@@ -27,14 +30,14 @@ export default function ProjectPicker({ enabled = true, selected, onChange }: {
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-        <CircularProgress />
+        <CircularProgress aria-label="Loading projects" />
       </Box>
     )
   }
   if (error) {
     return (
       <Alert severity="error" sx={{ mt: 1 }}>
-        {String((error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to load projects')}
+        {errorDetail(error, 'Could not load your GCP projects.')}
       </Alert>
     )
   }
@@ -44,14 +47,14 @@ export default function ProjectPicker({ enabled = true, selected, onChange }: {
       {projects.filter((p) => p.already_added).map((p) => (
         <Box key={p.project_id} sx={{
           display: 'flex', alignItems: 'center', gap: 1.5, px: 1.5, py: 1,
-          borderRadius: 2, bgcolor: '#f8f9fa',
+          borderRadius: `${tokens.radius}px`, bgcolor: tokens.paper2,
         }}>
-          <CheckCircleIcon fontSize="small" color="success" />
-          <Box sx={{ flex: 1 }}>
+          <CheckCircleIcon fontSize="small" sx={{ color: tokens.success }} />
+          <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="body2" fontWeight={600}>{p.display_name}</Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{p.project_id}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={MONO}>{p.project_id}</Typography>
           </Box>
-          <Chip label="Added" size="small" color="success" variant="outlined" />
+          <MetaPill tone="success">Added</MetaPill>
         </Box>
       ))}
       {projects.length === 0 && (
@@ -71,10 +74,10 @@ export default function ProjectPicker({ enabled = true, selected, onChange }: {
           label={
             <Box>
               <Typography variant="body2" fontWeight={500}>{p.display_name}</Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{p.project_id}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={MONO}>{p.project_id}</Typography>
             </Box>
           }
-          sx={{ mx: 0, px: 1, py: 0.5, borderRadius: 2, '&:hover': { bgcolor: 'action.hover' }, width: '100%' }}
+          sx={{ mx: 0, px: 1, py: 0.5, borderRadius: `${tokens.radius}px`, '&:hover': { bgcolor: 'action.hover' }, width: '100%' }}
         />
       ))}
     </Stack>

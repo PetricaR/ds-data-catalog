@@ -1,40 +1,29 @@
-import { useState, useEffect, type FormEvent } from 'react'
+import { useState, useEffect, type FormEvent, type ReactElement } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Button, Chip, CircularProgress, Collapse, Divider, Paper, Step,
-  StepContent, StepLabel, Stepper, TextField, Typography,
+  Alert, Box, Button, CircularProgress, Collapse, Divider, Paper, Step,
+  StepContent, StepLabel, Stepper, TextField, Typography, type StepIconProps,
 } from '@mui/material'
 import { useQueryClient } from '@tanstack/react-query'
+import CheckIcon from '@mui/icons-material/Check'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
-import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty'
 import StorageIcon from '@mui/icons-material/Storage'
-import LockIcon from '@mui/icons-material/Lock'
-import CloudIcon from '@mui/icons-material/Cloud'
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
+import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
 import SyncIcon from '@mui/icons-material/Sync'
-import RocketLaunchIcon from '@mui/icons-material/RocketLaunch'
-import SchemaIcon from '@mui/icons-material/Schema'
+import RocketLaunchOutlinedIcon from '@mui/icons-material/RocketLaunchOutlined'
 import { authApi } from '../api/auth'
 import { bqApi, type ProjectInfo } from '../api/bq'
+import { errorDetail } from '../api/client'
 import { setupApi, type SetupStatus } from '../api/setup'
-import type { GCPSource } from '../api/types'
+import { Wordmark } from '../components/Brand'
 import ProjectPicker from '../components/ProjectPicker'
+import { SyncProgressList, useSourceSync } from '../components/SourceSync'
+import { MetaPill, MONO } from '../components/ui'
 import { isAdmin, useAuth } from '../contexts/AuthContext'
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface SyncRow {
-  source: GCPSource
-  state: 'pending' | 'running' | 'ok' | 'partial' | 'error'
-  message?: string
-}
-
-function errorDetail(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-  // Validation errors (422) carry a list, not a message
-  return typeof detail === 'string' && detail ? detail : fallback
-}
+import { tokens } from '../theme'
 
 const CLIENT_ID_SUFFIX = '.apps.googleusercontent.com'
 
@@ -110,13 +99,13 @@ function OAuthClientForm({ admin, onSaved }: { admin: boolean; onSaved: () => vo
           </>}
         />
       )}
-      {error && <Typography variant="body2" color="error">{error}</Typography>}
+      {error && <Alert severity="error">{error}</Alert>}
       <Button
         type="submit"
         variant="outlined"
         disabled={!ready || saving}
-        startIcon={saving ? <CircularProgress size={16} /> : <LockIcon />}
-        sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
+        startIcon={saving ? <CircularProgress size={16} /> : <LockOutlinedIcon />}
+        sx={{ alignSelf: 'flex-start' }}
       >
         {saving ? 'Checking with Google…' : 'Verify and save'}
       </Button>
@@ -128,59 +117,40 @@ function SignInPrompt() {
   const { user } = useAuth()
   if (user) {
     return (
-      <Box sx={{ bgcolor: '#fef7e0', borderRadius: 1, p: 1.5 }}>
-        <Typography variant="body2">
-          Signed in as <strong>{user.email}</strong> ({user.role}). Ask an admin to finish setup.
-        </Typography>
-      </Box>
+      <Alert severity="warning">
+        Signed in as <strong>{user.email}</strong> ({user.role}). Ask an admin to finish setup.
+      </Alert>
     )
   }
   return (
-    <Box sx={{ bgcolor: '#e8f0fe', borderRadius: 1, p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-      <Typography variant="body2" sx={{ flex: 1 }}>
-        Sign in with an admin account (listed in <code>ADMIN_EMAILS</code>) to connect BigQuery projects.
-      </Typography>
-      <Button
-        size="small"
-        variant="contained"
-        onClick={() => {
-          authApi.setReturnTo('/setup')
-          window.location.href = '/api/v1/auth/login'
-        }}
-        sx={{ textTransform: 'none' }}
-      >
-        Sign in
-      </Button>
-    </Box>
+    <Alert
+      severity="info"
+      action={
+        <Button
+          size="small"
+          variant="contained"
+          onClick={() => {
+            authApi.setReturnTo('/setup')
+            window.location.href = '/api/v1/auth/login'
+          }}
+        >
+          Sign in
+        </Button>
+      }
+    >
+      Sign in with an admin account (listed in <code>ADMIN_EMAILS</code>) to connect BigQuery projects.
+    </Alert>
   )
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
 function StatusChip({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <Chip
-      size="small"
-      icon={ok ? <CheckCircleIcon /> : <ErrorIcon />}
-      label={label}
-      color={ok ? 'success' : 'error'}
-      variant="outlined"
-      sx={{ fontWeight: 500 }}
-    />
-  )
+  return <MetaPill tone={ok ? 'success' : 'danger'} icon={ok ? <CheckCircleIcon /> : <ErrorIcon />}>{label}</MetaPill>
 }
 
 function OptionalChip({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <Chip
-      size="small"
-      icon={ok ? <CheckCircleIcon /> : <WarningAmberIcon />}
-      label={label}
-      color={ok ? 'success' : 'warning'}
-      variant="outlined"
-      sx={{ fontWeight: 500 }}
-    />
-  )
+  return <MetaPill tone={ok ? 'success' : 'warning'} icon={ok ? <CheckCircleIcon /> : <WarningAmberIcon />}>{label}</MetaPill>
 }
 
 function CodeBlock({ children }: { children: string }) {
@@ -188,9 +158,8 @@ function CodeBlock({ children }: { children: string }) {
     <Box
       component="pre"
       sx={{
-        bgcolor: '#f1f3f4', borderRadius: 1, p: 1.5, mt: 1, mb: 1,
-        fontSize: '0.78rem', fontFamily: 'monospace', overflowX: 'auto',
-        whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#202124',
+        bgcolor: tokens.paper2, border: `1px solid ${tokens.rule}`, borderRadius: `${tokens.radius}px`, p: 1.5, my: 0.5,
+        ...MONO, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: tokens.ink,
       }}
     >
       {children}
@@ -198,13 +167,24 @@ function CodeBlock({ children }: { children: string }) {
   )
 }
 
-function SyncRowIcon({ state }: { state: SyncRow['state'] }) {
-  if (state === 'running') return <CircularProgress size={16} />
-  if (state === 'ok') return <CheckCircleIcon color="success" fontSize="small" />
-  if (state === 'partial') return <WarningAmberIcon color="warning" fontSize="small" />
-  if (state === 'error') return <ErrorIcon color="error" fontSize="small" />
-  return <HourglassEmptyIcon color="disabled" fontSize="small" />
+const STEP_ICONS: ReactElement[] = [<StorageIcon />, <LockOutlinedIcon />, <CloudOutlinedIcon />, <SyncIcon />, <RocketLaunchOutlinedIcon />]
+
+// Shows each step's own icon, and its state: done (check), current (filled) or ahead (muted)
+function SetupStepIcon({ active, completed, icon }: StepIconProps) {
+  const fill = completed ? tokens.successWash : active ? tokens.accent : tokens.paper2
+  const color = completed ? tokens.success : active ? '#ffffff' : tokens.ink3
+  return (
+    <Box sx={{
+      width: 32, height: 32, borderRadius: `${tokens.radius}px`, display: 'grid', placeItems: 'center',
+      bgcolor: fill, color, border: `1px solid ${completed ? tokens.successRule : active ? tokens.accent : tokens.rule}`,
+      '& svg': { fontSize: 18 },
+    }}>
+      {completed ? <CheckIcon /> : STEP_ICONS[Number(icon) - 1]}
+    </Box>
+  )
 }
+
+const ERROR_BOX = { bgcolor: tokens.dangerWash, border: `1px solid ${tokens.dangerRule}`, borderRadius: `${tokens.radiusLg}px`, p: 1.5 } as const
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -231,10 +211,11 @@ export default function Setup() {
   const [sourceError, setSourceError] = useState('')
 
   // Step 3 — Sync, one source per request so each stays short
-  const [syncing, setSyncing] = useState(false)
-  const [syncRows, setSyncRows] = useState<SyncRow[]>([])
-  const [syncError, setSyncError] = useState('')
-  const [syncDone, setSyncDone] = useState(false)
+  const sync = useSourceSync()
+  const syncing = sync.running
+  const syncRows = sync.rows
+  const syncError = sync.error
+  const syncDone = sync.done
 
   const sourcesCount = status?.bq_sources_count ?? 0
   const sourceAdded = addedProjects.length > 0
@@ -306,93 +287,41 @@ export default function Setup() {
   }
 
   async function runSync() {
-    setSyncing(true)
-    setSyncError('')
-    let sources: GCPSource[]
-    try {
-      sources = (await bqApi.listSources()).filter(s => s.is_active)
-    } catch (e) {
-      setSyncError(errorDetail(e, 'Could not load the connected projects.'))
-      setSyncing(false)
-      return
-    }
-    if (!sources.length) {
-      setSyncError('No active BigQuery projects to sync. Add one in the previous step.')
-      setSyncing(false)
-      return
-    }
-
-    const update = (index: number, row: Partial<SyncRow>) =>
-      setSyncRows(rows => rows.map((r, i) => i === index ? { ...r, ...row } : r))
-    setSyncRows(sources.map(source => ({ source, state: 'pending' })))
-
-    for (const [index, source] of sources.entries()) {
-      update(index, { state: 'running' })
-      try {
-        const { result } = await bqApi.syncSource(source.id)
-        const tables = result.tables_added + result.tables_updated
-        update(index, result.errors.length
-          ? { state: tables ? 'partial' : 'error', message: result.errors.join('; ') }
-          : { state: 'ok', message: `${tables} table${tables === 1 ? '' : 's'} synced` })
-      } catch (e) {
-        update(index, {
-          state: 'error',
-          message: errorDetail(e, 'The request failed or timed out — a large project may still be syncing. Check GCP Sources in a few minutes.'),
-        })
-      }
-    }
-
+    await sync.run()
     setupApi.status().then(setStatus).catch(() => {})
-    qc.invalidateQueries({ queryKey: ['bq-sources'] })
-    setSyncDone(true)
-    setSyncing(false)
   }
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
   if (loadingStatus) {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', bgcolor: '#f8f9fa' }}>
-        <CircularProgress />
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', bgcolor: tokens.paper }}>
+        <CircularProgress aria-label="Loading setup status" />
       </Box>
     )
   }
 
-  const steps = [
-    { label: 'System Check', icon: <StorageIcon /> },
-    { label: 'Google Authentication', icon: <LockIcon /> },
-    { label: 'Connect BigQuery', icon: <CloudIcon /> },
-    { label: 'Sync Data', icon: <SyncIcon /> },
-    { label: "You're ready!", icon: <RocketLaunchIcon /> },
-  ]
-
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f8f9fa', display: 'flex', flexDirection: 'column', alignItems: 'center', py: 6, px: 2 }}>
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 4 }}>
-        <Box sx={{ width: 40, height: 40, borderRadius: 2, bgcolor: '#1a73e8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <SchemaIcon sx={{ color: '#fff', fontSize: 24 }} />
-        </Box>
-        <Box>
-          <Typography variant="h5" fontWeight={700} sx={{ lineHeight: 1.2 }}>Light Data Catalog</Typography>
-          <Typography variant="body2" color="text.secondary">Setup wizard</Typography>
-        </Box>
+    <Box component="main" sx={{ minHeight: '100vh', bgcolor: tokens.paper, display: 'flex', flexDirection: 'column', alignItems: 'center', py: { xs: 4, sm: 6 }, px: 2 }}>
+      <Box sx={{ width: '100%', maxWidth: 680, mb: 3 }}>
+        <Wordmark size={28} />
       </Box>
 
-      <Paper elevation={0} sx={{ width: '100%', maxWidth: 640, border: '1px solid #e0e0e0', borderRadius: 3, overflow: 'hidden' }}>
-        <Box sx={{ px: 4, pt: 3, pb: 1, borderBottom: '1px solid #f0f0f0' }}>
-          <Typography variant="h6" fontWeight={600}>Welcome! Let's get you set up.</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            This wizard will guide you through configuring Light Data Catalog for your organization.
+      <Paper variant="outlined" sx={{ width: '100%', maxWidth: 680, overflow: 'hidden' }}>
+        <Box sx={{ px: { xs: 2.5, sm: 4 }, pt: 3, pb: 2.5, borderBottom: `1px solid ${tokens.rule}` }}>
+          <Typography variant="overline" component="p" sx={{ color: tokens.accent }}>Setup</Typography>
+          <Typography variant="h5" component="h1" sx={{ mt: 0.5 }}>Let's get your catalog running</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+            Five short steps: check the server, connect Google sign-in, pick BigQuery projects and run the first sync.
           </Typography>
         </Box>
 
-        <Box sx={{ px: 4, py: 3 }}>
-          <Stepper activeStep={activeStep} orientation="vertical" sx={{ '& .MuiStepConnector-line': { minHeight: 12 } }}>
+        <Box sx={{ px: { xs: 2.5, sm: 4 }, py: 3 }}>
+          <Stepper activeStep={activeStep} orientation="vertical" sx={{ '& .MuiStepConnector-line': { minHeight: 12, borderColor: tokens.rule }, '& .MuiStepConnector-root': { ml: '15px' }, '& .MuiStepContent-root': { ml: '15px', borderColor: tokens.rule } }}>
 
             {/* ── Step 0: System Check ────────────────────────────────────────── */}
             <Step completed={activeStep > 0}>
-              <StepLabel StepIconProps={{ icon: steps[0].icon }}>
+              <StepLabel StepIconComponent={SetupStepIcon}>
                 <Typography fontWeight={600}>System Check</Typography>
               </StepLabel>
               <StepContent>
@@ -405,8 +334,8 @@ export default function Setup() {
                     <StatusChip ok={status?.database_connected ?? false} label="Database connected" />
                   </Box>
                   {!status?.database_connected && (
-                    <Box sx={{ bgcolor: '#fce8e6', borderRadius: 1, p: 1.5 }}>
-                      <Typography variant="body2" color="error.main" fontWeight={500}>
+                    <Box sx={ERROR_BOX}>
+                      <Typography variant="body2" fontWeight={500}>
                         Cannot connect to the database. Check that PostgreSQL is running and DATABASE_URL is correct.
                       </Typography>
                     </Box>
@@ -416,7 +345,7 @@ export default function Setup() {
                   variant="contained"
                   disabled={!status?.database_connected}
                   onClick={() => setActiveStep(1)}
-                  sx={{ textTransform: 'none' }}
+                  
                 >
                   Continue
                 </Button>
@@ -425,7 +354,7 @@ export default function Setup() {
 
             {/* ── Step 1: Google OAuth ─────────────────────────────────────────── */}
             <Step completed={activeStep > 1}>
-              <StepLabel StepIconProps={{ icon: steps[1].icon }}>
+              <StepLabel StepIconComponent={SetupStepIcon}>
                 <Typography fontWeight={600}>Google Authentication</Typography>
               </StepLabel>
               <StepContent>
@@ -440,8 +369,8 @@ export default function Setup() {
                   </Box>
 
                   {status?.oauth_client_error ? (
-                    <Box sx={{ bgcolor: '#fce8e6', borderRadius: 1, p: 1.5 }}>
-                      <Typography variant="body2" color="error.main" fontWeight={500}>
+                    <Box sx={ERROR_BOX}>
+                      <Typography variant="body2" fontWeight={600}>
                         Google rejects the configured OAuth client: {status.oauth_client_error}
                       </Typography>
                       <Typography variant="body2" sx={{ mt: 0.5 }}>
@@ -486,7 +415,7 @@ export default function Setup() {
                         variant="text"
                         size="small"
                         onClick={() => setReplacingOAuth(r => !r)}
-                        sx={{ textTransform: 'none', alignSelf: 'flex-start', color: 'text.secondary' }}
+                        sx={{ alignSelf: 'flex-start', color: 'text.secondary' }}
                       >
                         {replacingOAuth ? 'Keep the current OAuth client' : 'Replace the OAuth client (e.g. after it was deleted in Google Cloud)'}
                       </Button>
@@ -509,7 +438,7 @@ export default function Setup() {
                     variant="contained"
                     disabled={!status?.oauth_configured || !status?.admin_configured || !!status?.oauth_client_error}
                     onClick={() => setActiveStep(2)}
-                    sx={{ textTransform: 'none' }}
+                    
                   >
                     Continue
                   </Button>
@@ -519,22 +448,22 @@ export default function Setup() {
 
             {/* ── Step 2: Add BQ Sources ────────────────────────────────────────── */}
             <Step completed={activeStep > 2 || sourceAdded || sourcesCount > 0}>
-              <StepLabel StepIconProps={{ icon: steps[2].icon }}>
+              <StepLabel StepIconComponent={SetupStepIcon}>
                 <Typography fontWeight={600}>Connect BigQuery</Typography>
               </StepLabel>
               <StepContent>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
                   {sourcesCount > 0 && !sourceAdded ? (
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                      <CheckCircleIcon color="success" fontSize="small" />
-                      <Typography variant="body2" color="success.main" fontWeight={500}>
+                      <CheckCircleIcon fontSize="small" sx={{ color: tokens.success }} />
+                      <Typography variant="body2" fontWeight={500}>
                         {sourcesCount} BigQuery source{sourcesCount > 1 ? 's' : ''} already connected.
                       </Typography>
                     </Box>
                   ) : sourceAdded ? (
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                      <CheckCircleIcon color="success" fontSize="small" />
-                      <Typography variant="body2" color="success.main" fontWeight={500}>
+                      <CheckCircleIcon fontSize="small" sx={{ color: tokens.success }} />
+                      <Typography variant="body2" fontWeight={500}>
                         Added <strong>{addedProjects.join(', ')}</strong>.
                       </Typography>
                     </Box>
@@ -550,8 +479,8 @@ export default function Setup() {
                         variant="outlined"
                         onClick={addSelectedProjects}
                         disabled={selectedProjects.length === 0 || addingSource}
-                        startIcon={addingSource && !manualEntry ? <CircularProgress size={16} /> : <CloudIcon />}
-                        sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
+                        startIcon={addingSource && !manualEntry ? <CircularProgress size={16} /> : <CloudOutlinedIcon />}
+                        sx={{ alignSelf: 'flex-start' }}
                       >
                         {`Add ${selectedProjects.length || ''} Project${selectedProjects.length === 1 ? '' : 's'}`}
                       </Button>
@@ -560,7 +489,7 @@ export default function Setup() {
                         variant="text"
                         size="small"
                         onClick={() => setManualEntry(m => !m)}
-                        sx={{ textTransform: 'none', alignSelf: 'flex-start', color: 'text.secondary' }}
+                        sx={{ alignSelf: 'flex-start', color: 'text.secondary' }}
                       >
                         {manualEntry ? 'Hide manual entry' : 'Project not listed? Enter a project ID manually'}
                       </Button>
@@ -597,8 +526,8 @@ export default function Setup() {
                             variant="outlined"
                             onClick={addManualProject}
                             disabled={!projectId.trim() || addingSource}
-                            startIcon={addingSource && manualEntry ? <CircularProgress size={16} /> : <CloudIcon />}
-                            sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
+                            startIcon={addingSource && manualEntry ? <CircularProgress size={16} /> : <CloudOutlinedIcon />}
+                            sx={{ alignSelf: 'flex-start' }}
                           >
                             {addingSource && manualEntry ? 'Adding…' : 'Add Project'}
                           </Button>
@@ -606,21 +535,19 @@ export default function Setup() {
                       </Collapse>
                     </>
                   )}
-                  {sourceError && (
-                    <Typography variant="body2" color="error">{sourceError}</Typography>
-                  )}
+                  {sourceError && <Alert severity="error">{sourceError}</Alert>}
                 </Box>
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <Button
                     variant="contained"
                     disabled={sourcesCount === 0 && !sourceAdded}
                     onClick={() => setActiveStep(3)}
-                    sx={{ textTransform: 'none' }}
+                    
                   >
                     Continue
                   </Button>
                   {sourcesCount === 0 && !sourceAdded && (
-                    <Button variant="text" onClick={() => setActiveStep(3)} sx={{ textTransform: 'none', color: 'text.secondary' }}>
+                    <Button variant="text" onClick={() => setActiveStep(3)} sx={{ color: 'text.secondary' }}>
                       Skip
                     </Button>
                   )}
@@ -630,15 +557,15 @@ export default function Setup() {
 
             {/* ── Step 3: Sync Data ─────────────────────────────────────────────── */}
             <Step completed={activeStep > 3 || syncDone || status?.has_data}>
-              <StepLabel StepIconProps={{ icon: steps[3].icon }}>
+              <StepLabel StepIconComponent={SetupStepIcon}>
                 <Typography fontWeight={600}>Sync Data from BigQuery</Typography>
               </StepLabel>
               <StepContent>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
                   {status?.has_data && !syncRows.length ? (
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                      <CheckCircleIcon color="success" fontSize="small" />
-                      <Typography variant="body2" color="success.main" fontWeight={500}>
+                      <CheckCircleIcon fontSize="small" sx={{ color: tokens.success }} />
+                      <Typography variant="body2" fontWeight={500}>
                         Data is already synced. Your catalog has datasets and tables.
                       </Typography>
                     </Box>
@@ -647,17 +574,7 @@ export default function Setup() {
                       {syncDone && (
                         <Typography variant="body2" fontWeight={500}>Sync finished.</Typography>
                       )}
-                      {syncRows.map(row => (
-                        <Box key={row.source.id} sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                          <Box sx={{ pt: 0.25 }}><SyncRowIcon state={row.state} /></Box>
-                          <Typography variant="body2">
-                            <strong>{row.source.display_name || row.source.project_id}</strong>
-                            {row.state === 'pending' && ' — waiting'}
-                            {row.state === 'running' && ' — syncing…'}
-                            {row.message && ` — ${row.message}`}
-                          </Typography>
-                        </Box>
-                      ))}
+                      <SyncProgressList rows={syncRows} />
                     </Box>
                   ) : !admin ? (
                     <SignInPrompt />
@@ -672,7 +589,7 @@ export default function Setup() {
                         onClick={runSync}
                         disabled={syncing || (sourcesCount === 0 && !sourceAdded)}
                         startIcon={<SyncIcon />}
-                        sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
+                        sx={{ alignSelf: 'flex-start' }}
                       >
                         Run First Sync
                       </Button>
@@ -683,15 +600,13 @@ export default function Setup() {
                       )}
                     </>
                   )}
-                  {syncError && (
-                    <Typography variant="body2" color="error">{syncError}</Typography>
-                  )}
+                  {syncError && <Alert severity="error">{syncError}</Alert>}
                 </Box>
                 <Button
                   variant="contained"
                   disabled={syncing}
                   onClick={() => setActiveStep(4)}
-                  sx={{ textTransform: 'none' }}
+                  
                 >
                   Continue
                 </Button>
@@ -700,7 +615,7 @@ export default function Setup() {
 
             {/* ── Step 4: Done ──────────────────────────────────────────────────── */}
             <Step>
-              <StepLabel StepIconProps={{ icon: steps[4].icon }}>
+              <StepLabel StepIconComponent={SetupStepIcon}>
                 <Typography fontWeight={600}>You're ready!</Typography>
               </StepLabel>
               <StepContent>
@@ -746,9 +661,9 @@ export default function Setup() {
                 <Button
                   variant="contained"
                   size="large"
-                  startIcon={<RocketLaunchIcon />}
+                  startIcon={<RocketLaunchOutlinedIcon />}
                   onClick={() => navigate('/browse')}
-                  sx={{ textTransform: 'none', fontWeight: 600 }}
+                  
                 >
                   Open Light Data Catalog
                 </Button>
@@ -760,7 +675,7 @@ export default function Setup() {
       </Paper>
 
       <Typography variant="caption" color="text.secondary" sx={{ mt: 3 }}>
-        You can revisit this page anytime at <strong>/setup</strong>
+        You can come back to this page any time at <Box component="code" sx={MONO}>/setup</Box>.
       </Typography>
     </Box>
   )
