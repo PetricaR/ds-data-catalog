@@ -107,6 +107,18 @@ class TestInsights:
         assert r.json()["insights"] is not None
         assert r.json()["insights"]["questions"] == ["Q1"]
 
+    def test_prompt_tells_the_model_todays_date(self):
+        from datetime import date
+
+        from backend.services.insights import _build_prompt
+
+        prompt = _build_prompt(
+            table_name="orders", table_bq_path="p.d.orders", description=None,
+            sensitivity_label="internal", tags=[], row_count=None, size_bytes=None,
+            columns=[], dataset_description=None,
+        )
+        assert f"Today's date: {date.today().isoformat()}" in prompt
+
 
 class TestLineageDiscover:
     def test_discover_lineage_mocked(self, client, auth_headers, seed_table, seed_dataset):

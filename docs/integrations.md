@@ -79,11 +79,11 @@ Only jobs run in the table's own project are visible. The response contains the 
 
 ## AI insights — `services/insights.py`
 
-`POST /tables/{id}/insights` asks `gemini-2.5-flash` for structured JSON: 5–7 analysis questions that reference real column names, 2–4 observations (data quality, coverage gaps, PII warnings) and 2–3 data-science use cases. The result is cached on the table until regenerated.
+`POST /tables/{id}/insights` asks `gemini-3.8-flash` for structured JSON: 5–7 analysis questions that reference real column names, 2–4 observations (data quality, coverage gaps, PII warnings) and 2–3 data-science use cases. The result is cached on the table until regenerated.
 
 The prompt contains the table path, description, sensitivity label, tags, row count, size, the dataset description, and for each column its name, type, description, PII flag, null %, approximate distinct count and min/max values. No sampled rows are sent.
 
-Vertex AI is used through the service account by default; set `GEMINI_API_KEY` to call the Gemini API instead.
+Vertex AI is used through the service account by default, on its `global` endpoint (Gemini 3.8 Flash is not served from single regions such as `us-central1`); set `GEMINI_API_KEY` to call the Gemini API instead.
 
 ## Google Chat — `services/gchat.py`
 

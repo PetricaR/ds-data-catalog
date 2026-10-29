@@ -9,13 +9,14 @@ Structured output via response_schema (Pydantic) is used so the model always
 returns well-formed JSON — no fragile manual parsing.
 """
 import logging
+from datetime import date
 from typing import Optional
 
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.8-flash"
 
 
 # ── Response schema ────────────────────────────────────────────────────────────
@@ -68,7 +69,9 @@ def _build_prompt(
     if tags:
         stats_lines.append(f"- Tags: {', '.join(tags)}")
 
+    # Without today's date the model flags recent timestamps as "in the future"
     return f"""You are a senior data analyst helping data scientists understand a BigQuery table.
+Today's date: {date.today().isoformat()}
 
 Table: {table_bq_path}
 {"Description: " + description if description else "No description provided."}
@@ -102,7 +105,7 @@ def generate_insights(
     size_bytes: Optional[int],
     columns: list[dict],
     dataset_description: Optional[str] = None,
-    location: str = "us-central1",
+    location: str = "global",  # Vertex serves Gemini 3.8 Flash only from global, us and eu
 ) -> dict:
     """
     Call Gemini via google-genai SDK and return structured insights.
@@ -140,7 +143,8 @@ def generate_insights(
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=InsightsSchema,
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                # Gemini 3.x takes a thinking level, not a budget; LOW is the lowest 3.8 Flash accepts
+                thinking_config=types.ThinkingConfig(thinking_level="LOW"),
                 temperature=0.3,
             ),
         )
