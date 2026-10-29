@@ -18,28 +18,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from .gcp_credentials import get_credentials
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DAYS = 30  # API retains 35 days but rejects requests near the boundary
-
-
-def _get_credentials(project_id: str, secret_name: Optional[str]):
-    if secret_name:
-        from google.cloud import secretmanager
-        from google.oauth2 import service_account
-        import json
-
-        sm = secretmanager.SecretManagerServiceClient()
-        path = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
-        response = sm.access_secret_version(request={"name": path})
-        key_dict = json.loads(response.payload.data.decode("utf-8"))
-        return service_account.Credentials.from_service_account_info(
-            key_dict,
-            scopes=["https://www.googleapis.com/auth/cloud-platform"],
-        )
-    import google.auth
-    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-    return creds
 
 
 def _extract_schema(resource_dict: dict) -> list[dict]:
@@ -124,7 +107,7 @@ def fetch_schema_history(
             "and rebuild the Docker image."
         )
 
-    credentials = _get_credentials(project_id, secret_name)
+    credentials = get_credentials(project_id, secret_name)
     client = asset_v1.AssetServiceClient(credentials=credentials)
 
     asset_name = f"//bigquery.googleapis.com/projects/{project_id}/datasets/{dataset_id}/tables/{table_id}"

@@ -21,29 +21,12 @@ import logging
 import time
 from typing import Optional
 
+from .gcp_credentials import get_credentials
+
 logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL = 10  # seconds
 _TIMEOUT = 300       # 5 minutes max wait
-
-
-def _get_credentials(project_id: str, secret_name: Optional[str]):
-    if secret_name:
-        from google.cloud import secretmanager
-        from google.oauth2 import service_account
-        import json
-
-        sm = secretmanager.SecretManagerServiceClient()
-        path = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
-        response = sm.access_secret_version(request={"name": path})
-        key_dict = json.loads(response.payload.data.decode("utf-8"))
-        return service_account.Credentials.from_service_account_info(
-            key_dict,
-            scopes=["https://www.googleapis.com/auth/cloud-platform"],
-        )
-    import google.auth
-    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-    return creds
 
 
 def _normalize_location(location: Optional[str]) -> str:
@@ -94,7 +77,7 @@ def run_quality_scan(
         )
     from datetime import datetime, timezone
 
-    credentials = _get_credentials(project_id, secret_name)
+    credentials = get_credentials(project_id, secret_name)
     client = dataplex_v1.DataScanServiceClient(credentials=credentials)
 
     dp_location = _normalize_location(location)

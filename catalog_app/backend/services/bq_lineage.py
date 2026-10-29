@@ -14,14 +14,14 @@ Prerequisites on GCP:
 import logging
 from typing import Optional
 
-import google.auth
 import google.auth.transport.requests
 import requests as http_requests
+
+from .gcp_credentials import get_credentials
 
 logger = logging.getLogger(__name__)
 
 _LINEAGE_BASE = "https://datalineage.googleapis.com/v1"
-_CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -58,34 +58,20 @@ def _fqn_to_ref(fqn: str) -> Optional[str]:
     return fqn
 
 
-def _get_token(project_id: str, secret_name: Optional[str]) -> str:
-    """Return a valid Bearer token using SA key from Secret Manager or ADC."""
-    if secret_name:
-        # Load SA key from Secret Manager and create credentials with full scope
-        from google.cloud import secretmanager
-        from google.oauth2 import service_account
-        import json
-
-        sm = secretmanager.SecretManagerServiceClient()
-        path = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
-        response = sm.access_secret_version(request={"name": path})
-        key_dict = json.loads(response.payload.data.decode("utf-8"))
-        creds = service_account.Credentials.from_service_account_info(
-            key_dict,
-            scopes=[_CLOUD_PLATFORM_SCOPE],
-        )
-    else:
-        creds, _ = google.auth.default(scopes=[_CLOUD_PLATFORM_SCOPE])
-
-    auth_req = google.auth.transport.requests.Request()
-    creds.refresh(auth_req)
-    return creds.token
+def _google_error(resp) -> str:
+    """Google's own explanation from an error response, e.g. which API is disabled in which project."""
+    try:
+        message = resp.json()["error"]["message"]
+    except (ValueError, KeyError, TypeError):
+        message = resp.text[:300] or resp.reason
+    return f"{resp.status_code} {message}"
 
 
-def _search_links(token: str, parent: str, payload: dict) -> list[dict]:
+def _search_links(creds, parent: str, payload: dict) -> list[dict]:
     """POST …:searchLinks and return the list of Link objects (handles pagination)."""
     url = f"{_LINEAGE_BASE}/{parent}:searchLinks"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json"}
+    creds.apply(headers)  # Authorization, plus x-goog-user-project when the credentials name a quota project
     links: list[dict] = []
     page_token = None
 
@@ -97,7 +83,7 @@ def _search_links(token: str, parent: str, payload: dict) -> list[dict]:
         resp = http_requests.post(url, headers=headers, json=body, timeout=30)
         if not resp.ok:
             logger.warning("searchLinks %s → %s: %s", payload, resp.status_code, resp.text)
-            resp.raise_for_status()
+            raise RuntimeError(_google_error(resp))
 
         data = resp.json()
         links.extend(data.get("links", []))
@@ -123,7 +109,8 @@ def discover(
     Returns {"upstream_refs": [...], "downstream_refs": [...]}
     Raises an exception (propagated to the caller as HTTP 502) on API errors.
     """
-    token = _get_token(project_id, secret_name)
+    creds = get_credentials(project_id, secret_name)
+    creds.refresh(google.auth.transport.requests.Request())
     fqn = _table_fqn(project_id, dataset_id, table_id)
     parent = f"projects/{project_id}/locations/{_normalize_location(location)}"
 
@@ -131,13 +118,13 @@ def discover(
     downstream_refs: list[str] = []
 
     # Links where this table is the target → sources are upstream
-    for link in _search_links(token, parent, {"target": {"fullyQualifiedName": fqn}}):
+    for link in _search_links(creds, parent, {"target": {"fullyQualifiedName": fqn}}):
         ref = _fqn_to_ref(link.get("source", {}).get("fullyQualifiedName", ""))
         if ref and ref not in upstream_refs:
             upstream_refs.append(ref)
 
     # Links where this table is the source → targets are downstream
-    for link in _search_links(token, parent, {"source": {"fullyQualifiedName": fqn}}):
+    for link in _search_links(creds, parent, {"source": {"fullyQualifiedName": fqn}}):
         ref = _fqn_to_ref(link.get("target", {}).get("fullyQualifiedName", ""))
         if ref and ref not in downstream_refs:
             downstream_refs.append(ref)

@@ -4,6 +4,8 @@ How each Google Cloud integration works, what it costs you, and what it needs. S
 
 Unless a source has its own service-account key, every call below runs as the catalog's service account (`ds-catalog-sa` on GKE, Application Default Credentials locally). The required IAM roles are listed in the README under [IAM roles](../README.md#iam-roles). All BigQuery SQL the backend builds passes through `services/bq_safety.py`, which rejects anything that is not a read-only `SELECT`.
 
+Running locally with `gcloud auth application-default login` credentials, DLP, Dataplex, Asset Inventory and Data Lineage calls are billed to the table's project, unless you set a quota project with `gcloud auth application-default set-quota-project <project>` (`services/gcp_credentials.py`). That project needs the API enabled, and your account needs `serviceusage.services.use` on it (Owner, Editor and Service Usage Consumer include it). Without this, Google refuses the calls with `403 SERVICE_DISABLED`, because it bills them to gcloud's own project.
+
 ## BigQuery sync — `services/bq_sync.py`
 
 Admins register GCP projects as sources (**GCP Sources** page or `POST /api/v1/bq/sources`) and sync them on demand.

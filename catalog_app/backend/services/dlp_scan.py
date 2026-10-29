@@ -18,6 +18,8 @@ Required IAM:
 import logging
 from typing import Optional
 
+from .gcp_credentials import get_credentials
+
 logger = logging.getLogger(__name__)
 
 # Built-in info types we care about for a data catalog
@@ -40,26 +42,6 @@ _DEFAULT_INFO_TYPES = [
 
 _MAX_FINDINGS_PER_REQUEST = 1000
 _ROWS_LIMIT = 500  # sample size — enough to detect PII without full scan
-
-
-def _get_dlp_credentials(project_id: str, secret_name: Optional[str]):
-    """Return credentials for DLP, same pattern as bq_preview."""
-    if secret_name:
-        from google.cloud import secretmanager
-        from google.oauth2 import service_account
-        import json
-
-        sm = secretmanager.SecretManagerServiceClient()
-        path = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
-        response = sm.access_secret_version(request={"name": path})
-        key_dict = json.loads(response.payload.data.decode("utf-8"))
-        return service_account.Credentials.from_service_account_info(
-            key_dict,
-            scopes=["https://www.googleapis.com/auth/cloud-platform"],
-        )
-    import google.auth
-    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-    return creds
 
 
 def scan(
@@ -102,7 +84,7 @@ def scan(
     from datetime import datetime, timezone
 
     selected_info_types = info_types or _DEFAULT_INFO_TYPES
-    credentials = _get_dlp_credentials(project_id, secret_name)
+    credentials = get_credentials(project_id, secret_name)
 
     # ── 1. Fetch sample rows from BigQuery ────────────────────────────────────
     bq = bq_lib.Client(project=project_id, credentials=credentials)
