@@ -8,7 +8,7 @@ import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined'
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
 import EditNoteIcon from '@mui/icons-material/EditNote'
 import { errorDetail } from '../../api/client'
@@ -20,15 +20,18 @@ import { useTableRefresh } from './shared'
 
 const lines = (text: string) => [...new Set(text.split('\n').map((s) => s.trim()).filter(Boolean))]
 
+// A long `project.dataset.table` ref breaks after a dot before anywhere else; the span keeps it one flex item in the pill
+const breakAfterDots = (ref: string) => <span>{ref.split(/(?<=\.)/).flatMap((part, i) => (i ? [<wbr key={i} />, part] : [part]))}</span>
+
 function RefList({ title, refs }: { title: string; refs: string[] }) {
   return (
-    <Box sx={{ flex: '1 1 240px', minWidth: 0 }}>
+    <Box sx={{ width: '100%' }}>
       <Typography variant="overline" component="h3" sx={{ color: tokens.ink3, display: 'block', mb: 1 }}>{title}</Typography>
       {refs.length === 0 ? (
         <Typography variant="body2" color="text.secondary">None recorded</Typography>
       ) : (
-        <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none', display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-          {refs.map((ref) => <li key={ref}><MetaPill mono>{ref}</MetaPill></li>)}
+        <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none', display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 0.75 }}>
+          {refs.map((ref) => <li key={ref}><MetaPill mono wrap>{breakAfterDots(ref)}</MetaPill></li>)}
         </Box>
       )}
     </Box>
@@ -100,13 +103,12 @@ export default function LineageSection({ table, editor }: { table: Table; editor
           </Box>
         </Box>
       ) : (
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        // A top-down pipeline: inputs, then this table, then its consumers
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, textAlign: 'center' }}>
           <RefList title="Upstream" refs={upstream} />
-          <ArrowForwardIcon aria-hidden sx={{ color: tokens.ruleStrong, mt: 3, display: { xs: 'none', sm: 'block' } }} />
-          <Box sx={{ flex: '0 1 auto', mt: 2.5, display: { xs: 'none', sm: 'block' } }}>
-            <MetaPill tone="accent" mono>{table.table_id}</MetaPill>
-          </Box>
-          <ArrowForwardIcon aria-hidden sx={{ color: tokens.ruleStrong, mt: 3, display: { xs: 'none', sm: 'block' } }} />
+          <ArrowDownwardIcon aria-hidden fontSize="small" sx={{ color: tokens.ruleStrong }} />
+          <MetaPill tone="accent" mono wrap>{table.table_id}</MetaPill>
+          <ArrowDownwardIcon aria-hidden fontSize="small" sx={{ color: tokens.ruleStrong }} />
           <RefList title="Downstream" refs={downstream} />
         </Box>
       )}

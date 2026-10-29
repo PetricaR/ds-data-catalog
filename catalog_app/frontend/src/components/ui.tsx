@@ -93,10 +93,12 @@ export function Eyebrow({ children, color = tokens.accent }: { children: ReactNo
   )
 }
 
-export function MetaPill({ icon, tone = 'neutral', mono = false, title, children }: {
+export function MetaPill({ icon, tone = 'neutral', mono = false, wrap = false, title, children }: {
   icon?: ReactElement
   tone?: Tone
   mono?: boolean
+  /** Wrap long text inside the pill instead of overflowing a narrow container */
+  wrap?: boolean
   title?: string
   children: ReactNode
 }) {
@@ -110,6 +112,7 @@ export function MetaPill({ icon, tone = 'neutral', mono = false, title, children
         px: 0.875, py: 0.25, borderRadius: '3px', border: `1px solid ${border}`, bgcolor: bg, color: fg,
         fontSize: '0.75rem', fontWeight: 500, lineHeight: 1.4, whiteSpace: 'nowrap',
         ...(mono && { fontFamily: tokens.fontMono, fontWeight: 400 }),
+        ...(wrap && { whiteSpace: 'normal', overflowWrap: 'anywhere', flexShrink: 1, minWidth: 0, maxWidth: '100%' }),
         '& svg': { fontSize: 13 },
       }}
     >
