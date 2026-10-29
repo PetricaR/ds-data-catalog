@@ -1,6 +1,8 @@
 # Local development stack: PostgreSQL + backend (auto-reload) + Vite dev server.
 #   cp .env.example .env    # then fill in JWT_SECRET, Google OAuth and ADMIN_EMAILS
 #   docker compose up
+# Without a Google OAuth client: set LOCAL_MODE=true in .env, then add demo data to the empty catalog with
+#   docker compose exec backend python -m backend.demo_data
 # Postgres only (to run the backend or tests from your machine):
 #   docker compose up -d db
 

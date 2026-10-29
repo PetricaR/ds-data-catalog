@@ -28,6 +28,7 @@ import PeopleOutlineIcon from '@mui/icons-material/PeopleOutline'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { canEdit, isAdmin, useAuth } from '../contexts/AuthContext'
 import { notificationsApi } from '../api/notifications'
+import { setupApi } from '../api/setup'
 import { tokens } from '../theme'
 import { Wordmark } from './Brand'
 import SearchBar from './SearchBar'
@@ -105,6 +106,9 @@ export default function Layout({ children }: { children: ReactNode }) {
     queryFn: () => notificationsApi.list(10),
     refetchInterval: 30_000,
   })
+
+  // Flags a LOCAL_MODE backend, so a local session is never mistaken for the real catalog
+  const { data: setupStatus } = useQuery({ queryKey: ['setup-status'], queryFn: setupApi.status, staleTime: Infinity })
 
   const dismissMutation = useMutation({
     mutationFn: (id: string) => notificationsApi.dismiss(id),
@@ -196,6 +200,13 @@ export default function Layout({ children }: { children: ReactNode }) {
           >
             <Wordmark inverse />
           </Box>
+          {setupStatus?.local_mode && (
+            <Box sx={{ ml: 1.5, display: 'flex' }}>
+              <MetaPill tone="warning" title="LOCAL_MODE is on: anyone on this machine can sign in as any user and role">
+                Local mode
+              </MetaPill>
+            </Box>
+          )}
 
           <Box sx={{ flex: 1, maxWidth: 560, ml: { md: 3 }, display: { xs: 'none', sm: 'block' } }}>
             <SearchBar />

@@ -15,6 +15,8 @@ export interface SetupStatus {
   admin_configured: boolean
   team_access_configured: boolean
   is_fresh_install: boolean
+  // LOCAL_MODE: sign-in without Google, for development on the developer's machine
+  local_mode: boolean
 }
 
 export interface OAuthClientInput {

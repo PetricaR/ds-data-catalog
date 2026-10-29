@@ -47,6 +47,7 @@ os.environ.setdefault("OAUTH_CHECK_INTERVAL_MINUTES", "0")  # no calls to Google
 os.environ.setdefault("GOOGLE_CHAT_WEBHOOK_URL", "")
 os.environ.setdefault("FRONTEND_URL", "http://localhost:5173")
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
+os.environ["LOCAL_MODE"] = "false"  # even if .env turns it on; tests that need it turn it on themselves
 
 from backend.database import Base, get_db  # noqa: E402
 from backend.dependencies.auth import create_token  # noqa: E402

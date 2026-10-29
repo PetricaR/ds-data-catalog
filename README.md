@@ -87,6 +87,8 @@ The backend creates and migrates its own tables on startup (`init_db` in `backen
 
 With all three empty, nobody can sign in. New users get `DEFAULT_ROLE` (`viewer` unless set to `editor`).
 
+`LOCAL_MODE=true` replaces all of this with a form where anyone signs in as any email and role, through `POST /api/v1/auth/local` (404 otherwise). It is for development on your own machine ([Local mode](#local-mode-no-google-account-needed)): the backend refuses to start with it unless `FRONTEND_URL` is a `localhost` URL.
+
 **Roles.** Admins change roles and deactivate accounts on the **Users** page. Roles are read from the database on every request, so changes apply immediately, even to tokens already issued.
 
 | Role | Can |
@@ -119,7 +121,7 @@ The full route-by-role matrix is enforced in `backend/` and checked against ever
 
 ## Local development
 
-Prerequisites: Python 3.12, Node.js 20 and Docker (for PostgreSQL). For BigQuery features, run the backend on your machine (option B below) after `gcloud auth application-default login`.
+Prerequisites: Python 3.12, Node.js 20 and Docker (for PostgreSQL). For BigQuery features, run the backend on your machine (option B below) after `gcloud auth application-default login` and `gcloud auth application-default set-quota-project <your-project>` (without a quota project, Google refuses some APIs with a 403). To work on the app without a Google OAuth client, use [local mode](#local-mode-no-google-account-needed).
 
 1. **Create a Google OAuth client** — Google Cloud Console → APIs & Services → Credentials → *Create credentials* → *OAuth client ID* → *Web application*. Authorised redirect URI: `http://localhost:5173/api/v1/auth/callback`. Put it in `.env` (step 2), or leave `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` empty and enter it in the setup wizard with the setup token from the backend log.
 
@@ -148,6 +150,21 @@ Prerequisites: Python 3.12, Node.js 20 and Docker (for PostgreSQL). For BigQuery
    ```
 
 Open http://localhost:5173 and sign in with an account from `ADMIN_EMAILS`. On a fresh install you land in the setup wizard at `/setup`, which checks the configuration, lets you pick BigQuery projects from the ones your Google account can see, and runs the first sync project by project. If Google sign-in or `ADMIN_EMAILS` is not configured yet, `/login` sends you to the wizard, which names the missing settings and shows the OAuth redirect URI to register.
+
+### Local mode: no Google account needed
+
+Local mode runs the app without a Google OAuth client, `ADMIN_EMAILS` or BigQuery. You still need PostgreSQL (`docker compose up -d db`).
+
+```bash
+cd catalog_app
+./start.sh --local       # creates .env on the first run; no need to edit it
+```
+
+- **Sign-in:** the login page asks for any email and a role (viewer, editor or admin). Each sign-in sets that user's role, so sign out and in again to see the app as another role. If a Google client is configured, Google sign-in still works next to it.
+- **Demo data:** an empty catalog gets a made-up retailer in the project `demo-retail-analytics`: 4 datasets and 9 tables with descriptions, tags, lineage, a trusted table, a `restricted` table with PII columns, a pending schema change and a notification. `python -m backend.demo_data` adds it whenever the catalog has no datasets, and leaves a catalog with data alone.
+- **Docker Compose:** set `LOCAL_MODE=true` in `.env`, run `docker compose up`, then `docker compose exec backend python -m backend.demo_data`.
+- **BigQuery:** locally signed-in users have no Google token, so sync, preview, scans and lineage discovery use your Application Default Credentials and make real calls to Google. They fail on the made-up demo tables. The setup wizard can't list your projects; enter project IDs by hand.
+- **Safety:** anyone who can reach the backend can sign in as an admin. The backend refuses to start with `LOCAL_MODE=true` unless `FRONTEND_URL` is a `localhost` URL, logs a warning at startup, and the header shows a **Local mode** badge.
 
 ---
 
@@ -275,6 +292,7 @@ All backend settings are environment variables (`backend/config.py`). In product
 | `ALLOWED_EMAIL_DOMAINS` | — | Comma-separated domains allowed to sign in |
 | `ALLOWED_EMAILS` | — | Comma-separated individual accounts allowed to sign in |
 | `DEFAULT_ROLE` | `viewer` | Role for new users: `viewer` or `editor` |
+| `LOCAL_MODE` | `false` | Development only: sign in without Google, as any email and role. Refused unless `FRONTEND_URL` is a `localhost` URL ([Local mode](#local-mode-no-google-account-needed)) |
 | `GCP_PROJECT_ID` | — | Default project for `POST /bq/sync` |
 | `BQ_SECRET_NAME` | — | Secret Manager secret with a service-account key for BigQuery jobs; empty uses Workload Identity / ADC |
 | `GEMINI_API_KEY` | — | Use the Gemini API instead of Vertex AI |
@@ -313,6 +331,7 @@ All endpoints are under `/api/v1` and expect `Authorization: Bearer <jwt>` unles
 | GET | `/auth/login` | public | Redirect to Google sign-in |
 | GET | `/auth/callback` | public | OAuth callback; redirects to `/login#token=…` |
 | GET | `/auth/me` | any | Current user profile and role |
+| POST | `/auth/local` | public, `LOCAL_MODE` only | Sign in as `{"email", "role"}` without Google; returns `{token, user}`. 404 when local mode is off |
 | GET | `/setup/status` | public | Setup wizard checks (booleans, counts, the OAuth redirect URI, and Google's reason if it rejects the OAuth client) |
 | PUT | `/setup/oauth` | admin or `X-Setup-Token` | Check the Google OAuth client with Google and store it, secret encrypted (409 while set in the environment) |
 | GET | `/datasets` | any | List datasets (`project_id`, `sensitivity_label`, `tags`, `owner`, `validated`, `skip`, `limit`) |
@@ -422,6 +441,7 @@ catalog_app/
 │   ├── models/         # SQLAlchemy models
 │   ├── schemas/        # Pydantic schemas
 │   ├── config.py       # Settings (environment variables)
+│   ├── demo_data.py    # Demo catalog for local mode (python -m backend.demo_data)
 │   ├── database.py     # Engine, sessions, startup migrations
 │   └── main.py         # App and router registration
 ├── frontend/           # React + Vite app (src/api, components, contexts, pages)

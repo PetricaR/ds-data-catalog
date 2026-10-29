@@ -1,18 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Divider from '@mui/material/Divider'
 import Link from '@mui/material/Link'
+import TextField from '@mui/material/TextField'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
 import GoogleIcon from '@mui/icons-material/Google'
+import LoginIcon from '@mui/icons-material/Login'
 import SearchIcon from '@mui/icons-material/Search'
 import VerifiedOutlinedIcon from '@mui/icons-material/VerifiedOutlined'
 import { isAdmin, useAuth } from '../contexts/AuthContext'
 import { authApi } from '../api/auth'
+import { errorDetail } from '../api/client'
 import { setupApi } from '../api/setup'
-import type { User } from '../api/types'
+import type { User, UserRole } from '../api/types'
 import { Wordmark } from '../components/Brand'
 import { Eyebrow } from '../components/ui'
 import { tokens } from '../theme'
@@ -38,14 +44,71 @@ async function landingPage(user: User): Promise<string> {
   }
 }
 
+const ROLES: UserRole[] = ['viewer', 'editor', 'admin']
+
+// LOCAL_MODE: sign in as any email and role. The backend only offers it with a localhost FRONTEND_URL.
+function LocalSignInForm({ onSignedIn }: { onSignedIn: (token: string, user: User) => void }) {
+  const [email, setEmail] = useState('developer@example.com')
+  const [role, setRole] = useState<UserRole>('admin')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const { token, user } = await authApi.localSignIn(email.trim(), role)
+      onSignedIn(token, user)
+    } catch (err) {
+      setError(errorDetail(err, 'Local sign-in failed. Is the backend running with LOCAL_MODE=true?'))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Box component="form" onSubmit={submit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required fullWidth />
+      <Box>
+        <Typography id="local-role" variant="body2" fontWeight={500} sx={{ mb: 0.75 }}>Role</Typography>
+        <ToggleButtonGroup
+          exclusive
+          fullWidth
+          size="small"
+          aria-labelledby="local-role"
+          value={role}
+          onChange={(_, value: UserRole | null) => value && setRole(value)}
+        >
+          {ROLES.map((r) => <ToggleButton key={r} value={r} sx={{ textTransform: 'capitalize' }}>{r}</ToggleButton>)}
+        </ToggleButtonGroup>
+      </Box>
+      {error && <Alert severity="error">{error}</Alert>}
+      <Button type="submit" variant="contained" fullWidth size="large" startIcon={<LoginIcon />} disabled={busy || !email.trim()}>
+        Sign in locally
+      </Button>
+    </Box>
+  )
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const { setUser, user } = useAuth()
   const [error, setError] = useState<string | null>(null)
   const [freshInstall, setFreshInstall] = useState(false)
   const [clientError, setClientError] = useState<string | null>(null)
+  const [localMode, setLocalMode] = useState(false)
+  const [googleConfigured, setGoogleConfigured] = useState(true)
   // Set while the OAuth callback picks a landing page, so the "already signed in" redirect doesn't override it
   const completingSignIn = useRef(false)
+
+  function completeSignIn(token: string, signedIn: User) {
+    completingSignIn.current = true
+    authApi.storeToken(token, signedIn)
+    landingPage(signedIn).then((path) => {
+      navigate(path, { replace: true })
+      setUser(signedIn)
+    })
+  }
 
   // The OAuth callback returns the token (or an error) in the URL fragment, which never reaches a server.
   useEffect(() => {
@@ -61,24 +124,22 @@ export default function Login() {
         setError('Sign-in failed. Please try again.')
         return
       }
-      completingSignIn.current = true
-      authApi.storeToken(token, parsedUser)
-      landingPage(parsedUser).then((path) => {
-        navigate(path, { replace: true })
-        setUser(parsedUser)
-      })
+      completeSignIn(token, parsedUser)
       return
     }
     if (params.toString()) setError(params.get('error') || 'Sign-in failed. Please try again.')
 
-    // Sign-in can't work until OAuth and an admin are configured — the setup wizard explains what's missing.
+    // Google sign-in can't work until OAuth and an admin are configured — the setup wizard explains what's
+    // missing. Local mode signs in without either.
     if (user) return
     setupApi.status()
       .then((status) => {
-        if (!status.oauth_configured || !status.admin_configured) navigate('/setup', { replace: true })
+        if (!status.local_mode && (!status.oauth_configured || !status.admin_configured)) navigate('/setup', { replace: true })
         else {
           setFreshInstall(status.is_fresh_install)
           setClientError(status.oauth_client_error)
+          setLocalMode(status.local_mode)
+          setGoogleConfigured(status.oauth_configured)
         }
       })
       .catch(() => {})
@@ -142,7 +203,9 @@ export default function Login() {
             {freshInstall ? 'Welcome' : 'Welcome back'}
           </Typography>
           <Typography color="text.secondary" sx={{ mb: 4 }}>
-            Use your Google Workspace account to open your organisation's data catalog.
+            {localMode
+              ? 'Local mode: sign in as any email and role, without Google. Switch roles by signing out and in again.'
+              : "Use your Google Workspace account to open your organisation's data catalog."}
           </Typography>
 
           {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
@@ -154,22 +217,31 @@ export default function Login() {
           )}
           {freshInstall && (
             <Alert severity="info" sx={{ mb: 3 }}>
-              First-time setup: sign in with an account listed in <code>ADMIN_EMAILS</code> to connect your BigQuery projects.
+              {localMode
+                ? <>The catalog is empty. Add demo data with <code>python -m backend.demo_data</code>, or sign in as an admin to connect BigQuery projects.</>
+                : <>First-time setup: sign in with an account listed in <code>ADMIN_EMAILS</code> to connect your BigQuery projects.</>}
             </Alert>
           )}
 
-          <Button
-            variant="contained"
-            fullWidth
-            size="large"
-            startIcon={<GoogleIcon />}
-            onClick={() => { window.location.href = '/api/v1/auth/login' }}
-          >
-            Sign in with Google
-          </Button>
-          <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 2, textAlign: 'center' }}>
-            You'll be sent to Google and brought back here.
-          </Typography>
+          {localMode && <LocalSignInForm onSignedIn={completeSignIn} />}
+          {localMode && googleConfigured && <Divider sx={{ my: 3, color: 'text.secondary', typography: 'caption' }}>or</Divider>}
+
+          {googleConfigured && (
+            <>
+              <Button
+                variant={localMode ? 'outlined' : 'contained'}
+                fullWidth
+                size="large"
+                startIcon={<GoogleIcon />}
+                onClick={() => { window.location.href = '/api/v1/auth/login' }}
+              >
+                Sign in with Google
+              </Button>
+              <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 2, textAlign: 'center' }}>
+                You'll be sent to Google and brought back here.
+              </Typography>
+            </>
+          )}
         </Box>
       </Box>
     </Box>

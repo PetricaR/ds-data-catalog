@@ -113,8 +113,9 @@ function OAuthClientForm({ admin, onSaved }: { admin: boolean; onSaved: () => vo
   )
 }
 
-function SignInPrompt() {
+function SignInPrompt({ localMode }: { localMode: boolean }) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   if (user) {
     return (
       <Alert severity="warning">
@@ -131,14 +132,17 @@ function SignInPrompt() {
           variant="contained"
           onClick={() => {
             authApi.setReturnTo('/setup')
-            window.location.href = '/api/v1/auth/login'
+            if (localMode) navigate('/login')
+            else window.location.href = '/api/v1/auth/login'
           }}
         >
           Sign in
         </Button>
       }
     >
-      Sign in with an admin account (listed in <code>ADMIN_EMAILS</code>) to connect BigQuery projects.
+      {localMode
+        ? 'Sign in locally as an admin to connect BigQuery projects.'
+        : <>Sign in with an admin account (listed in <code>ADMIN_EMAILS</code>) to connect BigQuery projects.</>}
     </Alert>
   )
 }
@@ -229,7 +233,7 @@ export default function Setup() {
         // Resume wizard at the right step for existing installs
         if (!s.database_connected) {
           setActiveStep(0)
-        } else if (!s.oauth_configured || !s.admin_configured || s.oauth_client_error) {
+        } else if (!s.local_mode && (!s.oauth_configured || !s.admin_configured || s.oauth_client_error)) {
           setActiveStep(1)
         } else if (s.bq_sources_count === 0) {
           setActiveStep(2)
@@ -359,6 +363,12 @@ export default function Setup() {
               </StepLabel>
               <StepContent>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
+                  {status?.local_mode && (
+                    <Alert severity="info">
+                      Local mode is on: anyone on this machine signs in as any email and role, without Google. Google
+                      sign-in is optional here — set it up below only to test it.
+                    </Alert>
+                  )}
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     {status?.oauth_client_error ? (
                       <StatusChip ok={false} label="Google rejects the OAuth client" />
@@ -436,7 +446,7 @@ export default function Setup() {
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <Button
                     variant="contained"
-                    disabled={!status?.oauth_configured || !status?.admin_configured || !!status?.oauth_client_error}
+                    disabled={!status?.local_mode && (!status?.oauth_configured || !status?.admin_configured || !!status?.oauth_client_error)}
                     onClick={() => setActiveStep(2)}
                     
                   >
@@ -468,7 +478,7 @@ export default function Setup() {
                       </Typography>
                     </Box>
                   ) : !admin ? (
-                    <SignInPrompt />
+                    <SignInPrompt localMode={!!status?.local_mode} />
                   ) : (
                     <>
                       <Typography variant="body2" color="text.secondary">
@@ -577,7 +587,7 @@ export default function Setup() {
                       <SyncProgressList rows={syncRows} />
                     </Box>
                   ) : !admin ? (
-                    <SignInPrompt />
+                    <SignInPrompt localMode={!!status?.local_mode} />
                   ) : (
                     <>
                       <Typography variant="body2" color="text.secondary">

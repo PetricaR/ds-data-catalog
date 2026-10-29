@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -11,13 +12,21 @@ from .database import SessionLocal, init_db
 from .dependencies.auth import require_auth
 from .services.oauth_client import log_setup_token_if_unconfigured, watch_oauth_client
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     with SessionLocal() as db:
         reencrypt_stored_secrets(db)
-        log_setup_token_if_unconfigured(db)
+        if settings.local_mode:
+            logger.warning(
+                "LOCAL_MODE is on: anyone who can reach this backend can sign in as any user and role, "
+                "without Google. Sign in at %s/login", settings.frontend_url.rstrip("/"),
+            )
+        else:
+            log_setup_token_if_unconfigured(db)
     interval = settings.oauth_check_interval_minutes
     watcher = asyncio.create_task(watch_oauth_client(interval)) if interval > 0 else None
     yield

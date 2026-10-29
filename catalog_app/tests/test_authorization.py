@@ -28,6 +28,11 @@ SETUP_TOKEN_OR_ADMIN = {
     ("PUT", "/api/v1/setup/oauth"),
 }
 
+# Answer 404 unless LOCAL_MODE is on; then anyone can sign in (tests/test_local_mode.py).
+LOCAL_MODE_ONLY = {
+    ("POST", "/api/v1/auth/local"),
+}
+
 # GET routes that run BigQuery / AI jobs or expose query history — editor or above.
 EDITOR_ONLY_GETS = {
     "/api/v1/tables/{table_id}/preview",
@@ -53,14 +58,19 @@ def _call(client, method, path, headers=None):
     return client.request(method, _url(path), headers=headers or {}, json=None)
 
 
-PROTECTED = [r for r in _routes() if r not in PUBLIC | SETUP_TOKEN_OR_ADMIN]
+PROTECTED = [r for r in _routes() if r not in PUBLIC | SETUP_TOKEN_OR_ADMIN | LOCAL_MODE_ONLY]
 WRITES = [r for r in PROTECTED if r[0] != "GET" or r[1] in EDITOR_ONLY_GETS]
 ADMIN_ONLY = [r for r in PROTECTED if r[1].startswith(ADMIN_PREFIXES)]
 
 
 def test_public_routes_exist():
     routes = set(_routes())
-    assert PUBLIC | SETUP_TOKEN_OR_ADMIN <= routes
+    assert PUBLIC | SETUP_TOKEN_OR_ADMIN | LOCAL_MODE_ONLY <= routes
+
+
+@pytest.mark.parametrize("method,path", sorted(LOCAL_MODE_ONLY))
+def test_local_mode_routes_are_off_by_default(client, method, path):
+    assert _call(client, method, path).status_code == 404
 
 
 @pytest.mark.parametrize("method,path", PROTECTED, ids=[f"{m} {p}" for m, p in PROTECTED])

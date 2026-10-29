@@ -49,6 +49,8 @@ def setup_status(db: Session = Depends(get_db)):
         "team_access_configured": bool(settings.allowed_email_domains.strip() or settings.allowed_emails.strip()),
         # A fresh install has no sources and no data
         "is_fresh_install": bq_sources_count == 0 and datasets_count == 0,
+        # LOCAL_MODE: sign-in without Google, for development on this machine
+        "local_mode": settings.local_mode,
     }
 
 

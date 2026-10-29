@@ -2,13 +2,14 @@
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import urlencode
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -163,6 +164,40 @@ def callback(
     db.refresh(user)
 
     return _to_login_page(token=create_token(user), user=json.dumps(_user_info(user)))
+
+
+class LocalSignIn(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    email: str = Field(max_length=255, pattern=r"^[^@\s]+@[^@\s]+$")
+    role: Literal["viewer", "editor", "admin"] = "admin"
+
+
+def _require_local_mode():
+    # Off, the route answers as if it did not exist
+    if not settings.local_mode:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+@router.post("/local", dependencies=[Depends(_require_local_mode)])
+def local_sign_in(body: LocalSignIn, db: Session = Depends(get_db)):
+    """LOCAL_MODE only: sign in as any email with the chosen role, without Google.
+
+    Each sign-in sets the role, so a developer can switch between viewer, editor and admin. The user has no
+    Google token, so BigQuery features run with the backend's own credentials (ADC).
+    """
+    email = body.email.lower()
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    if user and not user.is_active:
+        raise HTTPException(status_code=403, detail="This account has been deactivated.")
+    if not user:
+        user = User(email=email, name=email.split("@")[0])
+        db.add(user)
+    user.role = body.role
+    user.last_login = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+    return {"token": create_token(user), "user": _user_info(user)}
 
 
 def _user_info(user: User) -> dict:

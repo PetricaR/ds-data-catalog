@@ -1,5 +1,5 @@
 import client from './client'
-import type { User } from './types'
+import type { User, UserRole } from './types'
 
 const RETURN_TO_KEY = 'light_data_catalog_return_to'
 
@@ -7,6 +7,10 @@ const isInternalPath = (path: string) => path.startsWith('/') && !path.startsWit
 
 export const authApi = {
   me: () => client.get<User>('/auth/me').then((r) => r.data),
+
+  // LOCAL_MODE only: any email and role, no Google round trip
+  localSignIn: (email: string, role: UserRole) =>
+    client.post<{ token: string; user: User }>('/auth/local', { email, role }).then((r) => r.data),
 
   logout: () => {
     localStorage.removeItem('light_data_catalog_token')

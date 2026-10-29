@@ -103,7 +103,9 @@ def list_accessible_projects(
     if creds is None or not creds.token:
         raise HTTPException(
             status_code=400,
-            detail="No GCP credentials on file — please sign out and sign in again to grant access.",
+            detail="Signed in locally, without Google, so your projects can't be listed. Enter a project ID instead."
+            if settings.local_mode else
+            "No GCP credentials on file — please sign out and sign in again to grant access.",
         )
 
     try:

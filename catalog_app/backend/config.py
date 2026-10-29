@@ -1,7 +1,10 @@
-from pydantic import field_validator
+from urllib.parse import urlparse
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROLES = ("viewer", "editor", "admin")
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 # Placeholder values that have shipped in templates and docs — never accept them as a real secret.
 _PLACEHOLDER_SECRETS = {
@@ -43,6 +46,9 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
     # Secrets stored in the database (comma-separated: the first encrypts, all decrypt). Empty = derived from JWT_SECRET
     encryption_key: str = ""
+    # Local development: sign in without Google as any email and role (POST /auth/local).
+    # Refused unless FRONTEND_URL points at this machine, so a deployment can't switch it on.
+    local_mode: bool = False
 
     @field_validator("jwt_secret")
     @classmethod
@@ -82,6 +88,15 @@ class Settings(BaseSettings):
         if value not in ("viewer", "editor"):
             raise ValueError("DEFAULT_ROLE must be 'viewer' or 'editor' (grant admin via ADMIN_EMAILS)")
         return value
+
+    @model_validator(mode="after")
+    def _local_mode_stays_local(self) -> "Settings":
+        if self.local_mode and urlparse(self.frontend_url).hostname not in _LOCAL_HOSTS:
+            raise ValueError(
+                "LOCAL_MODE lets anyone sign in as any user, so it only runs on your own machine: "
+                "FRONTEND_URL must point at localhost"
+            )
+        return self
 
     def is_admin_email(self, email: str) -> bool:
         return email.lower() in _split_csv(self.admin_emails)
