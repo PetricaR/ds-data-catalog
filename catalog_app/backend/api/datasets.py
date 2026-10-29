@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,7 @@ from ..config import settings
 from ..database import get_db
 from ..dependencies.auth import require_auth, require_editor
 from ..models.catalog import Dataset, MetadataChangeLog, Table
-from ..schemas.catalog import DatasetCreate, DatasetResponse, DatasetUpdate, ProjectUsageIn
+from ..schemas.catalog import DatasetCreate, DatasetResponse, DatasetUpdate, DatasetValidatePayload, ProjectUsageIn
 from ..services.gchat import notify_metadata_change
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -86,15 +86,22 @@ def create_dataset(payload: DatasetCreate, db: Session = Depends(get_db)):
     existing = db.query(Dataset).filter(
         Dataset.project_id == payload.project_id,
         Dataset.dataset_id == payload.dataset_id,
-        Dataset.is_active == True,
     ).first()
-    if existing:
+    if existing and existing.is_active:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Dataset '{payload.project_id}.{payload.dataset_id}' already exists.",
         )
-    ds = Dataset(**payload.model_dump())
-    db.add(ds)
+    if existing:
+        # Removed from the catalog earlier: bring it back with its tables, and the details given now
+        ds = existing
+        for field, value in payload.model_dump(exclude_unset=True).items():
+            setattr(ds, field, value)
+        ds.is_active = True
+        db.query(Table).filter(Table.dataset_id == ds.id).update({"is_active": True}, synchronize_session=False)
+    else:
+        ds = Dataset(**payload.model_dump())
+        db.add(ds)
     db.commit()
     db.refresh(ds)
     return _dataset_response(ds, db)
@@ -151,6 +158,7 @@ def update_dataset(
 @router.patch("/{dataset_id}/validate", response_model=DatasetResponse)
 def validate_dataset(
     dataset_id: UUID,
+    payload: Optional[DatasetValidatePayload] = Body(default=None),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_editor),
 ):
@@ -158,6 +166,9 @@ def validate_dataset(
     ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.is_active == True).first()
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    wanted = payload.validated if payload else None
+    if wanted is not None and wanted == ds.is_validated:
+        return _dataset_response(ds, db)  # already so; keep who validated it and when
     ds.is_validated = not ds.is_validated
     ds.validated_by = current_user["email"] if ds.is_validated else None
     ds.validated_at = datetime.now(timezone.utc) if ds.is_validated else None

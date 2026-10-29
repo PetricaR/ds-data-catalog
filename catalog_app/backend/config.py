@@ -16,7 +16,7 @@ _PLACEHOLDER_SECRETS = {
 _MIN_SECRET_LENGTH = 32
 
 
-def _split_csv(value: str) -> set[str]:
+def split_csv(value: str) -> set[str]:
     return {item.strip().lower() for item in value.split(",") if item.strip()}
 
 
@@ -33,13 +33,14 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
     oauth_check_interval_minutes: int = 360  # how often to ask Google whether the client still works; 0 = never
     log_setup_token: bool = True       # print the setup token at startup; if false, only `python -m backend.setup_token`
+    # The settings below can also be entered on the Settings page (services/app_config.py); set here, they win
     google_chat_webhook_url: str = ""  # Google Chat space webhook URL
     gemini_api_key: str = ""           # Gemini API key (leave empty to use Vertex AI / ADC)
     # Access control (comma-separated lists, case-insensitive)
-    admin_emails: str = ""             # always allowed to sign in; promoted to admin on sign-in
+    admin_emails: str = ""             # always allowed to sign in; promoted to admin on sign-in. Environment only
     allowed_email_domains: str = ""    # e.g. "example.com,example.org"
     allowed_emails: str = ""           # individual addresses outside the allowed domains
-    default_role: str = "viewer"       # role given to new users: viewer | editor
+    default_role: str = ""             # role given to new users: viewer | editor (empty = viewer)
     # JWT
     jwt_secret: str = ""               # required — at least 32 random characters
     jwt_algorithm: str = "HS256"
@@ -85,7 +86,7 @@ class Settings(BaseSettings):
     @field_validator("default_role")
     @classmethod
     def _default_role_is_not_admin(cls, value: str) -> str:
-        if value not in ("viewer", "editor"):
+        if value not in ("", "viewer", "editor"):
             raise ValueError("DEFAULT_ROLE must be 'viewer' or 'editor' (grant admin via ADMIN_EMAILS)")
         return value
 
@@ -99,15 +100,7 @@ class Settings(BaseSettings):
         return self
 
     def is_admin_email(self, email: str) -> bool:
-        return email.lower() in _split_csv(self.admin_emails)
-
-    def is_email_allowed(self, email: str) -> bool:
-        """Sign-in allowlist. With nothing configured, only ADMIN_EMAILS can sign in."""
-        email = email.lower()
-        if self.is_admin_email(email) or email in _split_csv(self.allowed_emails):
-            return True
-        domain = email.rsplit("@", 1)[-1]
-        return domain in _split_csv(self.allowed_email_domains)
+        return email.lower() in split_csv(self.admin_emails)
 
 
 settings = Settings()

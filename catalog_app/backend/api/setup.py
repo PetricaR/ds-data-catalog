@@ -5,11 +5,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from .. import demo_data
 from ..config import settings
 from ..database import get_db
-from ..dependencies.auth import get_current_user
+from ..dependencies.auth import get_current_user, require_admin
 from ..models.catalog import Dataset, GCPSource
-from ..services import oauth_client
+from ..services import app_config, oauth_client
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
@@ -30,6 +31,7 @@ def setup_status(db: Session = Depends(get_db)):
     bq_sources_count = db.query(GCPSource).count() if db_connected else 0
     datasets_count = db.query(Dataset).count() if db_connected else 0
     client = oauth_client.get_oauth_client(db) if db_connected else None
+    configured = {key: bool(s.value) for key, s in app_config.load(db).items()} if db_connected else {}
 
     return {
         "database_connected": db_connected,
@@ -42,11 +44,12 @@ def setup_status(db: Session = Depends(get_db)):
         "redirect_uri": oauth_client.redirect_uri(),
         "bq_sources_count": bq_sources_count,
         "has_data": datasets_count > 0,
-        "gemini_configured": bool(settings.gemini_api_key),
-        "gchat_configured": bool(settings.google_chat_webhook_url),
+        "gemini_configured": configured.get(app_config.GEMINI_API_KEY, False),
+        "gchat_configured": configured.get(app_config.GOOGLE_CHAT_WEBHOOK_URL, False),
         "admin_configured": bool(settings.admin_emails.strip()),
         # Anyone beyond ADMIN_EMAILS allowed to sign in
-        "team_access_configured": bool(settings.allowed_email_domains.strip() or settings.allowed_emails.strip()),
+        "team_access_configured": configured.get(app_config.ALLOWED_EMAIL_DOMAINS, False)
+                                  or configured.get(app_config.ALLOWED_EMAILS, False),
         # A fresh install has no sources and no data
         "is_fresh_install": bq_sources_count == 0 and datasets_count == 0,
         # LOCAL_MODE: sign-in without Google, for development on this machine
@@ -103,3 +106,12 @@ def save_oauth_client(
     oauth_client.save_oauth_client(db, body.client_id, body.client_secret, updated_by)
     oauth_client.record_verdict(body.client_id, body.client_secret, verdict)
     return {"oauth_configured": True, "oauth_source": "database"}
+
+
+@router.post("/demo-data", status_code=201, dependencies=[Depends(require_admin)])
+def load_demo_data(db: Session = Depends(get_db)):
+    """Fill an empty catalog with a fictional retail company's datasets, to try the catalog before connecting
+    BigQuery. Its BigQuery features (preview, scans, lineage discovery) fail: the project does not exist."""
+    if not demo_data.seed(db):
+        raise HTTPException(status_code=409, detail="The catalog already has datasets. Sample data only goes into an empty catalog.")
+    return {"project_id": demo_data.PROJECT, "datasets": len(demo_data.DATASETS)}

@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Accordion from '@mui/material/Accordion'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import AccordionSummary from '@mui/material/AccordionSummary'
@@ -22,8 +22,10 @@ import Skeleton from '@mui/material/Skeleton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined'
+import AddIcon from '@mui/icons-material/Add'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
+import DatasetOutlinedIcon from '@mui/icons-material/DatasetOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import GridOnIcon from '@mui/icons-material/GridOn'
@@ -35,9 +37,11 @@ import StorageIcon from '@mui/icons-material/Storage'
 import UpdateIcon from '@mui/icons-material/Update'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import ViewWeekOutlinedIcon from '@mui/icons-material/ViewWeekOutlined'
+import { errorDetail } from '../api/client'
 import { datasetsApi } from '../api/datasets'
 import { schemaChangesApi } from '../api/schemaChanges'
 import { searchApi } from '../api/search'
+import { setupApi } from '../api/setup'
 import type { Dataset } from '../api/types'
 import SchemaChangesPanel from '../components/SchemaChangesPanel'
 import SensitivityChip from '../components/SensitivityChip'
@@ -47,6 +51,9 @@ import {
 } from '../components/ui'
 import { canEdit, isAdmin, useAuth } from '../contexts/AuthContext'
 import { tokens } from '../theme'
+
+// Browse is in the main bundle; the form (and its Autocomplete) loads when first opened
+const RegisterDatasetDialog = lazy(() => import('../components/CatalogDialogs').then((m) => ({ default: m.RegisterDatasetDialog })))
 
 const INLINE_LIMIT = 15
 const PAGE_SIZE = 50
@@ -90,7 +97,7 @@ function TablesList({ dataset }: { dataset: Dataset }) {
               <Typography sx={{ ...MONO, fontWeight: 500, color: tokens.ink, overflowWrap: 'anywhere' }}>{t.table_id}</Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
                 {t.row_count != null && <MetaPill icon={<NumbersIcon />}>{compactNumber(t.row_count)} rows</MetaPill>}
-                {t.columns.length > 0 && <MetaPill icon={<ViewWeekOutlinedIcon />}>{t.columns.length} cols</MetaPill>}
+                {t.columns.length > 0 && <MetaPill icon={<ViewWeekOutlinedIcon />}>{plural(t.columns.length, 'col')}</MetaPill>}
                 {t.size_bytes != null && <MetaPill icon={<SdStorageOutlinedIcon />}>{formatBytes(t.size_bytes)}</MetaPill>}
                 {t.bq_last_modified && <MetaPill icon={<UpdateIcon />} title="Last modified in BigQuery">{formatDate(t.bq_last_modified)}</MetaPill>}
                 <SensitivityChip label={t.sensitivity_label} />
@@ -154,10 +161,22 @@ function DatasetRow({ ds }: { ds: Dataset }) {
 }
 
 export default function Browse() {
+  const qc = useQueryClient()
   const { user } = useAuth()
   const admin = isAdmin(user)
+  const editor = canEdit(user)
   const sync = useSourceSync()
   const [syncOpen, setSyncOpen] = useState(false)
+  const [registerOpen, setRegisterOpen] = useState(false)
+
+  // Same query as the layout's, which only needs it once
+  const { data: setupStatus } = useQuery({ queryKey: ['setup-status'], queryFn: setupApi.status, staleTime: Infinity, enabled: admin })
+  const sampleData = useMutation({
+    mutationFn: setupApi.loadDemoData,
+    onSuccess: () => ['datasets', 'stats', 'tags', 'search', 'schema-changes', 'setup-status']
+      .forEach((key) => qc.invalidateQueries({ queryKey: [key] })),
+    onError: () => {},
+  })
 
   const { data: datasetsPages, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ['datasets'],
@@ -203,7 +222,14 @@ export default function Browse() {
         eyebrow="Catalog"
         title="Browse"
         subtitle="Every BigQuery project, dataset and table synced into the catalog."
-        actions={syncButton}
+        actions={(editor || admin) && (
+          <>
+            {editor && (
+              <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setRegisterOpen(true)}>Register dataset</Button>
+            )}
+            {syncButton}
+          </>
+        )}
       />
 
       <SchemaChangesPanel changes={schemaChanges} canAck={canEdit(user)} />
@@ -238,16 +264,34 @@ export default function Browse() {
         <EmptyState
           icon={<StorageIcon />}
           title="No datasets yet"
-          action={admin && (
+          action={admin ? (
             <>
               {syncButton}
               <Button component={RouterLink} to="/sources" variant="outlined">Manage GCP sources</Button>
+              {setupStatus && !setupStatus.has_data && (
+                <Button
+                  variant="outlined"
+                  startIcon={sampleData.isPending ? <CircularProgress size={16} /> : <DatasetOutlinedIcon />}
+                  disabled={sampleData.isPending}
+                  onClick={() => sampleData.mutate()}
+                >
+                  Load sample data
+                </Button>
+              )}
             </>
+          ) : editor && (
+            <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setRegisterOpen(true)}>Register a dataset</Button>
           )}
         >
           {admin
-            ? 'Connect a GCP project under GCP sources, then sync it to discover its datasets and tables.'
-            : 'An admin has to connect and sync a GCP project before anything shows up here.'}
+            ? <>
+                Connect a GCP project under GCP sources, then sync it to discover its datasets and tables.
+                {setupStatus && !setupStatus.has_data && ' Or load sample data, a made-up retail company, to look around first.'}
+              </>
+            : editor
+              ? 'An admin has to connect and sync a GCP project, or you can register a dataset by hand.'
+              : 'An admin has to connect and sync a GCP project before anything shows up here.'}
+          {sampleData.isError && <Alert severity="error" sx={{ mt: 2, textAlign: 'left' }}>{errorDetail(sampleData.error, 'Could not load the sample data.')}</Alert>}
         </EmptyState>
       )}
 
@@ -290,6 +334,7 @@ export default function Browse() {
         </Box>
       )}
 
+      {registerOpen && <Suspense fallback={null}><RegisterDatasetDialog onClose={() => setRegisterOpen(false)} /></Suspense>}
       <Dialog open={syncOpen} onClose={() => setSyncOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{sync.running ? 'Syncing from BigQuery…' : 'BigQuery sync'}</DialogTitle>
         <DialogContent>

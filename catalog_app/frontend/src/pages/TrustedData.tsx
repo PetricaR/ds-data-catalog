@@ -96,7 +96,7 @@ export default function TrustedData() {
                   )}
                   <Box sx={{ display: 'flex', gap: 0.5, mt: 1.25, flexWrap: 'wrap', alignItems: 'center' }}>
                     <SensitivityChip label={t.sensitivity_label} />
-                    {t.columns.length > 0 && <MetaPill icon={<ViewWeekOutlinedIcon />}>{t.validated_columns.length ? `${t.validated_columns.length}/${t.columns.length}` : t.columns.length} cols{t.validated_columns.length ? ' validated' : ''}</MetaPill>}
+                    {t.columns.length > 0 && <MetaPill icon={<ViewWeekOutlinedIcon />}>{t.validated_columns.length ? `${t.validated_columns.length}/${plural(t.columns.length, 'col')} validated` : plural(t.columns.length, 'col')}</MetaPill>}
                     {t.row_count != null && <MetaPill icon={<NumbersIcon />}>{compactNumber(t.row_count)} rows</MetaPill>}
                     {t.tags.slice(0, 3).map((tag) => <TagChip key={tag} tag={tag} />)}
                     <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>

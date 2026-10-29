@@ -20,8 +20,9 @@ export const datasetsApi = {
   update: (id: string, data: DatasetUpdate) =>
     client.put<Dataset>(`/datasets/${id}`, data).then((r) => r.data),
 
-  validate: (id: string) =>
-    client.patch<Dataset>(`/datasets/${id}/validate`).then((r) => r.data),
+  // Say what you mean: without `validated` the API toggles
+  validate: (id: string, validated: boolean) =>
+    client.patch<Dataset>(`/datasets/${id}/validate`, { validated }).then((r) => r.data),
 
   remove: (id: string) => client.delete(`/datasets/${id}`),
 

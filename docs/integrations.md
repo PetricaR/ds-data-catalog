@@ -83,11 +83,11 @@ Only jobs run in the table's own project are visible. The response contains the 
 
 The prompt contains the table path, description, sensitivity label, tags, row count, size, the dataset description, and for each column its name, type, description, PII flag, null %, approximate distinct count and min/max values. No sampled rows are sent.
 
-Vertex AI is used through the service account by default, on its `global` endpoint (Gemini 3.8 Flash is not served from single regions such as `us-central1`); set `GEMINI_API_KEY` to call the Gemini API instead.
+Vertex AI is used through the service account by default, on its `global` endpoint (Gemini 3.8 Flash is not served from single regions such as `us-central1`); set `GEMINI_API_KEY`, or enter a key on the Settings page, to call the Gemini API instead.
 
 ## Google Chat — `services/gchat.py`
 
-With `GOOGLE_CHAT_WEBHOOK_URL` set (a space's **Apps & integrations → Webhooks** URL), the backend posts Cards v2 messages. Delivery is best-effort: failures are logged and never block the request.
+With `GOOGLE_CHAT_WEBHOOK_URL` set, or a webhook URL entered on the Settings page (a space's **Apps & integrations → Webhooks** URL), the backend posts Cards v2 messages. The page's **Send a test message** checks it. Delivery is best-effort: failures are logged and never block the request.
 
 | Event | Sent by |
 |---|---|

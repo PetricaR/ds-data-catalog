@@ -113,6 +113,10 @@ export default function SchemaSection({ table, editor }: { table: TableType; edi
     mutationFn: ({ colId, isPii }: { colId: string; isPii: boolean }) => tablesApi.togglePii(table.id, colId, isPii),
     onSuccess: refetch,
   })
+  const primaryKey = useMutation({
+    mutationFn: (vars: { id: string; is_primary_key: boolean }) => tablesApi.patchColumns(table.id, [vars]),
+    onSuccess: replace,
+  })
   const stats = useMutation({ mutationFn: () => tablesApi.pullStats(table.id), onSuccess: refetch })
 
   const columns = [...table.columns].sort((a, b) => a.position - b.position)
@@ -165,7 +169,20 @@ export default function SchemaSection({ table, editor }: { table: TableType; edi
                 <TableCell sx={{ ...MONO, color: tokens.ink3 }}>{col.position + 1}</TableCell>
                 <TableCell>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    {col.is_primary_key && <KeyIcon titleAccess="Primary key" sx={{ fontSize: 14, color: tokens.warning }} />}
+                    {editor ? (
+                      <Tooltip title={col.is_primary_key ? 'Primary key — select to unmark' : 'Mark as part of the primary key'}>
+                        <IconButton
+                          size="small"
+                          aria-label={`Primary key: ${col.name}`}
+                          aria-pressed={col.is_primary_key}
+                          onClick={() => primaryKey.mutate({ id: col.id, is_primary_key: !col.is_primary_key })}
+                          disabled={primaryKey.isPending}
+                          sx={{ ml: -0.75 }}
+                        >
+                          <KeyIcon sx={{ fontSize: 14, color: col.is_primary_key ? tokens.warning : tokens.ruleStrong }} />
+                        </IconButton>
+                      </Tooltip>
+                    ) : col.is_primary_key && <KeyIcon titleAccess="Primary key" sx={{ fontSize: 14, color: tokens.warning }} />}
                     <Typography component="span" sx={{ ...MONO, fontWeight: col.is_primary_key ? 600 : 500, color: tokens.ink }}>{col.name}</Typography>
                   </Box>
                 </TableCell>

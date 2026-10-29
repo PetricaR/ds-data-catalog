@@ -1,12 +1,17 @@
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
+import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
+import InputAdornment from '@mui/material/InputAdornment'
+import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
+import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
@@ -15,7 +20,7 @@ import GridOnIcon from '@mui/icons-material/GridOn'
 import SearchIcon from '@mui/icons-material/Search'
 import ViewWeekOutlinedIcon from '@mui/icons-material/ViewWeekOutlined'
 import { searchApi } from '../api/search'
-import type { ColumnSearchResult, SearchResult } from '../api/types'
+import type { ColumnSearchResult, SearchResult, SensitivityLabel } from '../api/types'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import { CardLink, EmptyState, MONO, MetaPill, PATH_SX, PageHeader, formatDate, linkCardSx, plural } from '../components/ui'
@@ -23,6 +28,32 @@ import { tokens } from '../theme'
 
 const PAGE = 20
 type Mode = 'entities' | 'columns'
+
+const SENSITIVITY_LABELS: Record<SensitivityLabel, string> = {
+  public: 'Public', internal: 'Internal', confidential: 'Confidential', restricted: 'Restricted',
+}
+
+/** Applied on Enter or when the field loses focus, not on every keystroke. */
+function ColumnFilter({ value, onApply }: { value: string; onApply: (value: string | null) => void }) {
+  const [draft, setDraft] = useState(value)
+  const apply = () => { if (draft.trim() !== value) onApply(draft.trim() || null) }
+  return (
+    <TextField
+      size="small"
+      label="Has a column named"
+      placeholder="customer_id"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={apply}
+      onKeyDown={(e) => { if (e.key === 'Enter') apply() }}
+      inputProps={{ style: { fontFamily: tokens.fontMono } }}
+      InputProps={{
+        startAdornment: <InputAdornment position="start"><ViewWeekOutlinedIcon sx={{ fontSize: 16 }} /></InputAdornment>,
+      }}
+      sx={{ width: { xs: '100%', sm: 220 } }}
+    />
+  )
+}
 
 function ResultIcon({ dataset }: { dataset: boolean }) {
   return (
@@ -100,6 +131,11 @@ export default function SearchResults() {
   const entityType = (params.get('type') as 'dataset' | 'table' | null) ?? undefined
   const datasetId = params.get('dataset_id') ?? undefined
   const projectId = params.get('project_id') ?? undefined
+  const sensitivity = params.get('sensitivity') ?? undefined
+  const tags = params.getAll('tag')
+  const columnName = params.get('column') ?? undefined
+  const filtered = !!(sensitivity || tags.length || columnName)
+  const { data: knownTags = [] } = useQuery({ queryKey: ['tags'], queryFn: searchApi.tags, staleTime: 60_000 })
 
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params)
@@ -108,10 +144,26 @@ export default function SearchResults() {
     setParams(next, { replace: true })
   }
 
+  const setTags = (next: string[]) => {
+    const p = new URLSearchParams(params)
+    p.delete('tag')
+    next.forEach((t) => p.append('tag', t))
+    setParams(p, { replace: true })
+  }
+  const clearFilters = () => {
+    const p = new URLSearchParams(params)
+    ;['sensitivity', 'tag', 'column'].forEach((key) => p.delete(key))
+    setParams(p, { replace: true })
+  }
+
   const entities = useInfiniteQuery({
-    queryKey: ['search', q, entityType, datasetId, projectId],
+    queryKey: ['search', q, entityType, datasetId, projectId, sensitivity, tags, columnName],
     queryFn: ({ pageParam }) =>
-      searchApi.search({ q, entity_type: entityType, dataset_id: datasetId, project_id: projectId, skip: pageParam, limit: PAGE }),
+      searchApi.search({
+        q, entity_type: entityType, dataset_id: datasetId, project_id: projectId,
+        sensitivity_label: sensitivity, tags: tags.length ? tags : undefined, column_name: columnName,
+        skip: pageParam, limit: PAGE,
+      }),
     getNextPageParam: (last, pages) => (last.results.length === PAGE ? pages.length * PAGE : undefined),
     initialPageParam: 0,
     enabled: !!q && mode === 'entities',
@@ -175,6 +227,33 @@ export default function SearchResults() {
           />
         )}
       </Box>
+
+      {mode === 'entities' && (
+        <Box component="section" aria-label="Filters" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3, mt: -1.5, flexWrap: 'wrap' }}>
+          <TextField
+            select size="small" label="Sensitivity"
+            value={sensitivity ?? ''}
+            onChange={(e) => setParam('sensitivity', e.target.value || null)}
+            SelectProps={{ displayEmpty: true }}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 160 }}
+          >
+            <MenuItem value="">Any</MenuItem>
+            {Object.entries(SENSITIVITY_LABELS).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
+          </TextField>
+          <Autocomplete
+            multiple size="small"
+            options={knownTags}
+            value={tags}
+            onChange={(_, next) => setTags(next)}
+            renderInput={(p) => <TextField {...p} label="Any of these tags" placeholder={tags.length ? '' : 'Pick tags'} />}
+            ChipProps={{ size: 'small', sx: MONO }}
+            sx={{ minWidth: 220, flex: { xs: '1 1 100%', sm: '0 1 320px' } }}
+          />
+          <ColumnFilter key={columnName ?? ''} value={columnName ?? ''} onApply={(v) => setParam('column', v)} />
+          {filtered && <Button size="small" onClick={clearFilters}>Clear filters</Button>}
+        </Box>
+      )}
 
       {(mode === 'entities' ? entities.isError : columns.isError) && (
         <Alert severity="error" sx={{ mb: 2 }}>Search failed. Please try again.</Alert>

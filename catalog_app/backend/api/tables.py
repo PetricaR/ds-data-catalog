@@ -10,7 +10,7 @@ from ..database import get_db
 from ..dependencies.auth import require_auth, require_editor
 from ..models.catalog import Dataset, MetadataChangeLog, Table, TableColumn
 from ..schemas.catalog import ColumnUpdate, ExampleQuery, ProjectUsageIn, QualityCheckResult, TableCreate, TableInsights, TableResponse, TableUpdate, ValidatePayload
-from ..services import bq_preview, bq_lineage, bq_quality, bq_usage, dlp_scan, dataplex_quality, asset_inventory
+from ..services import app_config, bq_preview, bq_lineage, bq_quality, bq_usage, dlp_scan, dataplex_quality, asset_inventory
 from ..services.gchat import notify_trusted, notify_revoked, notify_metadata_change, notify_pii_detected, notify_quality_score
 
 router = APIRouter(prefix="/tables", tags=["tables"])
@@ -120,22 +120,32 @@ def create_table(payload: TableCreate, db: Session = Depends(get_db)):
     existing = db.query(Table).filter(
         Table.dataset_id == payload.dataset_id,
         Table.table_id == payload.table_id,
-        Table.is_active == True,
     ).first()
-    if existing:
+    if existing and existing.is_active:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Table '{payload.table_id}' already exists in this dataset.",
         )
 
-    columns_data = payload.model_dump().pop("columns", [])
-    table_data = payload.model_dump(exclude={"columns"})
-    t = Table(**table_data)
-    db.add(t)
+    columns_data = payload.model_dump()["columns"]
+    if existing:
+        # Removed from the catalog earlier: bring it back, with the details given now
+        t = existing
+        for field, value in payload.model_dump(exclude_unset=True, exclude={"columns"}).items():
+            setattr(t, field, value)
+        t.is_active = True
+        if columns_data:
+            db.query(TableColumn).filter(TableColumn.table_id == t.id).delete()
+    else:
+        t = Table(**payload.model_dump(exclude={"columns"}))
+        db.add(t)
     db.flush()
 
     for col in columns_data:
         db.add(TableColumn(table_id=t.id, **col))
+    db.flush()
+    db.refresh(t)
+    t.quality_score = _compute_quality_score(t)
 
     db.commit()
     db.refresh(t)
@@ -477,6 +487,7 @@ def generate_insights(
             size_bytes=t.size_bytes,
             columns=columns,
             dataset_description=ds.description,
+            api_key=app_config.get(db, app_config.GEMINI_API_KEY),
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))

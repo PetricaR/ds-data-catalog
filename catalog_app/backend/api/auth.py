@@ -17,6 +17,7 @@ from ..config import settings
 from ..database import get_db
 from ..dependencies.auth import create_token, require_auth
 from ..models.catalog import User
+from ..services import app_config
 from ..services.oauth_client import get_oauth_client, redirect_uri
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -130,7 +131,7 @@ def callback(
     email = (userinfo.get("email") or "").lower()
     if not email or not userinfo.get("verified_email"):
         return _to_login_page(error="Google did not return a verified email address.")
-    if not settings.is_email_allowed(email):
+    if not app_config.is_email_allowed(db, email):
         return _to_login_page(error=f"{email} is not allowed to sign in to this catalog. Ask an administrator for access.")
 
     # Upsert user
@@ -151,7 +152,7 @@ def callback(
             email=email,
             name=userinfo.get("name"),
             picture=userinfo.get("picture"),
-            role=settings.default_role,
+            role=app_config.default_role(db),
             last_login=now,
             gcp_access_token=access_token,
             gcp_refresh_token=refresh_token,

@@ -2,7 +2,6 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    ARRAY,
     BigInteger,
     Boolean,
     Column,
@@ -14,7 +13,8 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
+# PostgreSQL's ARRAY, not the generic one: the tag filters need its overlap (&&) operator
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import relationship
 
 from ..crypto import EncryptedText

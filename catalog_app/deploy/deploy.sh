@@ -17,6 +17,7 @@
 #   ALLOWED_EMAIL_DOMAINS   Comma-separated domains whose users may sign in
 #   ALLOWED_EMAILS          Comma-separated individual accounts that may sign in
 #   DEFAULT_ROLE            Role for new users: viewer (default) | editor
+#                           The three above can be left unset and set on the app's Settings page instead
 #   DOMAIN                  Serve over HTTPS on this domain (Ingress + Google-managed certificate).
 #                           Without it the app is exposed over plain HTTP on <ip>.nip.io — testing only.
 #   GCP_REGION              Region (default: europe-west1)
@@ -382,7 +383,7 @@ apply_configmap() {
         --from-literal=ADMIN_EMAILS="${ADMIN_EMAILS:-}" \
         --from-literal=ALLOWED_EMAIL_DOMAINS="${ALLOWED_EMAIL_DOMAINS:-}" \
         --from-literal=ALLOWED_EMAILS="${ALLOWED_EMAILS:-}" \
-        --from-literal=DEFAULT_ROLE="${DEFAULT_ROLE:-viewer}" \
+        --from-literal=DEFAULT_ROLE="${DEFAULT_ROLE:-}" \
         --from-literal=LOG_SETUP_TOKEN=false \
         --dry-run=client -o yaml | kubectl apply -n "$NAMESPACE" -f -
 }

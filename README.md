@@ -28,8 +28,8 @@ How each Google Cloud integration works — sync, previews, DLP, Dataplex, linea
 
 ## Features
 
-- **Discovery** — browse datasets and tables, full-text search across names, descriptions, columns and tags, filter by sensitivity, owner and tags.
-- **Documentation** — table and column descriptions, owners, data stewards, tags, sensitivity labels (`public`, `internal`, `confidential`, `restricted`), example queries, links to the projects that use a table.
+- **Discovery** — browse datasets and tables, full-text search across names, descriptions, columns and tags, filter by sensitivity, tags and column name.
+- **Documentation** — table and column descriptions, owners, data stewards, tags, sensitivity labels (`public`, `internal`, `confidential`, `restricted`), primary keys, example queries, links to the projects that use a table. Datasets and tables outside a synced project can be registered by hand.
 - **Multi-project sync** — register several GCP projects as sources; each uses Workload Identity or its own service-account key from Secret Manager. Re-syncs keep user-edited metadata.
 - **Schema change detection** — columns added or removed since the last sync are flagged for acknowledgement.
 - **Trusted data** — editors certify tables (and specific columns) as validated; the validation is recorded under their account.
@@ -81,11 +81,13 @@ The backend creates and migrates its own tables on startup (`init_db` in `backen
 
 | Setting | Effect |
 |---|---|
-| `ADMIN_EMAILS` | Always allowed; promoted to `admin` at every sign-in |
+| `ADMIN_EMAILS` | Always allowed; promoted to `admin` at every sign-in. Environment only |
 | `ALLOWED_EMAIL_DOMAINS` | Anyone with a verified Google account on these domains |
 | `ALLOWED_EMAILS` | Individual accounts outside those domains |
 
 With all three empty, nobody can sign in. New users get `DEFAULT_ROLE` (`viewer` unless set to `editor`).
+
+<a name="settings-page"></a>**Settings page.** Admins can set the allowed domains and accounts, the role for new users, the Google Chat webhook URL and the Gemini API key at `/settings` instead of in the environment (`backend/services/app_config.py`). A variable set in the environment wins, and the page shows it as read-only; `ADMIN_EMAILS` stays environment-only, so an operator can always get back in. The page refuses a change that would stop the admin making it from signing in, accepts only `https://chat.googleapis.com/` webhook URLs, and never returns the webhook URL or API key.
 
 `LOCAL_MODE=true` replaces all of this with a form where anyone signs in as any email and role, through `POST /api/v1/auth/local` (404 otherwise). It is for development on your own machine ([Local mode](#local-mode-no-google-account-needed)): the backend refuses to start with it unless `FRONTEND_URL` is a `localhost` URL.
 
@@ -95,7 +97,7 @@ With all three empty, nobody can sign in. New users get `DEFAULT_ROLE` (`viewer`
 |---|---|
 | `viewer` | Browse, search and read catalog metadata (not the detail page of `restricted` datasets or tables) |
 | `editor` | Everything a viewer can, plus edit metadata, validate tables, and run BigQuery/AI jobs: preview, quality checks, stats, DLP and Dataplex scans, lineage discovery, usage stats, insights |
-| `admin` | Everything, plus GCP sources, BigQuery sync and user management |
+| `admin` | Everything, plus GCP sources, BigQuery sync, user management and the Settings page |
 
 The full route-by-role matrix is enforced in `backend/` and checked against every registered route by `tests/test_authorization.py`.
 
@@ -103,7 +105,7 @@ The full route-by-role matrix is enforced in `backend/` and checked against ever
 
 **Tokens.** After the OAuth callback, the app's JWT is handed to the browser in the URL fragment (never in a query string or server log) and stored in `localStorage`; it expires after `JWT_EXPIRE_MINUTES` (default 7 days). The backend refuses to start unless `JWT_SECRET` is a random value of at least 32 characters. The user's Google access and refresh tokens (scopes `bigquery.readonly` and `cloud-platform.read-only`) are stored in PostgreSQL, encrypted, and used to list the projects an admin can add as sources and to sync with the admin's own credentials.
 
-**Encryption at rest.** The users' Google tokens and an OAuth client secret entered in the setup wizard are stored as Fernet tokens (`backend/crypto.py`) under a key derived from `ENCRYPTION_KEY`, so a database dump or backup alone cannot use them. The API never returns them.
+**Encryption at rest.** The users' Google tokens, an OAuth client secret entered in the setup wizard, and a Google Chat webhook URL or Gemini API key entered on the Settings page are stored as Fernet tokens (`backend/crypto.py`) under a key derived from `ENCRYPTION_KEY`, so a database dump or backup alone cannot use them. The API never returns them.
 - Without `ENCRYPTION_KEY` the key is derived from `JWT_SECRET`, and changing `JWT_SECRET` then loses the stored secrets: users sign in again, and a client stored by the wizard is entered again. Set `ENCRYPTION_KEY` so `JWT_SECRET` can be rotated freely. `start.sh` and `deploy.sh` generate it.
 - At startup the backend encrypts any plaintext tokens left from older versions and moves values under an older key to the current one. To rotate the key, set `ENCRYPTION_KEY=new,old`, restart, then remove `old`.
 - A value no configured key can read is left in place, so it comes back if the key is restored. Until then it reads as missing, and the backend logs how many there are.
@@ -161,7 +163,7 @@ cd catalog_app
 ```
 
 - **Sign-in:** the login page asks for any email and a role (viewer, editor or admin). Each sign-in sets that user's role, so sign out and in again to see the app as another role. If a Google client is configured, Google sign-in still works next to it.
-- **Demo data:** an empty catalog gets a made-up retailer in the project `demo-retail-analytics`: 4 datasets and 9 tables with descriptions, tags, lineage, a trusted table, a `restricted` table with PII columns, a pending schema change and a notification. `python -m backend.demo_data` adds it whenever the catalog has no datasets, and leaves a catalog with data alone.
+- **Demo data:** an empty catalog gets a made-up retailer in the project `demo-retail-analytics`: 4 datasets and 9 tables with descriptions, tags, lineage, a trusted table, a `restricted` table with PII columns, a pending schema change and a notification. `python -m backend.demo_data` adds it whenever the catalog has no datasets, and leaves a catalog with data alone. An admin can also add it from the empty Browse page (**Load sample data**), in any mode.
 - **Docker Compose:** set `LOCAL_MODE=true` in `.env`, run `docker compose up`, then `docker compose exec backend python -m backend.demo_data`.
 - **BigQuery:** locally signed-in users have no Google token, so sync, preview, scans and lineage discovery use your Application Default Credentials and make real calls to Google. They fail on the made-up demo tables. The setup wizard can't list your projects; enter project IDs by hand.
 - **Safety:** anyone who can reach the backend can sign in as an admin. The backend refuses to start with `LOCAL_MODE=true` unless `FRONTEND_URL` is a `localhost` URL, logs a warning at startup, and the header shows a **Local mode** badge.
@@ -289,14 +291,14 @@ All backend settings are environment variables (`backend/config.py`). In product
 | `LOG_SETUP_TOKEN` | `true` | Print the setup token in the startup log; if `false`, only `python -m backend.setup_token` shows it |
 | `CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | JSON array |
 | `ADMIN_EMAILS` | — | Comma-separated admin accounts |
-| `ALLOWED_EMAIL_DOMAINS` | — | Comma-separated domains allowed to sign in |
-| `ALLOWED_EMAILS` | — | Comma-separated individual accounts allowed to sign in |
-| `DEFAULT_ROLE` | `viewer` | Role for new users: `viewer` or `editor` |
+| `ALLOWED_EMAIL_DOMAINS` | — | Comma-separated domains allowed to sign in. Or set on the Settings page |
+| `ALLOWED_EMAILS` | — | Comma-separated individual accounts allowed to sign in. Or set on the Settings page |
+| `DEFAULT_ROLE` | `viewer` | Role for new users: `viewer` or `editor`. Or set on the Settings page |
 | `LOCAL_MODE` | `false` | Development only: sign in without Google, as any email and role. Refused unless `FRONTEND_URL` is a `localhost` URL ([Local mode](#local-mode-no-google-account-needed)) |
 | `GCP_PROJECT_ID` | — | Default project for `POST /bq/sync` |
 | `BQ_SECRET_NAME` | — | Secret Manager secret with a service-account key for BigQuery jobs; empty uses Workload Identity / ADC |
-| `GEMINI_API_KEY` | — | Use the Gemini API instead of Vertex AI |
-| `GOOGLE_CHAT_WEBHOOK_URL` | — | Google Chat alerts for metadata changes, validations, PII findings and quality scores |
+| `GEMINI_API_KEY` | — | Use the Gemini API instead of Vertex AI. Or set on the Settings page |
+| `GOOGLE_CHAT_WEBHOOK_URL` | — | Google Chat alerts for metadata changes, validations, PII findings and quality scores. Or set on the Settings page |
 
 ---
 
@@ -334,16 +336,20 @@ All endpoints are under `/api/v1` and expect `Authorization: Bearer <jwt>` unles
 | POST | `/auth/local` | public, `LOCAL_MODE` only | Sign in as `{"email", "role"}` without Google; returns `{token, user}`. 404 when local mode is off |
 | GET | `/setup/status` | public | Setup wizard checks (booleans, counts, the OAuth redirect URI, and Google's reason if it rejects the OAuth client) |
 | PUT | `/setup/oauth` | admin or `X-Setup-Token` | Check the Google OAuth client with Google and store it, secret encrypted (409 while set in the environment) |
+| POST | `/setup/demo-data` | admin | Add the fictional demo catalog; 409 unless the catalog has no datasets |
+| GET | `/settings` | admin | The [Settings page](#settings-page) values, each with its source (`environment`, `database` or `null`); secrets only as `configured` |
+| PUT | `/settings` | admin | Change any of `allowed_email_domains`, `allowed_emails`, `default_role`, `google_chat_webhook_url`, `gemini_api_key`; `""` removes one. 409 for one set in the environment |
+| POST | `/settings/google-chat/test` | admin | Send a test message to the configured Chat space |
 | GET | `/datasets` | any | List datasets (`project_id`, `sensitivity_label`, `tags`, `owner`, `validated`, `skip`, `limit`) |
-| POST | `/datasets` | editor | Register a dataset |
+| POST | `/datasets` | editor | Register a dataset; registering a removed one restores it with its tables |
 | GET | `/datasets/{id}` | any | Dataset detail (`restricted`: editor) |
 | PUT | `/datasets/{id}` | editor | Update metadata |
 | DELETE | `/datasets/{id}` | editor | Soft-delete, with its tables |
-| PATCH | `/datasets/{id}/validate` | editor | Toggle validation |
+| PATCH | `/datasets/{id}/validate` | editor | Mark validated (`{"validated": true}`) or not (`false`); without a body it toggles |
 | PUT | `/datasets/{id}/projects` | editor | Replace linked projects |
 | GET | `/datasets/{id}/tables` | any | Tables in a dataset |
 | GET | `/tables` | any | List tables (`dataset_id`, `sensitivity_label`, `tags`, `owner`, `validated`, `skip`, `limit`) |
-| POST | `/tables` | editor | Register a table |
+| POST | `/tables` | editor | Register a table, optionally with `columns`; registering a removed one restores it |
 | GET | `/tables/{id}` | any | Table detail with columns (`restricted`: editor) |
 | PUT | `/tables/{id}` | editor | Update metadata |
 | DELETE | `/tables/{id}` | editor | Soft-delete |
@@ -378,7 +384,7 @@ All endpoints are under `/api/v1` and expect `Authorization: Bearer <jwt>` unles
 | POST | `/bq/sources` | admin | Add a source |
 | PATCH | `/bq/sources/{id}` | admin | Update a source |
 | DELETE | `/bq/sources/{id}` | admin | Remove a source (keeps synced metadata) |
-| POST | `/bq/sync` | admin | Sync one project |
+| POST | `/bq/sync` | admin | Sync one project without adding it as a source (`project_id`, default `GCP_PROJECT_ID`; optional `dataset_filter` prefix and `secret_name`) |
 | POST | `/bq/sync/all` | admin | Sync all active sources |
 | POST | `/bq/sync/source/{id}` | admin | Sync one source |
 | GET | `/users` | admin | List users |
@@ -417,7 +423,7 @@ kubectl exec ds-catalog-postgres-0 -- pg_dump -U catalog ds_catalog | gzip > ds_
 | Symptom | Cause | Fix |
 |---|---|---|
 | Backend crash-loops with `JWT_SECRET must be a random value…` | Secret missing or too short | Create `jwt-secret-key` (32+ chars) and run `./deploy.sh secrets` |
-| Sign-in returns "not allowed to sign in" | Account not in `ADMIN_EMAILS`, `ALLOWED_EMAIL_DOMAINS` or `ALLOWED_EMAILS` | Re-run `deploy.sh` with the right lists |
+| Sign-in returns "not allowed to sign in" | Account not in `ADMIN_EMAILS`, `ALLOWED_EMAIL_DOMAINS` or `ALLOWED_EMAILS` | Add it on the Settings page, or re-run `deploy.sh` with the right lists |
 | Google shows `redirect_uri_mismatch` | Redirect URI not registered | Add `<FRONTEND_URL>/api/v1/auth/callback` to the OAuth client |
 | Google shows `Error 401: deleted_client`, or the login page says Google rejects the OAuth client | The OAuth client was deleted in Google Cloud (Google also deletes clients unused for months) | Restore it under Google Auth Platform → Clients if still listed, or create a new one. Put it in the environment, or, if the client came from the setup wizard, replace it at `/setup` with the token from `python -m backend.setup_token`. Users sign in again afterwards |
 | Log says stored secrets "cannot be decrypted" | `ENCRYPTION_KEY` (or, without it, `JWT_SECRET`) changed or was removed | Restore the previous key, or list it after the new one (`ENCRYPTION_KEY=new,old`). Otherwise users sign in again and a wizard-stored OAuth client is entered again |

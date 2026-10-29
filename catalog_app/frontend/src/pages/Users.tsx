@@ -1,7 +1,8 @@
 import {
-  Alert, Avatar, Box, MenuItem, Select, Skeleton, Switch, Table, TableBody, TableCell, TableContainer,
+  Alert, Avatar, Box, Link, MenuItem, Select, Skeleton, Switch, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Tooltip, Typography,
 } from '@mui/material'
+import { Link as RouterLink } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { usersApi } from '../api/users'
 import type { UserRole } from '../api/types'
@@ -12,7 +13,7 @@ import { tokens } from '../theme'
 const ROLE_HELP: Record<UserRole, string> = {
   viewer: 'Browse and search the catalog',
   editor: 'Edit metadata, validate tables, run previews and scans',
-  admin: 'Everything, plus GCP sources, sync and user management',
+  admin: 'Everything, plus GCP sources, sync, user management and settings',
 }
 
 export default function Users() {
@@ -31,8 +32,8 @@ export default function Users() {
         eyebrow="Admin"
         title="Users"
         subtitle={<>
-          People appear here after their first sign-in. Who may sign in is set by <code>ALLOWED_EMAIL_DOMAINS</code>,{' '}
-          <code>ALLOWED_EMAILS</code> and <code>ADMIN_EMAILS</code> on the backend.
+          People appear here after their first sign-in. Who may sign in, and the role new users get, is set
+          on the <Link component={RouterLink} to="/settings">Settings</Link> page.
         </>}
       />
 

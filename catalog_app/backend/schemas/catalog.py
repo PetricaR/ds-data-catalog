@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
+
+SensitivityLabel = Literal["public", "internal", "confidential", "restricted"]
 
 
 # ── Column ────────────────────────────────────────────────────────────────────
@@ -70,7 +72,9 @@ class DatasetBase(BaseModel):
 
 
 class DatasetCreate(DatasetBase):
-    pass
+    project_id: str = Field(min_length=1, max_length=255)
+    dataset_id: str = Field(min_length=1, max_length=255)
+    sensitivity_label: SensitivityLabel = "internal"
 
 
 class DatasetUpdate(BaseModel):
@@ -79,7 +83,12 @@ class DatasetUpdate(BaseModel):
     owner: Optional[str] = None
     data_steward: Optional[str] = None
     tags: Optional[list[str]] = None
-    sensitivity_label: Optional[str] = None
+    sensitivity_label: Optional[SensitivityLabel] = None
+
+
+class DatasetValidatePayload(BaseModel):
+    # True to mark validated, False to remove it. Omitted, the call toggles.
+    validated: Optional[bool] = None
 
 
 class DatasetResponse(DatasetBase):
@@ -118,6 +127,8 @@ class TableBase(BaseModel):
 
 
 class TableCreate(TableBase):
+    table_id: str = Field(min_length=1, max_length=255)
+    sensitivity_label: SensitivityLabel = "internal"
     columns: list[ColumnCreate] = []
 
 
@@ -126,7 +137,7 @@ class TableUpdate(BaseModel):
     description: Optional[str] = None
     owner: Optional[str] = None
     tags: Optional[list[str]] = None
-    sensitivity_label: Optional[str] = None
+    sensitivity_label: Optional[SensitivityLabel] = None
     example_queries: Optional[list[ExampleQuery]] = None
 
 

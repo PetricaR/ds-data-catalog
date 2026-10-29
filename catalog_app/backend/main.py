@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import auth, bq, datasets, notifications, schema_changes, search, setup, stats, tables, tags, users
+from .api import app_settings, auth, bq, datasets, notifications, schema_changes, search, setup, stats, tables, tags, users
 from .config import settings
 from .crypto import reencrypt_stored_secrets
 from .database import SessionLocal, init_db
@@ -66,6 +66,7 @@ for router in (
     schema_changes.router,
     notifications.router,
     users.router,
+    app_settings.router,
 ):
     app.include_router(router, prefix=API_PREFIX, dependencies=[Depends(require_auth)])
 

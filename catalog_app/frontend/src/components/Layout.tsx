@@ -25,6 +25,7 @@ import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone'
 import PeopleOutlineIcon from '@mui/icons-material/PeopleOutline'
+import TuneIcon from '@mui/icons-material/Tune'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { canEdit, isAdmin, useAuth } from '../contexts/AuthContext'
 import { notificationsApi } from '../api/notifications'
@@ -53,6 +54,7 @@ const ADMIN_SECTION: Section = {
   items: [
     { label: 'GCP sources', path: '/sources', icon: <CloudSyncOutlinedIcon fontSize="small" /> },
     { label: 'Users',       path: '/users',   icon: <PeopleOutlineIcon fontSize="small" /> },
+    { label: 'Settings',    path: '/settings', icon: <TuneIcon fontSize="small" /> },
     { label: 'Setup',       path: '/setup',   icon: <SettingsOutlinedIcon fontSize="small" /> },
   ],
 }

@@ -2,7 +2,7 @@
 AI-powered table insights via Google Gemini (google-genai SDK).
 
 Uses either:
-  - A Gemini API key  (set GEMINI_API_KEY in .env), or
+  - A Gemini API key  (GEMINI_API_KEY in .env, or entered on the Settings page), or
   - Vertex AI with ADC / the GCP project already configured for BigQuery.
 
 Structured output via response_schema (Pydantic) is used so the model always
@@ -106,6 +106,7 @@ def generate_insights(
     columns: list[dict],
     dataset_description: Optional[str] = None,
     location: str = "global",  # Vertex serves Gemini 3.8 Flash only from global, us and eu
+    api_key: str = "",
 ) -> dict:
     """
     Call Gemini via google-genai SDK and return structured insights.
@@ -116,11 +117,9 @@ def generate_insights(
     from google import genai
     from google.genai import types
 
-    from ..config import settings
-
     # Build client: prefer direct API key, fall back to Vertex AI (ADC)
-    if settings.gemini_api_key:
-        client = genai.Client(api_key=settings.gemini_api_key)
+    if api_key:
+        client = genai.Client(api_key=api_key)
     else:
         client = genai.Client(vertexai=True, project=project_id, location=location)
 

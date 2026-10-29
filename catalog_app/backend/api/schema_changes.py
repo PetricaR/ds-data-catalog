@@ -35,7 +35,13 @@ def list_changes(
     table_id: UUID | None = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(SchemaChange).filter(SchemaChange.is_acknowledged == acknowledged)
+    # Only tables still in the catalog: an alert about a removed table would link to a missing page
+    q = (
+        db.query(SchemaChange)
+        .join(Table, Table.id == SchemaChange.table_id)
+        .join(Dataset, Dataset.id == Table.dataset_id)
+        .filter(SchemaChange.is_acknowledged == acknowledged, Table.is_active == True, Dataset.is_active == True)  # noqa: E712
+    )
     if table_id:
         q = q.filter(SchemaChange.table_id == table_id)
     changes = q.order_by(SchemaChange.detected_at.desc()).limit(200).all()

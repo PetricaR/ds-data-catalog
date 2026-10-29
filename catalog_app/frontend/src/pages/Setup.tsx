@@ -1,7 +1,7 @@
 import { useState, useEffect, type FormEvent, type ReactElement } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import {
-  Alert, Box, Button, CircularProgress, Collapse, Divider, Paper, Step,
+  Alert, Box, Button, CircularProgress, Collapse, Divider, Link, Paper, Step,
   StepContent, StepLabel, Stepper, TextField, Typography, type StepIconProps,
 } from '@mui/material'
 import { useQueryClient } from '@tanstack/react-query'
@@ -646,21 +646,23 @@ export default function Setup() {
                   {(!status?.team_access_configured || !status?.gemini_configured || !status?.gchat_configured) && (
                     <>
                       <Divider />
-                      <Typography variant="body2" fontWeight={500}>Optional settings you can configure later:</Typography>
+                      <Typography variant="body2" fontWeight={500}>
+                        Optional, on the <Link component={RouterLink} to="/settings">Settings</Link> page once you're signed in as an admin:
+                      </Typography>
                       <Box component="ul" sx={{ m: 0, pl: 2.5, '& li': { mb: 0.5 } }}>
                         {!status?.team_access_configured && (
                           <li><Typography variant="body2">
-                            <strong>Team access</strong> — only <code>ADMIN_EMAILS</code> can sign in so far; set <code>ALLOWED_EMAIL_DOMAINS</code> (or <code>ALLOWED_EMAILS</code>) to let your team in
+                            <strong>Team access</strong> — only <code>ADMIN_EMAILS</code> can sign in so far; allow your team's domain or accounts
                           </Typography></li>
                         )}
                         {!status?.gemini_configured && (
                           <li><Typography variant="body2">
-                            <strong>AI Insights</strong> — run on Vertex AI by default; set <code>GEMINI_API_KEY</code> to use the Gemini API instead
+                            <strong>AI Insights</strong> — run on Vertex AI by default; add a Gemini API key to use the Gemini API instead
                           </Typography></li>
                         )}
                         {!status?.gchat_configured && (
                           <li><Typography variant="body2">
-                            <strong>Google Chat alerts</strong> — set <code>GOOGLE_CHAT_WEBHOOK_URL</code> for change notifications
+                            <strong>Google Chat alerts</strong> — add a Chat space's webhook URL for change notifications
                           </Typography></li>
                         )}
                       </Box>

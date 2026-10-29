@@ -32,4 +32,8 @@ export const setupApi = {
   // Admin, or anyone with the setup token from the backend log (before anyone can sign in)
   saveOAuthClient: (input: OAuthClientInput, setupToken?: string) =>
     client.put('/setup/oauth', input, setupToken ? { headers: { 'X-Setup-Token': setupToken } } : undefined),
+
+  // Admin: a fictional company's datasets, into an empty catalog only
+  loadDemoData: () =>
+    client.post<{ project_id: string; datasets: number }>('/setup/demo-data').then((r) => r.data),
 }

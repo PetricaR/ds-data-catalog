@@ -14,6 +14,7 @@ const TableDetail = lazy(() => import('./pages/TableDetail'))
 const TrustedData = lazy(() => import('./pages/TrustedData'))
 const Sources = lazy(() => import('./pages/Sources'))
 const Users = lazy(() => import('./pages/Users'))
+const Settings = lazy(() => import('./pages/Settings'))
 const Setup = lazy(() => import('./pages/Setup'))
 
 const PageLoading = () => <Box sx={{ pt: 1 }}><LinearProgress aria-label="Loading page" /></Box>
@@ -61,6 +62,7 @@ export default function App() {
                     <Route path="/trusted" element={<TrustedData />} />
                     <Route path="/sources" element={<RequireAdmin><Sources /></RequireAdmin>} />
                     <Route path="/users" element={<RequireAdmin><Users /></RequireAdmin>} />
+                    <Route path="/settings" element={<RequireAdmin><Settings /></RequireAdmin>} />
                     <Route path="*" element={<Navigate to="/browse" replace />} />
                   </Routes>
                 </Suspense>

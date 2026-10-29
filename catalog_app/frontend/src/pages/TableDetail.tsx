@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Link as RouterLink, useParams } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
@@ -10,11 +10,14 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogTitle from '@mui/material/DialogTitle'
+import IconButton from '@mui/material/IconButton'
 import LinearProgress from '@mui/material/LinearProgress'
 import Link from '@mui/material/Link'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import GppBadOutlinedIcon from '@mui/icons-material/GppBadOutlined'
 import LanguageIcon from '@mui/icons-material/Language'
@@ -26,13 +29,14 @@ import { datasetsApi } from '../api/datasets'
 import { schemaChangesApi, type SchemaChange } from '../api/schemaChanges'
 import { tablesApi } from '../api/tables'
 import type { ProjectUsage, Table } from '../api/types'
+import { EditDetailsDialog, RemoveDialog } from '../components/CatalogDialogs'
 import ProjectsEditor from '../components/ProjectsEditor'
 import SchemaChangesPanel from '../components/SchemaChangesPanel'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
 import ValidationWizard from '../components/ValidationWizard'
 import {
-  CopyButton, LoadError, MONO, MetaPill, PATH_SX, PageHeader, compactNumber, formatBytes, formatDate,
+  CopyButton, LoadError, MONO, MetaPill, PATH_SX, PageHeader, compactNumber, formatBytes, formatDate, plural,
 } from '../components/ui'
 import { canEdit, useAuth } from '../contexts/AuthContext'
 import { tokens } from '../theme'
@@ -40,7 +44,7 @@ import InsightsSection from './table/InsightsSection'
 import LineageSection from './table/LineageSection'
 import PreviewSection from './table/PreviewSection'
 import QueriesSection from './table/QueriesSection'
-import { DataplexSection, PiiScanSection, SchemaHistorySection, UsageSection } from './table/ScanSections'
+import { DataplexSection, NullCheckSection, PiiScanSection, SchemaHistorySection, UsageSection } from './table/ScanSections'
 import SchemaSection from './table/SchemaSection'
 import { useTableRefresh } from './table/shared'
 
@@ -154,6 +158,8 @@ function TableView({ table, datasetName, location, editor, tableChanges }: {
 }) {
   const [wizardOpen, setWizardOpen] = useState(false)
   const [confirmRevoke, setConfirmRevoke] = useState(false)
+  const [dialog, setDialog] = useState<'edit' | 'remove' | null>(null)
+  const navigate = useNavigate()
   const { replace } = useTableRefresh(table)
   const validate = useMutation({
     mutationFn: (validated_columns: string[] | null) =>
@@ -187,22 +193,32 @@ function TableView({ table, datasetName, location, editor, tableChanges }: {
             <CopyButton text={path} label="Copy table path" />
           </Box>
         }
-        actions={editor && (table.is_validated ? (
-          <Button variant="outlined" color="inherit" startIcon={<GppBadOutlinedIcon />} onClick={() => setConfirmRevoke(true)} sx={{ borderColor: tokens.ruleStrong }}>
-            Revoke trust
-          </Button>
-        ) : (
-          <Button variant="contained" startIcon={<VerifiedIcon />} onClick={() => setWizardOpen(true)}>
-            Mark as trusted
-          </Button>
-        ))}
+        actions={editor && (
+          <>
+            <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => setDialog('edit')}>Edit details</Button>
+            {table.is_validated ? (
+              <Button variant="outlined" color="inherit" startIcon={<GppBadOutlinedIcon />} onClick={() => setConfirmRevoke(true)} sx={{ borderColor: tokens.ruleStrong }}>
+                Revoke trust
+              </Button>
+            ) : (
+              <Button variant="contained" startIcon={<VerifiedIcon />} onClick={() => setWizardOpen(true)}>
+                Mark as trusted
+              </Button>
+            )}
+            <Tooltip title="Remove from the catalog">
+              <IconButton aria-label="Remove table from the catalog" onClick={() => setDialog('remove')} sx={{ '&:hover': { color: tokens.danger } }}>
+                <DeleteOutlineIcon />
+              </IconButton>
+            </Tooltip>
+          </>
+        )}
       >
         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 1.5 }}>
           {table.is_validated && <MetaPill tone="success" icon={<VerifiedIcon />}>Trusted source</MetaPill>}
           <SensitivityChip label={table.sensitivity_label} showInternal />
           {table.row_count != null && <MetaPill icon={<NumbersIcon />}>{compactNumber(table.row_count)} rows</MetaPill>}
           {table.size_bytes != null && <MetaPill icon={<SdStorageOutlinedIcon />}>{formatBytes(table.size_bytes)}</MetaPill>}
-          <MetaPill icon={<ViewWeekOutlinedIcon />}>{table.columns.length} cols</MetaPill>
+          <MetaPill icon={<ViewWeekOutlinedIcon />}>{plural(table.columns.length, 'col')}</MetaPill>
           {location && <MetaPill icon={<LanguageIcon />} title="BigQuery location">{location}</MetaPill>}
           {table.tags.map((t) => <TagChip key={t} tag={t} />)}
         </Box>
@@ -251,10 +267,21 @@ function TableView({ table, datasetName, location, editor, tableChanges }: {
         <>
           <UsageSection table={table} />
           <PiiScanSection table={table} />
+          <NullCheckSection table={table} />
           <DataplexSection table={table} />
         </>
       )}
       <SchemaHistorySection table={table} />
+
+      {dialog === 'edit' && <EditDetailsDialog kind="table" entity={table} onClose={() => setDialog(null)} onSaved={replace} />}
+      {dialog === 'remove' && (
+        <RemoveDialog
+          kind="table"
+          entity={table}
+          onClose={() => setDialog(null)}
+          onRemoved={() => navigate(`/datasets/${table.dataset_id}`, { replace: true })}
+        />
+      )}
 
       {editor && (
         <>

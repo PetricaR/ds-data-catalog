@@ -4,6 +4,7 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import LinearProgress from '@mui/material/LinearProgress'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -15,10 +16,11 @@ import BarChartIcon from '@mui/icons-material/BarChart'
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined'
 import HistoryIcon from '@mui/icons-material/History'
 import PolicyOutlinedIcon from '@mui/icons-material/PolicyOutlined'
+import RuleIcon from '@mui/icons-material/Rule'
 import { errorDetail } from '../../api/client'
 import { tablesApi } from '../../api/tables'
 import type { Table as TableType } from '../../api/types'
-import { MONO, MetaPill, Section, StatTile, compactNumber, formatBytes, formatDate, formatDateTime } from '../../components/ui'
+import { MONO, MetaPill, Section, StatTile, compactNumber, formatBytes, formatDate, formatDateTime, plural } from '../../components/ui'
 import { tokens } from '../../theme'
 import { useTableRefresh } from './shared'
 
@@ -162,6 +164,81 @@ export function PiiScanSection({ table }: { table: TableType }) {
           </Box>
         )
       }}
+    />
+  )
+}
+
+// Above this, the null check asks first: it reads every column of the whole table
+const CONFIRM_SCAN_BYTES = 10 * 1024 ** 3
+
+export function NullCheckSection({ table }: { table: TableType }) {
+  const run = useMutation({ mutationFn: () => tablesApi.qualityCheck(table.id), onError: () => {} })
+  const size = table.size_bytes
+  const confirmed = {
+    ...run,
+    mutate: () => {
+      const big = size == null || size > CONFIRM_SCAN_BYTES
+      const read = size == null ? 'the whole table (its size is unknown)' : `about ${formatBytes(size)}`
+      if (!big || confirm(`This check reads ${read} in BigQuery, billed to ${table.dataset_project_id}. Run it?`)) run.mutate()
+    },
+  }
+  return (
+    <OnDemandSection
+      title="Null rates and date ranges"
+      icon={<RuleIcon fontSize="small" />}
+      runLabel="Run check"
+      runningLabel="Checking…"
+      run={confirmed}
+      summary={(d) => `${d.columns.filter((c) => c.null_count > 0).length} of ${plural(d.columns.length, 'col')} with nulls`}
+      intro={
+        <>
+          Counts the nulls in every column, and finds the earliest and latest value of each date and timestamp column, in
+          one BigQuery query over the whole table{table.size_bytes != null && <> (it reads about {formatBytes(table.size_bytes)})</>}.
+        </>
+      }
+      pendingNote="Running the check in BigQuery…"
+      render={(d) => (
+        <Box>
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 1.5 }}>
+            {d.total_rows.toLocaleString()} rows · {formatDateTime(d.checked_at)}
+          </Typography>
+          <TableContainer sx={TABLE_BOX}>
+            <Table size="small" aria-label="Null rates per column">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Column</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell align="right">Nulls</TableCell>
+                  <TableCell sx={{ minWidth: 160 }}>Null rate</TableCell>
+                  <TableCell>Earliest – latest</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {d.columns.map((c) => (
+                  <TableRow key={c.name} hover>
+                    <TableCell sx={{ ...MONO, fontWeight: 600, overflowWrap: 'anywhere' }}>{c.name}</TableCell>
+                    <TableCell sx={{ ...MONO, fontSize: '0.75rem', color: tokens.ink3 }}>{c.data_type ?? '—'}</TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>{c.null_count.toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <LinearProgress
+                          variant="determinate" value={c.null_rate} aria-label={`Null rate of ${c.name}`}
+                          color={c.null_rate >= 50 ? 'warning' : 'primary'}
+                          sx={{ flex: 1, maxWidth: 120 }}
+                        />
+                        <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums', minWidth: 44, textAlign: 'right' }}>{c.null_rate}%</Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ ...MONO, fontSize: '0.75rem', color: tokens.ink2 }}>
+                      {c.min_value || c.max_value ? `${c.min_value ?? '?'} – ${c.max_value ?? '?'}` : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
     />
   )
 }

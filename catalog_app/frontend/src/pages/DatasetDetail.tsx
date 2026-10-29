@@ -1,14 +1,22 @@
 import { useState, type ReactNode } from 'react'
-import { Link as RouterLink, useParams } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
+import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
+import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import Link from '@mui/material/Link'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import AddIcon from '@mui/icons-material/Add'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import GppBadOutlinedIcon from '@mui/icons-material/GppBadOutlined'
 import GridOnIcon from '@mui/icons-material/GridOn'
 import NumbersIcon from '@mui/icons-material/Numbers'
 import SdStorageOutlinedIcon from '@mui/icons-material/SdStorageOutlined'
@@ -16,7 +24,8 @@ import SearchIcon from '@mui/icons-material/Search'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import ViewWeekOutlinedIcon from '@mui/icons-material/ViewWeekOutlined'
 import { datasetsApi } from '../api/datasets'
-import type { ProjectUsage, Table } from '../api/types'
+import type { Dataset, ProjectUsage, Table } from '../api/types'
+import { EditDetailsDialog, RegisterTableDialog, RemoveDialog } from '../components/CatalogDialogs'
 import ProjectsEditor from '../components/ProjectsEditor'
 import SensitivityChip from '../components/SensitivityChip'
 import TagChip from '../components/TagChip'
@@ -55,11 +64,11 @@ function TableCard({ datasetId, t }: { datasetId: string; t: Table }) {
         <Box sx={{ display: 'flex', gap: 0.5, mt: 1.25, flexWrap: 'wrap', alignItems: 'center' }}>
           {t.is_validated && (
             <MetaPill tone="success" icon={<VerifiedIcon />} title={t.validated_by ? `Validated by ${t.validated_by}` : undefined}>
-              {t.validated_columns.length > 0 ? `Trusted · ${t.validated_columns.length} cols` : 'Trusted'}
+              {t.validated_columns.length > 0 ? `Trusted · ${plural(t.validated_columns.length, 'col')}` : 'Trusted'}
             </MetaPill>
           )}
           <SensitivityChip label={t.sensitivity_label} />
-          {t.columns.length > 0 && <MetaPill icon={<ViewWeekOutlinedIcon />}>{t.columns.length} cols</MetaPill>}
+          {t.columns.length > 0 && <MetaPill icon={<ViewWeekOutlinedIcon />}>{plural(t.columns.length, 'col')}</MetaPill>}
           {t.row_count != null && <MetaPill icon={<NumbersIcon />}>{compactNumber(t.row_count)} rows</MetaPill>}
           {t.size_bytes != null && <MetaPill icon={<SdStorageOutlinedIcon />}>{formatBytes(t.size_bytes)}</MetaPill>}
           {t.quality_score != null && (
@@ -86,9 +95,11 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 export default function DatasetDetail() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const editor = canEdit(user)
   const [filter, setFilter] = useState('')
+  const [dialog, setDialog] = useState<'edit' | 'remove' | 'register' | null>(null)
 
   const { data: dataset, isLoading, error } = useQuery({
     queryKey: ['dataset', id],
@@ -106,6 +117,14 @@ export default function DatasetDetail() {
   const projectsMutation = useMutation({
     mutationFn: (projects: ProjectUsage[]) => datasetsApi.updateProjects(id!, projects),
     onSuccess: (updated) => qc.setQueryData(['dataset', id], updated),
+  })
+  const replace = (updated: Dataset) => {
+    qc.setQueryData(['dataset', id], updated)
+    ;['datasets', 'search', 'tags', 'stats'].forEach((key) => qc.invalidateQueries({ queryKey: [key] }))
+  }
+  const validate = useMutation({
+    mutationFn: (validated: boolean) => datasetsApi.validate(id!, validated),
+    onSuccess: replace,
   })
 
   if (isLoading) {
@@ -140,6 +159,37 @@ export default function DatasetDetail() {
       <PageHeader
         eyebrow="Dataset"
         title={name}
+        actions={editor && (
+          <>
+            <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => setDialog('edit')}>Edit details</Button>
+            {dataset.is_validated ? (
+              <Button
+                variant="outlined" color="inherit" sx={{ borderColor: tokens.ruleStrong }}
+                startIcon={validate.isPending ? <CircularProgress size={14} color="inherit" /> : <GppBadOutlinedIcon />}
+                disabled={validate.isPending}
+                onClick={() => validate.mutate(false)}
+              >
+                Remove validation
+              </Button>
+            ) : (
+              <Tooltip title="Say that this dataset's documentation has been checked" describeChild>
+                <Button
+                  variant="contained"
+                  startIcon={validate.isPending ? <CircularProgress size={14} color="inherit" /> : <VerifiedIcon />}
+                  disabled={validate.isPending}
+                  onClick={() => validate.mutate(true)}
+                >
+                  Mark as validated
+                </Button>
+              </Tooltip>
+            )}
+            <Tooltip title="Remove from the catalog">
+              <IconButton aria-label="Remove dataset from the catalog" onClick={() => setDialog('remove')} sx={{ '&:hover': { color: tokens.danger } }}>
+                <DeleteOutlineIcon />
+              </IconButton>
+            </Tooltip>
+          </>
+        )}
         subtitle={
           <>
             <Box component="span" sx={{ ...PATH_SX, display: 'block' }}>{dataset.project_id}.{dataset.dataset_id}</Box>
@@ -170,12 +220,19 @@ export default function DatasetDetail() {
               InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18 }} /></InputAdornment> }}
               sx={{ width: { xs: '100%', sm: 320 }, '& input': { fontSize: '0.875rem' } }}
             />
+            {editor && (
+              <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialog('register')}>Register table</Button>
+            )}
           </Box>
 
           {tablesLoading ? (
             [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={96} sx={{ mb: 1.5 }} />)
           ) : !tables?.length ? (
-            <EmptyState icon={<GridOnIcon />} title="No tables in this dataset">
+            <EmptyState
+              icon={<GridOnIcon />}
+              title="No tables in this dataset"
+              action={editor && <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialog('register')}>Register a table</Button>}
+            >
               Tables appear here after the next BigQuery sync of {dataset.project_id}.
             </EmptyState>
           ) : shown.length === 0 ? (
@@ -214,6 +271,18 @@ export default function DatasetDetail() {
           />
         </Box>
       </Box>
+
+      {dialog === 'edit' && <EditDetailsDialog kind="dataset" entity={dataset} onClose={() => setDialog(null)} onSaved={replace} />}
+      {dialog === 'remove' && (
+        <RemoveDialog
+          kind="dataset"
+          entity={dataset}
+          tableCount={dataset.table_count}
+          onClose={() => setDialog(null)}
+          onRemoved={() => navigate('/browse', { replace: true })}
+        />
+      )}
+      {dialog === 'register' && <RegisterTableDialog dataset={dataset} onClose={() => setDialog(null)} />}
     </Box>
   )
 }

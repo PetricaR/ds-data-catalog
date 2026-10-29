@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import {
-  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
+  Alert, Autocomplete, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
   Skeleton, Stack, Switch, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField,
   Tooltip, Typography,
 } from '@mui/material'
@@ -11,14 +11,15 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import ErrorIcon from '@mui/icons-material/Error'
 import ManageSearchIcon from '@mui/icons-material/ManageSearch'
 import SyncIcon from '@mui/icons-material/Sync'
+import SyncAltIcon from '@mui/icons-material/SyncAlt'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { bqApi, type ProjectInfo, type SourceCreate } from '../api/bq'
 import { errorDetail } from '../api/client'
 import type { GCPSource } from '../api/types'
 import ProjectPicker from '../components/ProjectPicker'
-import { SyncProgressList, useSourceSync } from '../components/SourceSync'
-import { EmptyState, MONO, MetaPill, PageHeader, formatDateTime } from '../components/ui'
+import { SYNCED_QUERIES, SyncProgressList, useSourceSync } from '../components/SourceSync'
+import { EmptyState, MONO, MetaPill, PageHeader, formatDateTime, plural } from '../components/ui'
 import { tokens } from '../theme'
 
 function SyncStatus({ source }: { source: GCPSource }) {
@@ -156,11 +157,105 @@ function DiscoverDialog({ open, onClose }: { open: boolean; onClose: () => void 
   )
 }
 
+/** POST /bq/sync: one project now, optionally only some datasets, without adding it as a source. */
+function OneOffSyncDialog({ sources, onClose }: { sources: GCPSource[]; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [form, setForm] = useState({ project_id: '', dataset_filter: '', secret_name: '' })
+  const known = sources.find((s) => s.project_id === form.project_id.trim())
+
+  const sync = useMutation({
+    mutationFn: () => bqApi.sync({
+      project_id: form.project_id.trim(),
+      dataset_filter: form.dataset_filter.trim() || undefined,
+      secret_name: form.secret_name.trim() || undefined,
+    }),
+    onSuccess: () => SYNCED_QUERIES.forEach((key) => qc.invalidateQueries({ queryKey: [key] })),
+    onError: () => {},
+  })
+  const result = sync.data?.result
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (form.project_id.trim() && !sync.isPending) sync.mutate()
+  }
+
+  return (
+    <Dialog open onClose={sync.isPending ? undefined : onClose} fullWidth maxWidth="sm">
+      <form onSubmit={submit}>
+        <DialogTitle>Sync a project once</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Reads one project's BigQuery metadata now, without adding it as a source, so Sync all leaves it out. Use it to
+              refresh part of a large project, or to catalog a project once.
+            </Typography>
+            {sync.isError && <Alert severity="error">{errorDetail(sync.error, 'The sync failed or timed out. A large project may still be syncing; check Browse in a few minutes.')}</Alert>}
+            {result && (
+              <Alert severity={result.errors.length ? 'warning' : 'success'}>
+                {sync.data!.project_id}: {[
+                  result.datasets_added && `${plural(result.datasets_added, 'new dataset')}`,
+                  `${plural(result.tables_added + result.tables_updated, 'table')} synced`,
+                  `${plural(result.columns_synced, 'column')}`,
+                ].filter(Boolean).join(' · ')}
+                {result.errors.length > 0 && (
+                  <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5, maxHeight: 160, overflowY: 'auto', overflowWrap: 'anywhere' }}>
+                    {result.errors.slice(0, 5).map((err, i) => <li key={i}>{err.length > 240 ? `${err.slice(0, 240)}…` : err}</li>)}
+                    {result.errors.length > 5 && <li>and {result.errors.length - 5} more</li>}
+                  </Box>
+                )}
+              </Alert>
+            )}
+            <Autocomplete
+              freeSolo
+              options={sources.map((s) => s.project_id)}
+              inputValue={form.project_id}
+              onInputChange={(_, project_id) => setForm((f) => ({ ...f, project_id }))}
+              // Picking a connected source also picks the key it syncs with
+              onChange={(_, project_id) => {
+                const source = sources.find((s) => s.project_id === project_id)
+                if (source?.secret_name) setForm((f) => ({ ...f, secret_name: source.secret_name ?? '' }))
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params} label="GCP project ID" required autoFocus placeholder="my-gcp-project-123"
+                  helperText={known ? "A connected source: its sync status on this page doesn't change." : undefined}
+                  InputProps={{ ...params.InputProps, sx: MONO }}
+                />
+              )}
+            />
+            <TextField
+              label="Only datasets whose ID starts with" placeholder="sales_" fullWidth
+              helperText="Optional. Leave empty for every dataset in the project."
+              value={form.dataset_filter}
+              onChange={(e) => setForm({ ...form, dataset_filter: e.target.value })}
+              InputProps={{ sx: MONO }}
+            />
+            <TextField
+              label="Service-account key secret (optional)" placeholder="bq-service-account-key" fullWidth
+              helperText="A Secret Manager secret that holds a service-account key. Leave empty to sync with your own Google account, or the catalog's Workload Identity."
+              value={form.secret_name}
+              onChange={(e) => setForm({ ...form, secret_name: e.target.value })}
+              InputProps={{ sx: MONO }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={onClose} disabled={sync.isPending}>{result ? 'Close' : 'Cancel'}</Button>
+          <Button type="submit" variant="contained" disabled={!form.project_id.trim() || sync.isPending}>
+            {sync.isPending ? <CircularProgress size={18} color="inherit" /> : result ? 'Sync again' : 'Sync now'}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  )
+}
+
 export default function Sources() {
   const qc = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
   const [discoverOpen, setDiscoverOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
+  const [oneOffOpen, setOneOffOpen] = useState(false)
   const sync = useSourceSync()
 
   const { data: sources = [], isLoading } = useQuery({ queryKey: ['bq-sources'], queryFn: bqApi.listSources })
@@ -199,6 +294,7 @@ export default function Sources() {
             >
               Sync all
             </Button>
+            <Button variant="outlined" startIcon={<SyncAltIcon />} disabled={sync.running} onClick={() => setOneOffOpen(true)}>Sync once</Button>
             <Button variant="outlined" startIcon={<ManageSearchIcon />} onClick={() => setDiscoverOpen(true)}>Discover</Button>
             <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>Add project</Button>
           </>
@@ -291,6 +387,7 @@ export default function Sources() {
 
       <AddSourceDialog open={addOpen} onClose={() => setAddOpen(false)} />
       <DiscoverDialog open={discoverOpen} onClose={() => setDiscoverOpen(false)} />
+      {oneOffOpen && <OneOffSyncDialog sources={sources} onClose={() => setOneOffOpen(false)} />}
       <Dialog open={syncOpen} onClose={() => setSyncOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>{sync.running ? 'Syncing from BigQuery…' : 'BigQuery sync'}</DialogTitle>
         <DialogContent>

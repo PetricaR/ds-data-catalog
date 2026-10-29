@@ -19,7 +19,7 @@ export interface SyncRow {
 }
 
 // Everything a sync can change
-const SYNCED_QUERIES = ['bq-sources', 'datasets', 'dataset', 'tables', 'table', 'stats', 'tags', 'search', 'schema-changes']
+export const SYNCED_QUERIES = ['bq-sources', 'datasets', 'dataset', 'tables', 'table', 'stats', 'tags', 'search', 'schema-changes']
 
 /**
  * Syncs sources one request at a time, so each stays well inside the proxy timeout and the user

@@ -4,7 +4,7 @@ cannot ship without auth by accident.
 
   anonymous → only the public routes below
   viewer    → read catalog metadata; no writes, no BigQuery/AI jobs
-  editor    → everything except BigQuery sources, sync and user management
+  editor    → everything except BigQuery sources, sync, user management and settings
   admin     → everything
 """
 
@@ -40,7 +40,7 @@ EDITOR_ONLY_GETS = {
     "/api/v1/tables/{table_id}/usage",
 }
 
-ADMIN_PREFIXES = ("/api/v1/bq", "/api/v1/users")
+ADMIN_PREFIXES = ("/api/v1/bq", "/api/v1/users", "/api/v1/settings", "/api/v1/setup/demo-data")
 
 
 def _routes():

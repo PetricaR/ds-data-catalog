@@ -12,7 +12,7 @@ from typing import Optional
 
 import httpx
 
-from ..config import settings
+from .app_config import gchat_webhook_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 
 def _send(payload: dict) -> None:
     """POST payload to the configured webhook URL. Best-effort — never raises."""
-    url = settings.google_chat_webhook_url
-    if not url:
-        return
     try:
+        url = gchat_webhook_url()
+        if not url:
+            return
         resp = httpx.post(url, json=payload, timeout=5)
         if resp.status_code != 200:
             logger.warning("Google Chat webhook returned %s: %s", resp.status_code, resp.text[:200])
@@ -68,6 +68,13 @@ def _card(card_id: str, header: dict, sections: list[dict]) -> dict:
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
+def send_test_message(url: str, sent_by: str) -> None:
+    """Post a short message to check a webhook. Unlike the alerts, it raises when the message does not arrive."""
+    resp = httpx.post(url, json={"text": f"Light Data Catalog alerts are on. Test message sent by {sent_by}."}, timeout=10)
+    if resp.status_code != 200:
+        raise RuntimeError(f"Google Chat answered {resp.status_code}: {resp.text[:200]}")
+
 
 def notify_trusted(
     table_name: str,

@@ -1,6 +1,7 @@
 """
-Encryption for secrets the app keeps in PostgreSQL: the users' Google access and refresh tokens, and the
-Google OAuth client secret entered in the setup wizard. A database dump or backup alone cannot use them.
+Encryption for secrets the app keeps in PostgreSQL: the users' Google access and refresh tokens, the
+Google OAuth client secret entered in the setup wizard, and the Google Chat webhook URL and Gemini API key
+entered on the Settings page. A database dump or backup alone cannot use them.
 
 Values are Fernet tokens under keys derived (HKDF) from ENCRYPTION_KEY. It may list several comma-separated
 keys: the first encrypts, all decrypt, and `reencrypt_stored_secrets()` moves every value to the first at
@@ -32,7 +33,7 @@ _ENCRYPTION_PURPOSE = b"app-settings-encryption"
 ENCRYPTED_COLUMNS = (
     ("users", "id", "gcp_access_token", "TRUE"),
     ("users", "id", "gcp_refresh_token", "TRUE"),
-    ("app_settings", "key", "value", "key = 'google_client_secret'"),
+    ("app_settings", "key", "value", "key IN ('google_client_secret', 'google_chat_webhook_url', 'gemini_api_key')"),
 )
 
 
@@ -111,6 +112,6 @@ def reencrypt_stored_secrets(db: Session) -> None:
         logger.warning(
             "%d stored secrets cannot be decrypted with ENCRYPTION_KEY or JWT_SECRET (was a key changed or "
             "removed?). Users sign in again to replace their Google tokens; an OAuth client saved in the setup "
-            "wizard has to be entered again.",
+            "wizard, and a webhook URL or API key saved on the Settings page, have to be entered again.",
             unreadable,
         )

@@ -143,8 +143,11 @@ export interface TableCreate {
   owner?: string
   tags?: string[]
   sensitivity_label?: SensitivityLabel
-  columns?: Omit<Column, 'id'>[]
+  columns?: ColumnCreate[]
 }
+
+// What the API takes for a column of a table registered by hand
+export type ColumnCreate = Pick<Column, 'name' | 'data_type' | 'description' | 'is_nullable' | 'is_primary_key' | 'position'>
 
 export interface TableUpdate {
   display_name?: string
