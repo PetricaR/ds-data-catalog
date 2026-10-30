@@ -4,6 +4,8 @@ e.g. after the client was deleted and nobody can sign in. Run it where the backe
 
     python -m backend.setup_token
     kubectl exec deploy/ds-catalog-backend -- python -m backend.setup_token
+
+On Cloud Run, before any client is saved, `deploy/run/deploy.sh setup-token` computes it from JWT_SECRET.
 """
 from .database import SessionLocal
 from .services.oauth_client import setup_token

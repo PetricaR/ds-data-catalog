@@ -15,14 +15,15 @@ How each Google Cloud integration works — sync, previews, DLP, Dataplex, linea
 3. [Security model](#security-model)
 4. [Local development](#local-development)
 5. [Tests](#tests)
-6. [Deploying to GKE](#deploying-to-gke)
-7. [Configuration reference](#configuration-reference)
-8. [IAM roles](#iam-roles)
-9. [API reference](#api-reference)
-10. [Operations](#operations)
-11. [Troubleshooting](#troubleshooting)
-12. [Project layout](#project-layout)
-13. [License](#license)
+6. [Deploying to Cloud Run](#deploying-to-cloud-run)
+7. [Deploying to GKE](#deploying-to-gke)
+8. [Configuration reference](#configuration-reference)
+9. [IAM roles](#iam-roles)
+10. [API reference](#api-reference)
+11. [Operations](#operations)
+12. [Troubleshooting](#troubleshooting)
+13. [Project layout](#project-layout)
+14. [License](#license)
 
 ---
 
@@ -69,7 +70,9 @@ ds-catalog-postgres  (PostgreSQL 16 StatefulSet)
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Pydantic 2 |
 | Database | PostgreSQL 16 (full-text search with `tsvector` + GIN indexes) |
 | Auth | Google OAuth 2.0 → app-issued JWT (HS256), role checks on every request |
-| Infrastructure | GKE Autopilot, Artifact Registry, Cloud Build, Secret Manager |
+| Infrastructure | GKE Autopilot, or Cloud Run + Cloud SQL; Artifact Registry, Cloud Build, Secret Manager |
+
+The diagram shows the GKE deployment. On Cloud Run, nginx and the backend are two containers of one service, nginx proxies `/api/v1/*` to `localhost:8000`, and PostgreSQL is a Cloud SQL instance.
 
 The backend creates and migrates its own tables on startup (`init_db` in `backend/database.py`).
 
@@ -113,7 +116,7 @@ The full route-by-role matrix is enforced in `backend/` and checked against ever
 <a name="oauth-client-in-the-setup-wizard"></a>**OAuth client in the setup wizard.** Instead of `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, the client can be entered at `/setup`. Environment variables win: while either is set, the wizard cannot change the client.
 - The wizard checks the client with Google before saving it, by exchanging a made-up authorization code: Google reports a wrong, unknown or deleted client as such.
 - The client secret is stored encrypted in the `app_settings` table (see *Encryption at rest*).
-- Before anyone can sign in, saving requires the **setup token**, which the backend prints to its log at startup while no client is configured. With `LOG_SETUP_TOKEN=false` (set by `deploy.sh`, since project members who can read Cloud Logging may be more than your admins) the log only says how to get it. Run `python -m backend.setup_token` where the backend runs (in `catalog_app/`, or `kubectl exec deploy/ds-catalog-backend -- python -m backend.setup_token`) to get it at any other time, for example after the client was deleted and nobody can sign in. The token is derived from `JWT_SECRET` and the stored client, so every replica accepts it and it stops working once a client is saved with it. A signed-in admin can replace the client without it.
+- Before anyone can sign in, saving requires the **setup token**, which the backend prints to its log at startup while no client is configured. With `LOG_SETUP_TOKEN=false` (set by both deploy scripts, since project members who can read Cloud Logging may be more than your admins) the log only says how to get it. Run `python -m backend.setup_token` where the backend runs (in `catalog_app/`, or `kubectl exec deploy/ds-catalog-backend -- python -m backend.setup_token`) to get it at any other time, for example after the client was deleted and nobody can sign in. On Cloud Run, `./deploy.sh setup-token` prints it while no client has been saved. The token is derived from `JWT_SECRET` and the stored client, so every replica accepts it and it stops working once a client is saved with it. A signed-in admin can replace the client without it.
 
 **OAuth client health.** Google deletes OAuth clients that go unused for months. The backend checks the configured client (from the environment or the wizard) with Google at startup and every `OAUTH_CHECK_INTERVAL_MINUTES` (default 6 hours). It does this with the same made-up code exchange as above. If Google rejects the client, the backend logs it, the login page says sign-in is broken, and `/setup` explains how to replace the client. A rejected client is checked again every few minutes, so restoring it in Google Cloud clears the warning.
 
@@ -192,9 +195,57 @@ CI (`.github/workflows/ci.yml`) runs the backend tests against PostgreSQL 16, bu
 
 ---
 
+## Deploying to Cloud Run
+
+`catalog_app/deploy/run/deploy.sh` does the whole deployment and is safe to re-run: it enables APIs, creates the `ds-catalog-sa` service account with the [IAM roles](#iam-roles), creates a PostgreSQL 16 Cloud SQL instance, builds both images with Cloud Build into Artifact Registry, and deploys one Cloud Run service. It is the cheaper option: the service scales to zero, and the default `db-f1-micro` database costs about $10 a month.
+
+Prerequisites: a GCP project with billing, `gcloud` authenticated as a project Owner (or equivalent), and `openssl`. Docker is not needed locally.
+
+### 1. Deploy
+
+```bash
+cd catalog_app/deploy/run
+GCP_PROJECT_ID=your-project-id \
+GCP_REGION=europe-west1 \
+ADMIN_EMAILS=you@yourcompany.com \
+ALLOWED_EMAIL_DOMAINS=yourcompany.com \
+  ./deploy.sh
+```
+
+The app is served over HTTPS on `https://ds-catalog-<project number>.<region>.run.app`. The service is public and the app does its own sign-in. It turns off Cloud Run's invoker IAM check instead of granting `allUsers`, so it also deploys where an organization policy restricts sharing to your own domain.
+
+Secrets come straight from Secret Manager; the first deploy generates the ones marked so:
+
+| Environment variable | Secret Manager name | |
+|---|---|---|
+| `DATABASE_URL` | `ds-catalog-database-url` | generated; holds the password of the `catalog` database user |
+| `JWT_SECRET` | `jwt-secret-key` | generated if missing |
+| `ENCRYPTION_KEY` | `ds-catalog-encryption-key` | generated if missing; keep it (see [Encryption at rest](#security-model)) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | same names | optional — or enter the client in the setup wizard |
+| `GEMINI_API_KEY`, `GOOGLE_CHAT_WEBHOOK_URL`, `BQ_SECRET_NAME` | as in the [GKE table](#2-store-secrets-in-secret-manager) | optional |
+
+After adding or changing a secret, `./deploy.sh secrets` rolls out a new revision that reads the latest values, without rebuilding the images.
+
+Other variables: `SERVICE_NAME` (default `ds-catalog`), `SQL_INSTANCE` (default `ds-catalog-db`), `SQL_TIER` (default `db-f1-micro`), `MAX_INSTANCES` (default 2), `APP_URL` (for a custom domain), `AR_REPOSITORY`, `ALLOWED_EMAILS`, `DEFAULT_ROLE`, `ASSUME_YES=1`. Each instance opens up to 15 database connections and `db-f1-micro` allows 25, so pick a larger `SQL_TIER` before raising `MAX_INSTANCES`. The Cloud SQL instance has deletion protection and daily backups.
+
+### 2. Set up sign-in
+
+Create a Google OAuth client (APIs & Services → Credentials → *Create credentials* → *OAuth client ID* → *Web application*) with the origin and redirect URI the script prints:
+
+- Authorised JavaScript origin: `https://ds-catalog-<project number>.<region>.run.app`
+- Authorised redirect URI: `https://ds-catalog-<project number>.<region>.run.app/api/v1/auth/callback`
+
+Then either open `/setup` and enter the client with the token from `./deploy.sh setup-token`, or store it in Secret Manager as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and run `./deploy.sh secrets`.
+
+### 3. Sign in and connect BigQuery
+
+As on GKE: sign in with an `ADMIN_EMAILS` account, open **GCP Sources** (or `/setup`), add your projects and run a sync.
+
+---
+
 ## Deploying to GKE
 
-`catalog_app/deploy/deploy.sh` does the whole deployment and is safe to re-run: it enables APIs, creates (or reuses) a GKE Autopilot cluster, sets up Workload Identity and IAM, builds both images with Cloud Build into Artifact Registry, and applies the Kubernetes manifests.
+`catalog_app/deploy/k8s/deploy.sh` does the whole deployment and is safe to re-run: it enables APIs, creates (or reuses) a GKE Autopilot cluster, sets up Workload Identity and IAM, builds both images with Cloud Build into Artifact Registry, and applies the Kubernetes manifests.
 
 Prerequisites: a GCP project with billing, `gcloud` authenticated as a project Owner (or equivalent), `kubectl`, and `openssl`. Docker is not needed locally.
 
@@ -234,7 +285,7 @@ Secrets are copied into the Kubernetes secret `ds-catalog-secret` at deploy time
 ### 3. Deploy
 
 ```bash
-cd catalog_app/deploy
+cd catalog_app/deploy/k8s
 GCP_PROJECT_ID=your-project-id \
 ADMIN_EMAILS=you@yourcompany.com \
 ALLOWED_EMAIL_DOMAINS=yourcompany.com \
@@ -264,7 +315,7 @@ Sign in with an `ADMIN_EMAILS` account, open **GCP Sources** (or `/setup`), add 
 IAP makes Google check identity at the load balancer, before any request reaches the app. It requires the HTTPS deploy.
 
 ```bash
-cd catalog_app/deploy
+cd catalog_app/deploy/k8s
 GCP_PROJECT_ID=your-project-id \
 IAP_MEMBERS="group:data-team@yourcompany.com,user:you@yourcompany.com" \
   ./setup-iap.sh
@@ -276,7 +327,7 @@ Redeploys keep IAP attached.
 
 ## Configuration reference
 
-All backend settings are environment variables (`backend/config.py`). In production `deploy.sh` writes the non-secret ones to the ConfigMap `ds-catalog-config` and the secrets to `ds-catalog-secret`.
+All backend settings are environment variables (`backend/config.py`). On Cloud Run, `deploy/run/deploy.sh` sets the non-secret ones on the service and maps the secrets from Secret Manager. On GKE, `deploy/k8s/deploy.sh` writes the non-secret ones to the ConfigMap `ds-catalog-config` and the secrets to `ds-catalog-secret`.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -304,7 +355,7 @@ All backend settings are environment variables (`backend/config.py`). In product
 
 ## IAM roles
 
-`deploy.sh` grants these roles to `ds-catalog-sa` on the project:
+Both deploy scripts grant these roles to `ds-catalog-sa` on the project:
 
 | Role | Used for |
 |---|---|
@@ -319,6 +370,9 @@ All backend settings are environment variables (`backend/config.py`). In product
 | `roles/cloudasset.viewer` | Schema history |
 | `roles/secretmanager.secretAccessor` | Per-source service-account keys |
 | `roles/logging.logWriter`, `roles/monitoring.metricWriter` | Logs and metrics |
+| `roles/cloudsql.client` | Connecting to the Cloud SQL database (Cloud Run only) |
+
+On Cloud Run, the images are built as a second service account, `ds-catalog-build`, with `roles/run.builder`: newer projects give Cloud Build's default account no roles.
 
 To catalog other projects, grant `ds-catalog-sa@<project>.iam.gserviceaccount.com` the BigQuery roles there, or register the source with its own service-account key.
 
@@ -395,7 +449,23 @@ All endpoints are under `/api/v1` and expect `Authorization: Bearer <jwt>` unles
 
 ## Operations
 
-`catalog_app/deploy/utils.sh` wraps common commands:
+### Cloud Run
+
+```bash
+# Logs
+gcloud run services logs read ds-catalog --region=<region> --project=<project>
+
+# Roll out the latest Secret Manager values after rotating one
+./deploy.sh secrets
+
+# Database shell (the password is in the secret ds-catalog-database-url) and backups
+gcloud sql connect ds-catalog-db --user=catalog --database=ds_catalog --project=<project>
+gcloud sql backups list --instance=ds-catalog-db --project=<project>
+```
+
+### GKE
+
+`catalog_app/deploy/k8s/utils.sh` wraps common commands:
 
 ```bash
 ./utils.sh status                    # deployments, pods, services, URL
@@ -405,7 +475,7 @@ All endpoints are under `/api/v1` and expect `Authorization: Bearer <jwt>` unles
 ./utils.sh shell                     # shell in a backend pod
 ```
 
-The backend HorizontalPodAutoscaler (`deploy/autoscaling.yaml`) runs 2–8 replicas at 70% CPU.
+The backend HorizontalPodAutoscaler (`deploy/k8s/autoscaling.yaml`) runs 2–8 replicas at 70% CPU.
 
 ```bash
 # Re-sync the Kubernetes secret after rotating a value in Secret Manager
@@ -451,13 +521,14 @@ catalog_app/
 │   ├── database.py     # Engine, sessions, startup migrations
 │   └── main.py         # App and router registration
 ├── frontend/           # React + Vite app (src/api, components, contexts, pages)
-├── deploy/             # deploy.sh, setup-iap.sh, utils.sh, Kubernetes manifests
+├── deploy/
+│   ├── run/            # Cloud Run: deploy.sh, nginx.conf
+│   └── k8s/            # GKE: deploy.sh, setup-iap.sh, utils.sh, Kubernetes manifests, nginx.conf
 ├── docker/initdb/      # Local PostgreSQL init (test database)
 ├── tests/              # API tests (pytest + PostgreSQL)
 ├── tests_e2e/          # Opt-in smoke tests for a running deployment
 ├── Dockerfile.backend
-├── Dockerfile.frontend # Production frontend: build + nginx
-├── nginx.conf
+├── Dockerfile.frontend # Production frontend: build + nginx (NGINX_CONF picks the target's config)
 ├── docker-compose.yml
 ├── start.sh
 ├── requirements.txt

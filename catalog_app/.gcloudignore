@@ -1,4 +1,4 @@
-# Files never uploaded to Cloud Build by deploy/deploy.sh (gcloud builds submit).
+# Files never uploaded to Cloud Build by deploy/*/deploy.sh (gcloud builds submit).
 .gcloudignore
 .env
 .env.*

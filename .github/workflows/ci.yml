@@ -60,4 +60,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Shell syntax
-        run: for f in catalog_app/start.sh catalog_app/deploy/*.sh; do bash -n "$f"; done
+        run: for f in catalog_app/start.sh catalog_app/deploy/*/*.sh; do bash -n "$f"; done

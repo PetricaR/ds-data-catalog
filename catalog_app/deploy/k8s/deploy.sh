@@ -5,7 +5,7 @@
 # One-shot script: APIs → cluster → Workload Identity → images → Kubernetes manifests.
 # Safe to re-run; existing resources are reused.
 #
-# Usage (from catalog_app/deploy/):
+# Usage (from catalog_app/deploy/k8s/):
 #   GCP_PROJECT_ID=my-project ADMIN_EMAILS=me@example.com ALLOWED_EMAIL_DOMAINS=example.com \
 #   DOMAIN=catalog.example.com ./deploy.sh
 #
@@ -49,9 +49,9 @@ SKIP_CLUSTER="${SKIP_CLUSTER:-0}"
 DOMAIN="${DOMAIN:-}"
 STATIC_IP_NAME="ds-catalog-ip"
 
-# Paths — script lives in catalog_app/deploy/
+# Paths — script lives in catalog_app/deploy/k8s/
 DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_CONTEXT="$(cd "$DEPLOY_DIR/.." && pwd)"   # catalog_app/
+BUILD_CONTEXT="$(cd "$DEPLOY_DIR/../.." && pwd)"   # catalog_app/
 
 # Kubernetes secret key : Secret Manager secret name : required?
 SECRET_SOURCES="
